@@ -196,9 +196,8 @@
   <div class="drop-zone imsr-zone" id="imsr-drop-zone">
     <p>Drop previous IMSR PDF here for comparison<br><small style="color:var(--muted);">Removes asterisks on returning fires · Calculates Chge in Acres &amp; PPL</small></p>
     <button onclick="document.getElementById('imsr-file-input').click()">Select IMSR PDF</button>
-    <button id="nifc-fetch-btn" onclick="fetchFromNIFC()" style="margin-left:8px;background:#1a5c96;">Fetch from NIFC</button>
     <button onclick="clearIMSR()" style="margin-left:8px;background:var(--muted);color:#fff;border:none;padding:8px 14px;border-radius:3px;font-family:'IBM Plex Mono',monospace;font-size:11px;font-weight:600;cursor:pointer;">Clear IMSR</button>
-    <input type="file" id="imsr-file-input" accept=".pdf">
+    <input type="file" id="imsr-file-input" accept=".pdf" style="display:none">
   </div>
 </div>
 <div class="file-list" id="file-list"></div>
@@ -258,7 +257,7 @@ async function handleIMSRFile(file) {
     const text = pages.join('\n');
     prevIMSR = parseIMSR(text);
     setIMSRStatus(`✓ ${prevIMSR.size} incidents loaded from previous IMSR`, 'ok');
-    if (allIncidents.length) renderOutput(); // re-render with comparison data
+    renderOutput(); // re-render with comparison data (also shows missed fires if no 209s loaded)
   } catch(e) {
     setIMSRStatus('Failed to read IMSR PDF — ' + e.message, 'err');
   }
@@ -612,15 +611,17 @@ function parseFields(text) {
   // All ODF/Cal Fire and other IMT1s have converted to CIMT as of 2025.
   f.hasIMT = /\bCIMT\b|\bNIMO\b/i.test(f.imtText);
 
-  // CIMT ASSIGNED label — the narrow imtText regex often misses box 5 content
-  // in PDF.js two-column layout (box labels appear before their values in the text
-  // stream, so "6. Incident Start" fires before CIMT/ICCI content is reached).
-  // Solution: scan the first 2000 chars of page text directly. CIMT/ICCI/Type 1
-  // are distinctive enough that false positives in this region are not a concern.
+  // CIMT ASSIGNED / NIMO ASSIGNED label — the narrow imtText regex often misses box 5
+  // content in PDF.js two-column layout. Scan first 2000 chars directly instead.
   const headerRegion = text.slice(0, 2000);
-  f.hasCIMT = /\bCIMT\b|\bNIMO\b/i.test(headerRegion) ||
-              /\bICCI\b/i.test(headerRegion) ||
-              /\bType\s+[12]\s+[Ii]ncident\b/i.test(headerRegion);
+  // NIMO gets its own label — check it separately first
+  f.hasNIMO = /\bNIMO\b/i.test(headerRegion);
+  // hasCIMT: CIMT keyword, ICCI, or Type 1/2 notation — but NOT NIMO-only fires
+  f.hasCIMT = !f.hasNIMO && (
+    /\bCIMT\b/i.test(headerRegion) ||
+    /\bICCI\b/i.test(headerRegion) ||
+    /\bType\s+[12]\s+[Ii]ncident\b/i.test(headerRegion)
+  );
 
   f.resources = parseResources(text);
   f.privateLand = /\bpri\b/i.test(f.f21 || '');
@@ -2199,7 +2200,7 @@ const UNIT_LOOKUP = {
   "CO-YHP": "Yucca House National Monument, NPS",
   "CO-YMX": "Yuma County",
   "CT-CTFN": "Connecticut Field Office, TNC",
-  "CT-CTS": "Connecticut Division of Forestry",
+  "CT-CTS": "Connecticut DOF",
   "CT-HYNG": "East Haven Rifle Range, ARNG",
   "CT-MOT": "Mohegan Tribe, Tribal",
   "CT-NLNQ": "Naval Submarine Base New London, USN",
@@ -2613,7 +2614,7 @@ const UNIT_LOOKUP = {
   "IL-HMR": "Hackmatack NWR, FWS",
   "IL-ILFN": "Illinois Field Office, TNC",
   "IL-ILR": "Illinois River NWR, FWS",
-  "IL-ILS": "Illinois Division of Forestry Resources",
+  "IL-ILS": "Illinois DOF",
   "IL-KNR": "Kankakee NWR and Conservation Area, FWS",
   "IL-KWR": "Kankakee NWR, FWS",
   "IL-LHP": "Lincoln Home National Historic Site, NPS",
@@ -2635,7 +2636,7 @@ const UNIT_LOOKUP = {
   "IN-HOF": "Hoosier National Forest, USFS",
   "IN-IDP": "Indiana Dunes National Park, NPS",
   "IN-INFN": "Indiana Field Office, TNC",
-  "IN-INS": "Indiana Division of Forestry",
+  "IN-INS": "Indiana DOF",
   "IN-LBP": "Lincoln Boyhood National Memorial, NPS",
   "IN-MSR": "Muscatatuck NWR, FWS",
   "IN-PKR": "Patoka River NWR, FWS",
@@ -2777,7 +2778,7 @@ const UNIT_LOOKUP = {
   "KY-FESR": "Kentucky Ecological Services Field Office, FWS",
   "KY-FKQ": "Fort Knox, Army",
   "KY-GRR": "Green River NWR, FWS",
-  "KY-KYS": "Kentucky Division of Forestry",
+  "KY-KYS": "Kentucky DOF",
   "KY-LBF": "Land Between the Lakes National Recreation Area, USFS",
   "KY-LSVW": "Louiseville Weather Forecast Office",
   "KY-MCP": "Mammoth Cave National Park, NPS",
@@ -3496,11 +3497,11 @@ const UNIT_LOOKUP = {
   "NV-MVFX": "Moapa Valley Fire Protection District",
   "NV-MVR": "Moapa Valley NWR, FWS",
   "NV-NAFQ": "Nellis Air Force Base, USAF",
-  "NV-NNS": "Nevada Division of Forestry - Northern Region",
-  "NV-NSS": "Nevada Division of Forestry - Southern Region",
+  "NV-NNS": "Nevada DOF",
+  "NV-NSS": "Nevada DOF",
   "NV-NTE": "Nevada National Security Site",
   "NV-NVS": "Governor's Office of the State of Nevada",
-  "NV-NWS": "Nevada Division of Forestry - Western Region",
+  "NV-NWS": "Nevada DOF",
   "NV-NYEX": "Nye County Fire Protection Area",
   "NV-PAD": "Pahrump Field Office, BLM",
   "NV-PERX": "Pershing County",
@@ -4325,7 +4326,7 @@ const UNIT_LOOKUP = {
   "TN-STP": "Stones River National Battlefield, NPS",
   "TN-SYNG": "VTS Smyrna, ARNG",
   "TN-TNR": "Tennessee NWR, FWS",
-  "TN-TNS": "Tennessee Division of Forestry",
+  "TN-TNS": "Tennessee DOF",
   "TN-TVA": "Tennessee Valley Authority",
   "TX-ABLM": "Abilene Fire Department",
   "TX-ABSX": "Ables Springs Fire Dept",
@@ -4869,7 +4870,7 @@ const UNIT_LOOKUP = {
   "VT-NBR": "Silvio O. Conte NWR-Nulhegan Basin Division, FWS",
   "VT-SEM": "Vermont Emergency Management",
   "VT-VTFN": "Vermont Field Office, TNC",
-  "VT-VTS": "Vermont Division of Forestry",
+  "VT-VTS": "Vermont DOF",
   "VT-WRR": "White River National Fish Hatchery, FWS",
   "WA-ABDN": "Aberdeen Fire Department",
   "WA-ACKN": "Asotin County Fire District 1, Clarkston",
@@ -5328,17 +5329,37 @@ function parseResources(text) {
     colTypes = codes.map(c => isHeliCode(c) ? 'heli' : isEngineCode(c) ? 'engine' : isCrewCode(c) ? 'crew' : null);
   }
 
-  // Get 52. Total Rsrc row
+  // Get 52. Total Rsrc row.
+  // Layout A (standard): "52. Total Rsrc [rsrc values] 52. Total Pers [pers values]"
+  // Layout B (single-agency PDFs): "52. Total Rsrc  52. Total Pers  [all values interleaved
+  //   column-by-column as Rsrc,Pers pairs]" — both labels appear before any numbers.
   const rsrcM = text.match(/(?:52|57)\.\s*Total\s+Rsrc\s+([\d\s]+?)(?=(?:52|57)\.\s*Total\s+Pers|53\.)/i);
-  if (!rsrcM) return res;
 
-  const vals = rsrcM[1].trim().split(/\s+/).filter(s => /^\d+$/.test(s)).map(Number);
+  let vals = [];
+  let persVals = [];
 
-  // Get 52. Total Pers row — used to enforce 18-person minimum per crew column
-  const persRowMA = text.match(/(?:52|57)\.\s*Total\s+Pers\s+([\d\s]+?)(?=\s*53\.|\s*52\.|$)/i);
-  const persRowMB = text.match(/(?:52|57)\.\s*Total\s+([\d\s]+?)\s+Pers/i);
-  const persRowM  = persRowMA || persRowMB;
-  const persVals  = persRowM ? persRowM[1].trim().split(/\s+/).filter(s => /^\d+$/.test(s)).map(Number) : [];
+  if (rsrcM && rsrcM[1].trim()) {
+    // Layout A — numbers between the two labels
+    vals = rsrcM[1].trim().split(/\s+/).filter(s => /^\d+$/.test(s)).map(Number);
+
+    // Get 52. Total Pers row for crew minimum enforcement
+    const persRowMA = text.match(/(?:52|57)\.\s*Total\s+Pers\s+([\d\s]+?)(?=\s*53\.|\s*52\.|$)/i);
+    const persRowMB = text.match(/(?:52|57)\.\s*Total\s+([\d\s]+?)\s+Pers/i);
+    const persRowM  = persRowMA || persRowMB;
+    persVals = persRowM ? persRowM[1].trim().split(/\s+/).filter(s => /^\d+$/.test(s)).map(Number) : [];
+  } else {
+    // Layout B — both labels before all values; values are column-by-column Rsrc/Pers pairs.
+    // Match the block that starts after both "Total Rsrc" and "Total Pers" labels.
+    const interM = text.match(/(?:52|57)\.\s*Total\s+Rsrc\s+(?:52|57)\.\s*Total\s+Pers\s+([\d\s]+?)(?=53\.|$)/i);
+    if (!interM) return res;
+    const all = interM[1].trim().split(/\s+/).filter(s => /^\d+$/.test(s)).map(Number);
+    // Values alternate: col0_Rsrc, col0_Pers, col1_Rsrc, col1_Pers, ...
+    // Take even-indexed for Rsrc, odd-indexed for Pers
+    vals     = all.filter((_, i) => i % 2 === 0);
+    persVals = all.filter((_, i) => i % 2 === 1);
+  }
+
+  if (!vals.length) return res;
 
   colTypes.forEach((t, i) => {
     if (i >= vals.length) return;
@@ -5826,7 +5847,7 @@ function buildNarrativeLines(incidents, cssClass='') {
     const { name, parts } = buildNarrativeLine(f);
     const sentence = capitalizeSentences(parts.join('. ') + (parts.length ? '.' : ''));
     const managingOrg = (lookupUnit(f.unit) || fv(f.unit) || '').replace(/\s*\([A-Z]{2}\)$/,'') || '<span class="blank">[MANAGING ORG]</span>';
-    const cimtLabel = f.hasCIMT ? ' (CIMT ASSIGNED)' : '';
+    const cimtLabel = f.hasNIMO ? ' (NIMO ASSIGNED)' : f.hasCIMT ? ' (CIMT ASSIGNED)' : '';
     const debug = buildDebugPanel(f);
     const precipFlag = f._precipDetected
       ? `<span class="precip-flag${f._precipConfirmed ? ' confirmed' : ''}" title="Definitive precipitation detected in boxes 35/40/47" onclick="togglePrecip(this, '${f.f2}')">🌧 ${f._precipConfirmed ? 'Precip added' : 'Add precip statement'}</span>`
@@ -5868,8 +5889,8 @@ function trancheSort(incidents) {
       isNew ? t3new.push(f) : t3ret.push(f);
       return;
     }
-    if (f.hasCIMT) {
-      // CIMT fires float to top: new above returning, lastReport below active
+    if (f.hasCIMT || f.hasNIMO) {
+      // CIMT/NIMO fires float to top: new above returning, lastReport below active
       if (isLastReport(f)) { isNew ? t0bnew.push(f) : t0bret.push(f); }
       else                  { isNew ? t0new.push(f)  : t0ret.push(f);  }
       return;
@@ -5890,7 +5911,8 @@ function trancheSort(incidents) {
 }
 
 function renderOutput() {
-  if (!allIncidents.length) return;
+  // Proceed if we have 209s OR a previous IMSR loaded (missed fires need to render)
+  if (!allIncidents.length && !prevIMSR) return;
 
   const thCells = COLS.map(c => `<th>${c.head}</th>`).join('');
 
@@ -5911,7 +5933,10 @@ function renderOutput() {
   qualifying.forEach(f => { (byGacc[f._gacc] = byGacc[f._gacc] || []).push(f); });
   // Apply tranche sort to each GACC
   Object.keys(byGacc).forEach(g => { byGacc[g] = trancheSort(byGacc[g]); });
-  const gaccKeys = GACC_ORDER.filter(g => byGacc[g]);
+
+  // Group non-qualifying by GACC (they render at the bottom of each GACC section)
+  const nqByGacc = {};
+  nonQualifying.forEach(f => { (nqByGacc[f._gacc] = nqByGacc[f._gacc] || []).push(f); });
 
   // Find missed fires — in prev IMSR (<100%), no matching 209 today
   const missedByGacc = {};
@@ -5925,17 +5950,55 @@ function renderOutput() {
     }
   }
 
+  // GACC keys: qualifying, non-qualifying, OR missed-only GACCs
+  const gaccKeys = GACC_ORDER.filter(g => byGacc[g] || nqByGacc[g] || missedByGacc[g]);
+
   // Build each GACC section (narratives + table)
   const gaccHtml = gaccKeys.map(gacc => {
-    const incidents = byGacc[gacc];
-    const color = GACC_COLORS[gacc];
-    const narrLines = buildNarrativeLines(incidents);
-    const tableRows = buildTableRows(incidents);
+    const incidents = byGacc[gacc] || [];
+    const nqFires   = nqByGacc[gacc] || [];
+    const missed    = missedByGacc[gacc] || [];
+    const color = GACC_COLORS[gacc] || '#888';
+
+    // Split incidents into active (above missed) and lastReport+100% (below missed)
+    const activeInc   = incidents.filter(f => !isLastReport(f) && !is100(f));
+    const lastRptInc  = incidents.filter(f =>  isLastReport(f) && !is100(f));
+    const containedInc = incidents.filter(f => is100(f));
+
+    // Narrative order: active → missed (no 209) → lastReport → 100% → nq
+    const narrLines =
+      buildNarrativeLines(activeInc) +
+      buildMissedNarrLines(missed) +
+      buildNarrativeLines(lastRptInc) +
+      buildNarrativeLines(containedInc);
+
+    // Non-qualifying narrative lines at very bottom, dimmed
+    const nqNarrLines = nqFires.map(f => {
+      const { name, parts } = buildNarrativeLine(f);
+      const sentence = capitalizeSentences(parts.join('. ') + (parts.length ? '.' : ''));
+      const managingOrg = (lookupUnit(f.unit) || fv(f.unit) || '').replace(/\s*\([A-Z]{2}\)$/,'') || '<span class="blank">[MANAGING ORG]</span>';
+      const prev = prevMatch(f);
+      const asterisk = prev ? '' : '* ';
+      return `<div class="narr-line nq" data-inc="${f.f2}" data-pct="${f.f8a || 0}" style="opacity:.7;border-left-color:#c8a050;">
+        <strong>${asterisk}${name}</strong><span style="font-weight:normal;">, ${managingOrg}. ${sentence}</span>
+        <span style="font-size:9px;color:#9a6010;margin-left:6px;font-style:italic;">${f._qualifyReason}</span>
+      </div>`;
+    }).join('');
+
+    // Table row order: active → missed → lastReport → 100% → nq
+    const tableRows =
+      buildTableRows(activeInc) +
+      buildMissedTableRows(missed) +
+      buildTableRows(lastRptInc) +
+      buildTableRows(containedInc) +
+      buildTableRows(nqFires);
+
+    const totalCount = incidents.length + missed.length + nqFires.length;
     return `
       <div class="gacc-section">
         <div class="gacc-section-head" style="border-color:${color};">
           <span class="gacc-label" style="background:${color};">${gacc}</span>
-          <span style="font-family:'IBM Plex Mono',monospace;font-size:11px;color:var(--muted);">${incidents.length} incident${incidents.length !== 1 ? 's' : ''}</span>
+          <span style="font-family:'IBM Plex Mono',monospace;font-size:11px;color:var(--muted);">${incidents.length} qualifying${missed.length ? ` · ${missed.length} no 209` : ''}${nqFires.length ? ` · ${nqFires.length} non-qualifying` : ''}</span>
         </div>
         <div class="block">
           <div class="section-head">
@@ -5943,6 +6006,7 @@ function renderOutput() {
             <button class="copy-btn narr" onclick="copyNarrFromBlock(this)">Copy Narratives</button>
           </div>
           ${narrLines}
+          ${nqNarrLines}
         </div>
         <div class="block">
           <div class="section-head">
@@ -5957,58 +6021,17 @@ function renderOutput() {
           </div>
         </div>
         ${renderUnitLegend(buildUnitLegend(incidents))}
-        ${(missedByGacc[gacc] || []).length ? buildMissedSection(missedByGacc[gacc], color) : ''}
       </div>
     `;
   }).join('');
 
-  // Non-qualifying section (unchanged)
-  let nqHtml = '';
-  if (nonQualifying.length) {
-    const nqNarrLines = buildNarrativeLines(nonQualifying, 'nq');
-    const nqTableRows = buildTableRows(nonQualifying);
-    const nqReasons = nonQualifying.map(f =>
-      `<div style="font-family:'IBM Plex Mono',monospace;font-size:11px;padding:4px 0;border-bottom:1px solid #e8d8b0;color:#4a3010;">
-        <strong>${fv(f.f1)}</strong><span class="nq-reason">${f._qualifyReason}</span>
-        <span style="color:#909090;margin-left:8px;">${f._gacc}</span>
-      </div>`
-    ).join('');
-    nqHtml = `
-      <hr class="nq-divider">
-      <div class="nq-banner">
-        <strong>⚠ Does Not Meet IMSR Criteria (${nonQualifying.length} incident${nonQualifying.length !== 1 ? 's' : ''})</strong>
-        — shown here for verification only
-      </div>
-      <div class="block" style="border-color:#e8c070;">
-        <div style="margin-bottom:10px;">${nqReasons}</div>
-      </div>
-      <div class="block" style="border-color:#e8c070;">
-        <div class="section-head" style="color:#7a4a00;">
-          Narrative Lines — Non-Qualifying
-          <button class="copy-btn" style="background:#c87020;" onclick="copyNarrFromBlock(this)">Copy</button>
-        </div>
-        ${nqNarrLines}
-      </div>
-      <div class="block" style="border-color:#e8c070;">
-        <div class="section-head" style="color:#7a4a00;">
-          Table Rows — Non-Qualifying
-          <button class="copy-btn" style="background:#c87020;" onclick="copyRowsFromBlock(this)">Copy Rows</button>
-        </div>
-        <div class="tbl-outer">
-          <table class="imsr nq">
-            <thead><tr>${thCells}</tr></thead>
-            <tbody>${nqTableRows}</tbody>
-          </table>
-        </div>
-      </div>
-    `;
-  }
+  // Non-qualifying fires are now rendered at the bottom of each GACC section
+  const nqHtml = '';
 
   outputEl.style.display = 'block';
   outputEl.innerHTML = `
     <div class="summary">
-      <strong>${qualifying.length}</strong> qualifying across <strong>${gaccKeys.length}</strong> GACC${gaccKeys.length !== 1 ? 's' : ''}
-      · <strong>${nonQualifying.length}</strong> non-qualifying
+      <strong>${qualifying.length}</strong> qualifying · <strong>${nonQualifying.length}</strong> non-qualifying across <strong>${gaccKeys.length}</strong> GACC${gaccKeys.length !== 1 ? 's' : ''}
       <span style="float:right;">
         <button class="copy-btn narr" onclick="copyAllNarr(this)" style="margin-right:6px;">Copy All Narratives</button>
         <button class="copy-btn" onclick="copyAllRows(this)" style="margin-right:6px;">Copy All Rows</button>
@@ -6032,7 +6055,7 @@ function buildCopyLine(f) {
   const { name, parts } = buildNarrativeLine(f);
   const sentence = capitalizeSentences(parts.join('. ') + (parts.length ? '.' : ''));
   const org = (lookupUnit(f.unit) || fv(f.unit) || '').replace(/\s*\([A-Z]{2}\)$/,'') || '[MANAGING ORG]';
-  const cimtLabel = f.hasCIMT ? ' (CIMT ASSIGNED)' : '';
+  const cimtLabel = f.hasNIMO ? ' (NIMO ASSIGNED)' : f.hasCIMT ? ' (CIMT ASSIGNED)' : '';
   const precip = f._precipConfirmed ? ' Precipitation occurred over the fire area yesterday.' : '';
   const prev = prevMatch(f);
   const isNew = !prev;
@@ -6067,12 +6090,22 @@ function buildCopyLine(f) {
 
 function copyAllNarr(btn) {
   // Collect all visible narrative lines in DOM order (respects tranche sort)
-  const divs = document.querySelectorAll('.gacc-section .narr-line[data-inc]:not(.hidden-100)');
-  const lines = Array.from(divs).map(div => {
-    const incNum = div.dataset.inc;
-    const f = allIncidents.find(i => i.f2 === incNum);
-    return f ? buildCopyLine(f) : null;
-  }).filter(Boolean);
+  const lines = [];
+  document.querySelectorAll('.gacc-section .narr-line:not(.hidden-100)').forEach(div => {
+    if (div.dataset.inc) {
+      const f = allIncidents.find(i => i.f2 === div.dataset.inc);
+      if (f) lines.push(buildCopyLine(f));
+    } else if (div.dataset.missed) {
+      const strong = div.querySelector('strong');
+      const span   = div.querySelector('span');
+      const name   = strong ? strong.textContent.trim() : '';
+      const rest   = span  ? span.textContent.trim() : '';
+      const plain  = name + rest;
+      const boldPart = name ? `<b>${name}</b>` : '';
+      const html = `<span style="font-family:Arial,sans-serif;font-size:11pt;">${boldPart}<span style="font-weight:normal;">${rest.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;')}</span></span>`;
+      lines.push({ html, plain });
+    }
+  });
   copyNarrLines(lines, btn, 'Copy All Narratives');
 }
 
@@ -6098,12 +6131,26 @@ function copyAllRows(btn) {
 
 function copyNarrFromBlock(btn) {
   const block = btn.closest('.block');
-  const lines = Array.from(block.querySelectorAll('.narr-line[data-inc]')).map(el => {
-    const incNum = el.dataset.inc;
-    const f = allIncidents.find(i => i.f2 === incNum);
-    return f ? buildCopyLine(f) : null;
-  }).filter(Boolean);
-  copyNarrLines(lines, btn, 'Copy');
+  const lines = [];
+  block.querySelectorAll('.narr-line').forEach(el => {
+    if (el.classList.contains('hidden-100')) return;
+    if (el.dataset.inc) {
+      // Regular 209-sourced fire
+      const f = allIncidents.find(i => i.f2 === el.dataset.inc);
+      if (f) lines.push(buildCopyLine(f));
+    } else if (el.dataset.missed) {
+      // Missed fire — build plain/html from DOM directly
+      const strong = el.querySelector('strong');
+      const span   = el.querySelector('span');
+      const name   = strong ? strong.textContent.trim() : '';
+      const rest   = span  ? span.textContent.trim() : '';
+      const plain  = name + rest;
+      const boldPart = name ? `<b>${name}</b>` : '';
+      const html = `<span style="font-family:Arial,sans-serif;font-size:11pt;">${boldPart}<span style="font-weight:normal;">${rest.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;')}</span></span>`;
+      lines.push({ html, plain });
+    }
+  });
+  copyNarrLines(lines, btn, 'Copy Narratives');
 }
 
 function copyRowsFromBlock(btn) {
@@ -6183,7 +6230,7 @@ function togglePrecip(pill, incNum) {
   const prev      = prevMatch(f);
   const asterisk  = prev ? '' : '* ';
   const managingOrg = (lookupUnit(f.unit) || fv(f.unit) || '').replace(/\s*\([A-Z]{2}\)$/,'') || '[MANAGING ORG]';
-  const cimtLabel = f.hasCIMT ? ' (CIMT ASSIGNED)' : '';
+  const cimtLabel = f.hasNIMO ? ' (NIMO ASSIGNED)' : f.hasCIMT ? ' (CIMT ASSIGNED)' : '';
   const pillHtml  = f._precipConfirmed
     ? `<span class="precip-flag confirmed" title="Click to remove precip statement" onclick="togglePrecip(this,'${incNum}')">🌧 Precip added</span>`
     : `<span class="precip-flag" title="Definitive precipitation detected in boxes 35/40/47" onclick="togglePrecip(this,'${incNum}')">🌧 Add precip statement</span>`;
@@ -6302,13 +6349,28 @@ async function fetchFromNIFC() {
 
 // ── MISSED FIRES ─────────────────────────────────────────────────────────
 
-function buildMissedSection(missed, color) {
-  const thCells = COLS.map(c => `<th>${c.head}</th>`).join('');
-
-  const rows = missed.map(p => {
+// Build narr lines for missed fires (no 209 received) — inline in main narrative block
+function buildMissedNarrLines(missed) {
+  return missed.map(p => {
     const name = normalizeName(p.name || '');
     const unit = (p.unit || '').replace(/-\d+$/, '');
-    // Table row: acres/ppl from prev IMSR, delta cols = 0, rest blank
+    const org  = (lookupUnit(p.unit) || unit || '').replace(/\s*\([A-Z]{2}\)$/, '') || '[MANAGING ORG]';
+    const prevNarr = (p.narrative || '').trim();
+    const suffix = p.missCount >= 2
+      ? 'No new information. Last report unless new information is received.'
+      : 'No new information.';
+    const tail = prevNarr ? `${prevNarr}. ${suffix}` : suffix;
+    return `<div class="narr-line" style="border-left-color:#9090c0;opacity:.8;" data-missed="1">
+      <strong>${name}</strong><span style="font-weight:normal;">, ${org}. ${tail}</span>
+    </div>`;
+  }).join('');
+}
+
+// Build table rows for missed fires
+function buildMissedTableRows(missed) {
+  return missed.map(p => {
+    const name = normalizeName(p.name || '');
+    const unit = (p.unit || '').replace(/-\d+$/, '');
     const cols = [
       name, unit,
       p.acres ? p.acres.toLocaleString() : '---',
@@ -6319,37 +6381,6 @@ function buildMissedSection(missed, color) {
     const tds = COLS.map((c, i) => `<td>${cols[i] || '---'}</td>`).join('');
     return `<tr style="opacity:.7;">${tds}</tr>`;
   }).join('');
-
-  const narrLines = missed.map(p => {
-    const name = normalizeName(p.name || '');
-    const unit = (p.unit || '').replace(/-\d+$/, '');
-    const org  = (lookupUnit(p.unit) || unit || '').replace(/\s*\([A-Z]{2}\)$/, '') || '[MANAGING ORG]';
-    // Narrative: location + fuel from prev IMSR text, stripped of fire behavior onward
-    const prevNarr = (p.narrative || '').trim();
-    const suffix = p.missCount >= 2
-      ? 'No new information. Last report unless new information is received.'
-      : 'No new information.';
-    const tail = prevNarr ? `${prevNarr}. ${suffix}` : suffix;
-    return `<div class="narr-line" style="border-left-color:#9090c0;opacity:.8;" data-missed="1">
-      <strong>${name}</strong><span style="font-weight:normal;">, ${org}. ${tail}</span>
-    </div>`;
-  }).join('');
-
-  return `
-    <div class="block" style="border-color:#c0c0e0;margin-top:8px;">
-      <div class="section-head" style="color:#5050a0;">
-        No 209 Received — ${missed.length} fire${missed.length !== 1 ? 's' : ''}
-        <span style="font-size:10px;color:var(--muted);font-weight:normal;">from previous IMSR · no matching 209 today</span>
-        <button class="copy-btn" style="background:#5050a0;" onclick="copyMissedNarr(this)">Copy Narratives</button>
-      </div>
-      ${narrLines}
-      <div class="tbl-outer" style="margin-top:12px;">
-        <table class="imsr" style="opacity:.7;">
-          <thead><tr>${thCells}</tr></thead>
-          <tbody>${rows}</tbody>
-        </table>
-      </div>
-    </div>`;
 }
 
 function copyMissedNarr(btn) {
