@@ -5966,7 +5966,13 @@ function renderOutput() {
   }
 
   // GACC keys: qualifying, non-qualifying, OR missed-only GACCs
-  const gaccKeys = GACC_ORDER.filter(g => byGacc[g] || nqByGacc[g] || missedByGacc[g]);
+  // GACCs with any active CIMT or NIMO fire float to the top
+  const allGaccKeys = GACC_ORDER.filter(g => byGacc[g] || nqByGacc[g] || missedByGacc[g]);
+  const hasCimtGacc = g => (byGacc[g] || []).some(f => (f.hasCIMT || f.hasNIMO) && !is100(f));
+  const gaccKeys = [
+    ...allGaccKeys.filter(g => hasCimtGacc(g)),
+    ...allGaccKeys.filter(g => !hasCimtGacc(g)),
+  ];
 
   // Build each GACC section (narratives + table)
   const gaccHtml = gaccKeys.map(gacc => {
@@ -5980,39 +5986,57 @@ function renderOutput() {
     const lastRptInc  = incidents.filter(f =>  isLastReport(f) && !is100(f));
     const containedInc = incidents.filter(f => is100(f));
 
-    // Narrative order: active → missed (no 209) → lastReport → 100% → nq
+
+    // Narrative order: active → missed (no 209) → lastReport → 100% (qualifying only)
     const narrLines =
       buildNarrativeLines(activeInc) +
       buildMissedNarrLines(missed) +
       buildNarrativeLines(lastRptInc) +
       buildNarrativeLines(containedInc);
 
-    // Non-qualifying narrative lines at very bottom, dimmed
-    const nqNarrLines = nqFires.map(f => {
-      const { name, parts } = buildNarrativeLine(f);
-      const sentence = capitalizeSentences(parts.join('. ') + (parts.length ? '.' : ''));
-      const managingOrg = (lookupUnit(f.unit) || fv(f.unit) || '').replace(/\s*\([A-Z]{2}\)$/,'') || '<span class="blank">[MANAGING ORG]</span>';
-      const prev = prevMatch(f);
-      const asterisk = prev ? '' : '* ';
-      return `<div class="narr-line nq" data-inc="${f.f2}" data-pct="${f.f8a || 0}" style="opacity:.7;border-left-color:#c8a050;">
-        <strong>${asterisk}${name}</strong><span style="font-weight:normal;">, ${managingOrg}. ${sentence}</span>
-        <span style="font-size:9px;color:#9a6010;margin-left:6px;font-style:italic;">${f._qualifyReason}</span>
-      </div>`;
-    }).join('');
-
-    // Table row order: active → missed → lastReport → 100% → nq
+    // Table row order: active → missed → lastReport → 100% (qualifying only)
     const tableRows =
       buildTableRows(activeInc) +
       buildMissedTableRows(missed) +
       buildTableRows(lastRptInc) +
-      buildTableRows(containedInc) +
-      buildTableRows(nqFires);
+      buildTableRows(containedInc);
 
-    const totalCount = incidents.length + missed.length + nqFires.length;
+    // Non-qualifying fires — separate labeled section, excluded from copy buttons
+    let nqSection = '';
+    if (nqFires.length) {
+      const nqNarrLines = nqFires.map(f => {
+        const { name, parts } = buildNarrativeLine(f);
+        const sentence = capitalizeSentences(parts.join('. ') + (parts.length ? '.' : ''));
+        const managingOrg = (lookupUnit(f.unit) || fv(f.unit) || '').replace(/\s*\([A-Z]{2}\)$/,'') || '<span class="blank">[MANAGING ORG]</span>';
+        const prev = prevMatch(f);
+        const asterisk = prev ? '' : '* ';
+        return `<div class="narr-line nq" data-inc="${f.f2}" data-pct="${f.f8a || 0}" style="opacity:.7;border-left-color:#c8a050;">
+          <strong>${asterisk}${name}</strong><span style="font-weight:normal;">, ${managingOrg}. ${sentence}</span>
+          <span style="font-size:9px;color:#9a6010;margin-left:6px;font-style:italic;">${f._qualifyReason}</span>
+        </div>`;
+      }).join('');
+      const nqTableRows = buildTableRows(nqFires);
+      nqSection = `
+        <div class="block" style="border-color:#e8c070;margin-top:4px;">
+          <div class="section-head" style="color:#7a4a00;font-size:11px;">
+            ⚠ Does Not Meet IMSR Criteria — ${nqFires.length} incident${nqFires.length !== 1 ? 's' : ''}
+            <span style="font-weight:normal;color:var(--muted);margin-left:6px;">shown for reference only · excluded from copy</span>
+          </div>
+          ${nqNarrLines}
+          <div class="tbl-outer" style="margin-top:8px;">
+            <table class="imsr nq" style="opacity:.75;">
+              <thead><tr>${thCells}</tr></thead>
+              <tbody>${nqTableRows}</tbody>
+            </table>
+          </div>
+        </div>`;
+    }
+
+    const cimtBadge = hasCimtGacc(gacc) ? `<span style="font-size:10px;background:#8b1a1a;color:#fff;border-radius:2px;padding:1px 5px;margin-left:6px;font-weight:600;">CIMT</span>` : '';
     return `
       <div class="gacc-section">
         <div class="gacc-section-head" style="border-color:${color};">
-          <span class="gacc-label" style="background:${color};">${gacc}</span>
+          <span class="gacc-label" style="background:${color};">${gacc}</span>${cimtBadge}
           <span style="font-family:'IBM Plex Mono',monospace;font-size:11px;color:var(--muted);">${incidents.length} qualifying${missed.length ? ` · ${missed.length} no 209` : ''}${nqFires.length ? ` · ${nqFires.length} non-qualifying` : ''}</span>
         </div>
         <div class="block">
@@ -6021,7 +6045,6 @@ function renderOutput() {
             <button class="copy-btn narr" onclick="copyNarrFromBlock(this)">Copy Narratives</button>
           </div>
           ${narrLines}
-          ${nqNarrLines}
         </div>
         <div class="block">
           <div class="section-head">
@@ -6035,6 +6058,7 @@ function renderOutput() {
             </table>
           </div>
         </div>
+        ${nqSection}
         ${renderUnitLegend(buildUnitLegend(incidents))}
       </div>
     `;
