@@ -5228,13 +5228,11 @@ function deriveGACC(f) {
 }
 
 function parseLifeSafety(text) {
-  // Extract the box 34 region first — this tightens the match window so
-  // narrative text from adjacent boxes can't cause false positives.
-  // Box 34 starts after "34. Life, Safety..." and ends before box 35 or 36.
-  // Extract box 34 region. If the regex fails (garbled header), return '' rather than
-  // falling back to full-text search — full-text fallback re-exposes the column-layout
-  // false positive where an unchecked label lands near an X from an adjacent column.
-  const blockM = text.match(/34\.\s*Life[\s\S]{0,3000}?(?=35\.|36\.)/i);
+  // Box 34 + closure checkboxes (N/O/P/Q) occupy the same right-column region.
+  // In two-column PDF.js layout, "35. Weather Concerns" label lands inline BEFORE
+  // the closure checkboxes in the text stream — stopping at 35. cuts off the closures.
+  // Stop at 36. only — closure labels (O/P/Q) always appear before "36. Projected Activity".
+  const blockM = text.match(/34\.\s*Life[\s\S]{0,4000}?(?=36\.)/i);
   if (!blockM) return '';
   const scope = blockM[0];
 
@@ -5247,14 +5245,30 @@ function parseLifeSafety(text) {
       : re.test(text);   // fallback: full text
   }
 
-  // Closures: ONLY test the extracted box-34 scope. Never fall back to full text —
-  // the full-text fallback causes false positives when PDF.js column ordering places
-  // an unchecked label near an X from an adjacent column (e.g. Road Closure X and
-  // P. Trail Closure label end up within the match window in the raw text stream).
-  const hasEvac  = /H\.\s*Evacuation\(s\)\s+in\s+Progress[\s\S]{0,10}X|X[\s\S]{0,5}H\.\s*Evacuation/i.test(scope);
-  const hasArea  = /Q\.\s*Area\s+Closure[\s\S]{0,10}X|X[\s\S]{0,5}Q\.\s*Area\s+Closure/i.test(scope);
-  const hasRoad  = /O\.\s*Road\s+Closure[\s\S]{0,10}X|X[\s\S]{0,5}O\.\s*Road\s+Closure/i.test(scope);
-  const hasTrail = /P\.\s*Trail\s+Closure[\s\S]{0,10}X|X[\s\S]{0,5}P\.\s*Trail\s+Closure/i.test(scope);
+  // Closure detection — two rendering patterns:
+  //
+  // Style B (PDF.js per-label): X appears RIGHT after each checked label
+  //   "O. Road Closure X  P. Trail Closure  Q. Area Closure X"
+  //   → label\s+X catches each individually
+  //
+  // Style A (PDF.js clustered): all labels come first, then X cluster after Q
+  //   "O. Road Closure  P. Trail Closure  Q. Area Closure  X  X"
+  //   → label\s+X only catches Q (last label, X immediately follows)
+  //   → count Xs after Q: 1=Q, 2=P+Q, 3+=O+P+Q
+  //
+  // Direct detection (works for Style B, and Style A for Q):
+  const hasQ_direct = /Q\.\s*Area\s+Closure\s+X/i.test(scope);
+  const hasP_direct = /P\.\s*Trail\s+Closure\s+X/i.test(scope);
+  const hasO_direct = /O\.\s*Road\s+Closure\s+X/i.test(scope);
+
+  // Style A fallback — count Xs in tight window after Q.Area label
+  const qTail = (scope.match(/Q\.\s*Area\s+Closure([\s\S]{0,60})/i) || ['',''])[1];
+  const xsAfterQ = (qTail.match(/\bX\b/g) || []).length;
+
+  const hasEvac  = /H\.\s*Evacuation\(s\)\s+in\s+Progress\s+X/i.test(scope);
+  const hasArea  = hasQ_direct || xsAfterQ >= 1;
+  const hasTrail = hasP_direct || xsAfterQ >= 2;
+  const hasRoad  = hasO_direct || xsAfterQ >= 3;
 
   if (!hasEvac && !hasArea && !hasRoad && !hasTrail) return '';
 
@@ -5264,17 +5278,18 @@ function parseLifeSafety(text) {
   if (hasTrail) closures.push('trail');
 
   // Build one combined statement — single "in effect" at the end.
+  // Always plural "closures" even for a single closure type.
   // Examples:
   //   Evacuations in effect
-  //   Area closure in effect
+  //   Area closures in effect
   //   Area and road closures in effect
   //   Area, road and trail closures in effect
-  //   Evacuations and area closure in effect
+  //   Evacuations and area closures in effect
   //   Evacuations, area and road closures in effect
   //   Evacuations, area, road and trail closures in effect
   if (!hasEvac) {
     if (closures.length === 1) {
-      return closures[0].charAt(0).toUpperCase() + closures[0].slice(1) + ' closure in effect';
+      return closures[0].charAt(0).toUpperCase() + closures[0].slice(1) + ' closures in effect';
     } else if (closures.length === 2) {
       return closures[0].charAt(0).toUpperCase() + closures[0].slice(1) + ' and ' + closures[1] + ' closures in effect';
     } else {
@@ -5285,7 +5300,7 @@ function parseLifeSafety(text) {
   if (closures.length === 0) {
     return 'Evacuations in effect';
   } else if (closures.length === 1) {
-    return 'Evacuations and ' + closures[0] + ' closure in effect';
+    return 'Evacuations and ' + closures[0] + ' closures in effect';
   } else if (closures.length === 2) {
     return 'Evacuations, ' + closures[0] + ' and ' + closures[1] + ' closures in effect';
   } else {
