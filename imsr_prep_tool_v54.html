@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>IMSR Prep Tool v4</title>
+<title>IMSR Prep Tool v55</title>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
 <style>
   @import url('https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;600&family=IBM+Plex+Sans:wght@400;500;600&display=swap');
@@ -70,9 +70,12 @@
   .narr-line {
     font-size: 13px; line-height: 1.85; color: var(--text);
     border-left: 3px solid var(--accent); padding: 4px 0 4px 14px;
-    margin-bottom: 10px; word-break: break-word;
+    margin-bottom: 10px; word-break: break-word; cursor: pointer;
+    border-radius: 0 3px 3px 0; transition: background .1s;
   }
   .narr-line:last-of-type { margin-bottom: 0; }
+  .narr-line:hover { background: #faf8f5; }
+  .narr-line.selected { background: #edf7ed; border-left-color: var(--good); outline: 1px solid #b8ddb8; }
   .blank { background: #fff3cd; color: #7a4a00; border-radius: 2px; padding: 0 4px; font-family: 'IBM Plex Mono', monospace; font-size: 11px; }
 
   /* Table */
@@ -153,27 +156,7 @@
   }
   .precip-flag.confirmed { background: #e8f5e8; border-color: #4a9a4a; color: #1a5c1a; }
 
-  /* Debug panel */
-  .debug-toggle {
-    font-family: 'IBM Plex Mono', monospace; font-size: 10px; font-weight: 600;
-    background: none; border: 1px solid var(--border); border-radius: 2px;
-    color: var(--muted); cursor: pointer; padding: 1px 7px; margin-left: 10px;
-    letter-spacing: .04em; vertical-align: middle;
-  }
-  .debug-toggle:hover { border-color: var(--accent2); color: var(--accent2); }
-  .debug-panel {
-    display: none; margin-top: 6px; margin-left: 14px;
-    background: #f5f4f1; border: 1px solid var(--border); border-radius: 3px;
-    padding: 8px 12px; font-family: 'IBM Plex Mono', monospace; font-size: 10px;
-    line-height: 1.7; color: var(--label);
-  }
-  .debug-panel.open { display: block; }
-  .debug-row { display: flex; gap: 12px; border-bottom: 1px solid var(--border); padding: 2px 0; }
-  .debug-row:last-child { border-bottom: none; }
-  .debug-key { color: var(--muted); min-width: 120px; flex-shrink: 0; }
-  .debug-val { color: var(--text); word-break: break-word; }
-  .debug-val.ok { color: var(--good); }
-  .debug-val.warn { color: var(--accent); }
+
   table.imsr.nq th { background: #f0e8d0; }
   table.imsr.nq tr:nth-child(even) td { background: #fdf8f0; }
 
@@ -667,8 +650,6 @@ function parseFields(text) {
   // Final origin ownership: Box 21 if resolved, else Box 2
   f.originOwn = box21code || box2own;
 
-  f._rawText = text;  // retained for debug panel
-
   return f;
 }
 
@@ -677,8 +658,19 @@ function deriveOwn(incNum) {
   const unit = incNum.replace(/-\d+$/, '');
   const parts = unit.split('-');
   if (parts.length < 2) return '';
-  const last = parts[1].slice(-1).toUpperCase();
-  return {'F':'FS','A':'BIA','D':'BLM','P':'NPS','S':'ST','U':'ST','X':'CNTY','Q':'DOW','R':'FWS','T':'TRI'}[last] || last;
+  // Use last ALPHA character — some unit codes end in digits (e.g. LG51) and the
+  // agency suffix is the trailing letter, not the trailing character.
+  const alpha = parts[1].replace(/[^A-Za-z]/g, '');
+  const last = alpha ? alpha.slice(-1).toUpperCase() : '';
+  const code = {'F':'FS','A':'BIA','D':'BLM','P':'NPS','S':'ST','U':'ST','X':'CNTY','Q':'DOW','R':'FWS','T':'TRI'}[last];
+  if (code) return code;
+  // Unrecognized suffix — fall back to unit lookup name.
+  // If the unit name contains "County" it's a county jurisdiction → CNTY.
+  const unitKey = parts.slice(0, 2).join('-'); // e.g. MT-LG51
+  const lookupName = (UNIT_LOOKUP[unitKey] || '').toLowerCase();
+  if (lookupName.includes('county')) return 'CNTY';
+  // Raw suffix as last resort (flags it for human review)
+  return last;
 }
 
 // ── GACC LOOKUP ───────────────────────────────────────────────────────────
@@ -5262,7 +5254,9 @@ const UNIT_LOOKUP = {
 };
 function lookupUnit(unitCode) {
   if (!unitCode) return '';
-  return UNIT_LOOKUP[unitCode] || '';
+  const raw = UNIT_LOOKUP[unitCode] || '';
+  // Normalize spelled-out "National Forest(s)" to "NF" — IMSR standard abbreviation
+  return raw.replace(/National Forests?/g, 'NF');
 }
 
 function deriveGACC(f) {
@@ -5424,13 +5418,20 @@ function parseResources(text) {
     if (t === 'heli')        res.helicopters += vals[i];
     else if (t === 'engine') res.engines     += vals[i];
     else if (t === 'crew') {
-      // Only count crew resources if the column's total personnel >= 18.
-      // This filters out a crew listed in rsrc but with fewer than a full crew's
-      // worth of people assigned. Falls back to counting if pers data is unavailable.
+      // Accumulate crew personnel for post-loop calculation
       const crewPers = (persVals.length > 0 && i < persVals.length) ? persVals[i] : null;
-      if (crewPers === null || crewPers >= 18) res.crews += vals[i];
+      res._crewPersTotal = (res._crewPersTotal || 0) + (crewPers !== null ? crewPers : vals[i] * 18);
+      res._crewRsrcTotal = (res._crewRsrcTotal || 0) + vals[i];
     }
   });
+
+  // NWCG crew standard: minimum 18 personnel per crew.
+  // Correct reported crew count using floor(total_crew_personnel / 18).
+  // If no personnel data available, trust the reported count.
+  if (res._crewRsrcTotal > 0) {
+    const totalCrewPers = res._crewPersTotal || 0;
+    res.crews = totalCrewPers > 0 ? Math.floor(totalCrewPers / 18) : 0;
+  }
 
   return res;
 }
@@ -5531,7 +5532,7 @@ function spellMiles(str) {
   const placeholders = [];
   str = str.replace(STATE_RE, (match, abbr) => {
     placeholders.push(abbr);
-    return ',  STATE' + (placeholders.length - 1) + ' ';
+    return ',  STATE' + (placeholders.length - 1) + ' ';
   });
 
   // Spell out cardinal directions
@@ -5550,7 +5551,7 @@ function spellMiles(str) {
     .replace(/\bW\b/g,   'west');
 
   // Restore state abbreviations
-  str = str.replace(/ STATE(\d+) /g, (_, i) => placeholders[+i]);
+  str = str.replace(/ STATE(\d+) /g, (_, i) => placeholders[+i]);
   // Mid-sentence number rule: spell out if < 10, numeral if >= 10
   // Also normalize mile/miles: singular if 1, plural otherwise, always lowercase
   return str.replace(/\b(\d+)(\s*[Mm]iles?\b)/g, (match, num, suffix) => {
@@ -5895,37 +5896,6 @@ function buildTableRows(incidents) {
   }).join('');
 }
 
-function buildDebugPanel(f) {
-  const uid = 'dbg_' + Math.random().toString(36).slice(2);
-  const orgRaw = lookupUnit(f.unit) || fv(f.unit) || '';
-  const orgClean = orgRaw.replace(/\s*\([A-Z]{2}\)$/, '') || '[not found]';
-
-  // Closure states
-  const txt = (f._rawText || '');
-  const hasH = /H\.\s*Evacuation.*?X|X.*?H\.\s*Evacuation/i.test(txt);
-  const hasO = /O\.\s*Road Closure\s+X/i.test(txt);
-  const hasP = /P\.\s*Trail Closure\s+X/i.test(txt);
-  const hasQ = /Q\.\s*Area Closure\s+X/i.test(txt);
-
-  const rows = [
-    { k: 'Unit code',    v: fv(f.unit),                              warn: !f.unit },
-    { k: 'Lookup →',     v: orgClean,                                warn: orgClean === '[not found]' },
-    { k: 'f28 behavior', v: (f.f28 || '').replace(/\n/g, ' | '),    warn: !f.f28 },
-    { k: 'f29 fuels',    v: f.f29 || '---',                          warn: !f.f29 },
-    { k: 'f34 life/sfty',v: f.f34 || '---',                         warn: false },
-    { k: 'H evac',       v: hasH ? '✓ CHECKED' : '—',               warn: false },
-    { k: 'O road close', v: hasO ? '✓ CHECKED' : '—',               warn: false },
-    { k: 'P trail close',v: hasP ? '✓ CHECKED' : '—',               warn: false },
-    { k: 'Q area close', v: hasQ ? '✓ CHECKED' : '—',               warn: false },
-  ];
-
-  const rowsHtml = rows.map(r =>
-    `<div class="debug-row"><span class="debug-key">${r.k}</span><span class="debug-val${r.warn ? ' warn' : ''}">${r.v}</span></div>`
-  ).join('');
-
-  return `<button class="debug-toggle" onclick="document.getElementById('${uid}').classList.toggle('open')">debug ▾</button>
-<div class="debug-panel" id="${uid}">${rowsHtml}</div>`;
-}
 
 function buildNarrativeLines(incidents, cssClass='') {
   return incidents.map((f) => {
@@ -5933,14 +5903,13 @@ function buildNarrativeLines(incidents, cssClass='') {
     const sentence = capitalizeSentences(parts.join('. ') + (parts.length ? '.' : ''));
     const managingOrg = (lookupUnit(f.unit) || fv(f.unit) || '').replace(/\s*\([A-Z]{2}\)$/,'') || '<span class="blank">[MANAGING ORG]</span>';
     const cimtLabel = f.hasNIMO ? ' (NIMO ASSIGNED)' : f.hasCIMT ? ' (CIMT ASSIGNED)' : '';
-    const debug = buildDebugPanel(f);
     const precipFlag = f._precipDetected
-      ? `<span class="precip-flag${f._precipConfirmed ? ' confirmed' : ''}" title="Definitive precipitation detected in boxes 35/40/47" onclick="togglePrecip(this, '${f.f2}')">🌧 ${f._precipConfirmed ? 'Precip added' : 'Add precip statement'}</span>`
+      ? `<span class="precip-flag${f._precipConfirmed ? ' confirmed' : ''}" title="Definitive precipitation detected in boxes 35/40/47" onclick="event.stopPropagation();togglePrecip(this,'${f.f2}')">🌧 ${f._precipConfirmed ? 'Precip added' : 'Add precip statement'}</span>`
       : '';
     const prev = prevMatch(f);
     const isNew = !prev;
     const asterisk = isNew ? '* ' : '';
-    return `<div class="narr-line ${cssClass}" data-inc="${f.f2}" data-pct="${f.f8a || 0}"><strong>${asterisk}${name}</strong><span style="font-weight:normal;">, ${managingOrg}${cimtLabel}. ${sentence}${precipFlag}</span>${debug}</div>`;
+    return `<div class="narr-line ${cssClass}" data-inc="${f.f2}" data-pct="${f.f8a || 0}" onclick="toggleNarrSelect(this)"><strong>${asterisk}${name}</strong><span style="font-weight:normal;">, ${managingOrg}${cimtLabel}. ${sentence}${precipFlag}</span></div>`;
   }).join('');
 }
 
@@ -6230,15 +6199,33 @@ function buildCopyLine(f) {
   const tail = `, ${org}${cimtLabel}. ${body}`;
   const plain = `${asterisk}${name}${tail}`;
   // Bold only the asterisk+name; rest is normal weight
-  const boldPart = asterisk ? `<b>* ${name}</b>` : name;
+  const boldPart = asterisk ? `<b>* ${name}</b>` : `<b>${name}</b>`;
   const html = `<span style="font-family:Arial,sans-serif;font-size:11pt;">${boldPart}<span style="font-weight:normal;">${tail.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;')}</span></span>`;
   return { html, plain };
 }
 
+function toggleNarrSelect(el) {
+  el.classList.toggle('selected');
+  // Update the per-GACC copy button label
+  const block = el.closest('.block');
+  if (!block) return;
+  const btn = block.querySelector('.copy-btn.narr');
+  if (!btn) return;
+  const count = block.querySelectorAll('.narr-line.selected').length;
+  btn.textContent = count > 0 ? `Copy ${count} Selected` : 'Copy Narratives';
+  // Update the global Copy All button
+  const allSelected = document.querySelectorAll('.narr-line.selected').length;
+  const allBtn = document.querySelector('.copy-btn.narr[onclick="copyAllNarr(this)"]');
+  if (allBtn) allBtn.textContent = allSelected > 0 ? `Copy ${allSelected} Selected` : 'Copy All Narratives';
+}
+
 function copyAllNarr(btn) {
-  // Collect all visible narrative lines in DOM order (respects tranche sort)
+  // Collect visible narrative lines — selected if any, otherwise all
+  const allVisible = Array.from(document.querySelectorAll('.gacc-section .narr-line:not(.hidden-100)'));
+  const selected   = allVisible.filter(el => el.classList.contains('selected'));
+  const targets    = selected.length > 0 ? selected : allVisible;
   const lines = [];
-  document.querySelectorAll('.gacc-section .narr-line:not(.hidden-100)').forEach(div => {
+  targets.forEach(div => {
     if (div.dataset.inc) {
       const f = allIncidents.find(i => i.f2 === div.dataset.inc);
       if (f) lines.push(buildCopyLine(f));
@@ -6278,15 +6265,15 @@ function copyAllRows(btn) {
 
 function copyNarrFromBlock(btn) {
   const block = btn.closest('.block');
+  const allLines = Array.from(block.querySelectorAll('.narr-line:not(.hidden-100)'));
+  const selected = allLines.filter(el => el.classList.contains('selected'));
+  const targets  = selected.length > 0 ? selected : allLines;
   const lines = [];
-  block.querySelectorAll('.narr-line').forEach(el => {
-    if (el.classList.contains('hidden-100')) return;
+  targets.forEach(el => {
     if (el.dataset.inc) {
-      // Regular 209-sourced fire
       const f = allIncidents.find(i => i.f2 === el.dataset.inc);
       if (f) lines.push(buildCopyLine(f));
     } else if (el.dataset.missed) {
-      // Missed fire — build plain/html from DOM directly
       const strong = el.querySelector('strong');
       const span   = el.querySelector('span');
       const name   = strong ? strong.textContent.trim() : '';
@@ -6297,7 +6284,7 @@ function copyNarrFromBlock(btn) {
       lines.push({ html, plain });
     }
   });
-  copyNarrLines(lines, btn, 'Copy Narratives');
+  copyNarrLines(lines, btn, selected.length > 0 ? 'Copy Narratives' : 'Copy Narratives');
 }
 
 function copyRowsFromBlock(btn) {
@@ -6386,30 +6373,54 @@ function togglePrecip(pill, incNum) {
 }
 
 // Copy narrative lines with mixed bold formatting for Word
+// Uses contenteditable + execCommand — synchronous, no clipboard-write permission needed,
+// works reliably on repeated clicks even after tabbing away to Word.
+function buildNarrHtml(lines) {
+  // Use real empty <p> spacers between narratives — Word ignores CSS margin-bottom on paste,
+  // but cannot collapse an actual empty paragraph node.
+  const NARR  = `font-family:Arial,sans-serif;font-size:11pt;line-height:1.15;margin:0;padding:0;`;
+  const SPACE = `font-family:Arial,sans-serif;font-size:11pt;line-height:1.0;margin:0;padding:0;`;
+  return lines.map((l, i) => {
+    const p = `<p style="${NARR}">${l.html}</p>`;
+    const spacer = i < lines.length - 1 ? `<p style="${SPACE}"><span style="font-size:11pt;">&nbsp;</span></p>` : '';
+    return p + spacer;
+  }).join('');
+}
+
 function copyNarrLines(lines, btn, resetLabel) {
-  const htmlLines = lines.map(l => l.html).join('<br>');
-  const plainLines = lines.map(l => l.plain).join('\n');
-  const fullHtml = `<html><body>${htmlLines}</body></html>`;
-  try {
-    const item = new ClipboardItem({
-      'text/html':  new Blob([fullHtml],   { type: 'text/html' }),
-      'text/plain': new Blob([plainLines], { type: 'text/plain' })
-    });
-    navigator.clipboard.write([item]).then(() => {
-      btn.textContent = '✓ Copied!';
-      setTimeout(() => btn.textContent = resetLabel, 2000);
-    }).catch(() => {
-      navigator.clipboard.writeText(plainLines).then(() => {
-        btn.textContent = '✓ Copied!';
-        setTimeout(() => btn.textContent = resetLabel, 2000);
-      });
-    });
-  } catch(e) {
-    navigator.clipboard.writeText(plainLines).then(() => {
-      btn.textContent = '✓ Copied!';
-      setTimeout(() => btn.textContent = resetLabel, 2000);
-    });
-  }
+  const htmlContent = buildNarrHtml(lines);
+
+  // Create off-screen contenteditable, select it, execCommand copy
+  const el = document.createElement('div');
+  el.setAttribute('contenteditable', 'true');
+  el.style.cssText = 'position:fixed;top:-9999px;left:-9999px;opacity:0;pointer-events:none;white-space:normal;';
+  el.innerHTML = htmlContent;
+  document.body.appendChild(el);
+
+  const range = document.createRange();
+  range.selectNodeContents(el);
+  const sel = window.getSelection();
+  sel.removeAllRanges();
+  sel.addRange(range);
+
+  let ok = false;
+  try { ok = document.execCommand('copy'); } catch(e) {}
+
+  sel.removeAllRanges();
+  document.body.removeChild(el);
+
+  btn.textContent = ok ? '✓ Copied!' : '✗ Copy failed — use Ctrl+C';
+  setTimeout(() => {
+    // Restore label accounting for current selection count
+    const block = btn.closest('.block');
+    if (block) {
+      const n = block.querySelectorAll('.narr-line.selected').length;
+      btn.textContent = n > 0 ? `Copy ${n} Selected` : resetLabel;
+    } else {
+      const n = document.querySelectorAll('.narr-line.selected').length;
+      btn.textContent = n > 0 ? `Copy ${n} Selected` : resetLabel;
+    }
+  }, 2000);
 }
 
 function applyNarrFilter(val) {
@@ -6507,7 +6518,7 @@ function buildMissedNarrLines(missed) {
       ? 'No new information. Last report unless new information is received.'
       : 'No new information.';
     const tail = prevNarr ? `${prevNarr}. ${suffix}` : suffix;
-    return `<div class="narr-line" style="border-left-color:#9090c0;opacity:.8;" data-missed="1">
+    return `<div class="narr-line" style="border-left-color:#9090c0;opacity:.8;" data-missed="1" onclick="toggleNarrSelect(this)">
       <strong>${name}</strong><span style="font-weight:normal;">, ${org}. ${tail}</span>
     </div>`;
   }).join('');
@@ -6634,6 +6645,32 @@ function prevMatch(f) {
   }
   return null;
 }
+
+// Intercept Ctrl+C — if any narr-lines are selected, override clipboard
+// with properly spaced HTML so Word paste looks the same as button copy.
+document.addEventListener('copy', function(e) {
+  const selected = Array.from(document.querySelectorAll('.narr-line.selected'));
+  if (selected.length === 0) return; // nothing selected — let browser handle it
+  e.preventDefault();
+  const lines = [];
+  selected.forEach(el => {
+    if (el.dataset.inc) {
+      const f = allIncidents.find(i => i.f2 === el.dataset.inc);
+      if (f) lines.push(buildCopyLine(f));
+    } else if (el.dataset.missed) {
+      const strong = el.querySelector('strong');
+      const span   = el.querySelector('span');
+      const name   = strong ? strong.textContent.trim() : '';
+      const rest   = span  ? span.textContent.trim()   : '';
+      const boldPart = name ? `<b>${name}</b>` : '';
+      const html = `<span style="font-family:Arial,sans-serif;font-size:11pt;">${boldPart}<span style="font-weight:normal;">${rest.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;')}</span></span>`;
+      lines.push({ html, plain: name + rest });
+    }
+  });
+  if (!lines.length) return;
+  e.clipboardData.setData('text/html',  buildNarrHtml(lines));
+  e.clipboardData.setData('text/plain', lines.map(l => l.plain).join('\n\n'));
+});
 
 function clearAll() {
   allIncidents = [];
