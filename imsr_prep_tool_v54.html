@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>IMSR Prep Tool v55</title>
+<title>IMSR Prep Tool v57</title>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
 <style>
   @import url('https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;600&family=IBM+Plex+Sans:wght@400;500;600&display=swap');
@@ -76,6 +76,11 @@
   .narr-line:last-of-type { margin-bottom: 0; }
   .narr-line:hover { background: #faf8f5; }
   .narr-line.selected { background: #edf7ed; border-left-color: var(--good); outline: 1px solid #b8ddb8; }
+  .last-rpt-badge { display: inline-block; font-size: 9px; font-weight: 700; color: #fff; background: #d35400; padding: 1px 5px; border-radius: 3px; margin-left: 6px; vertical-align: middle; letter-spacing: 0.3px; cursor: help; }
+  .narr-line.last-rpt { border-left-color: #d35400; background: #fef5ed; }
+  .delete-btn { background: #c0392b; color: #fff; border: none; padding: 4px 12px; border-radius: 4px; cursor: pointer; font-size: 11px; font-weight: 600; margin-left: 6px; }
+  .delete-btn:hover { background: #a93226; }
+  .delete-btn:disabled { background: #ccc; cursor: not-allowed; }
   .blank { background: #fff3cd; color: #7a4a00; border-radius: 2px; padding: 0 4px; font-family: 'IBM Plex Mono', monospace; font-size: 11px; }
 
   /* Table */
@@ -95,6 +100,7 @@
   table.imsr th:first-child { text-align: left; }
   table.imsr tr:nth-child(even) td { background: #faf9f7; }
   table.imsr td.manual { background: #f0f7ff !important; }
+  table.imsr tr.ctn100 td { background: #e8f2fd !important; }
   table.imsr td.empty { color: var(--text); }
   table.imsr td input {
     background: transparent; border: none; outline: none;
@@ -211,6 +217,8 @@ const fileListEl = document.getElementById('file-list');
 let allIncidents = [];
 // Previous IMSR data for comparison: Map of normKey → {name, unit, acres, ppl, pct}
 let prevIMSR = null;
+let _btnCopy = false; // bypass copy listener during button-triggered copies
+let deletedFires = new Set(); // keys of fires manually removed by user
 
 // Accept PDFs by MIME type OR extension — Windows drag-from-Explorer often sends empty MIME
 function isPDF(f) {
@@ -582,7 +590,7 @@ function parseFields(text) {
   const box35 = grabBlock(text, /35\.\s*[\s\S]{0,200}?:\s*/i, /36\.|Narrative:/i);
   const box36 = grabBlock(text, /36\.\s*[\s\S]{0,200}?:\s*/i, /37\.|Narrative:/i);
   const box37 = grabBlock(text, /37\.\s*[\s\S]{0,200}?:\s*/i, /38\.|Narrative:/i);
-  const box38 = grabBlock(text, /38\.\s*[\s\S]{0,200}?:\s*/i, /39\.|Narrative:/i);
+  const box38 = grabBlock(text, /38\.\s*[\s\S]{0,600}?:\s*/i, /39\.|Narrative:/i);
   const box40 = grabBlock(text, /40\.\s*[\s\S]{0,200}?:\s*/i, /41\.|Narrative:/i);
   const box41 = grabBlock(text, /41\.\s*[\s\S]{0,200}?:\s*/i, /42\.|Narrative:/i);
   const box47 = grabBlock(text, /47\.\s*[\s\S]{0,200}?:\s*/i, /48\.|Narrative:/i);
@@ -699,6 +707,695 @@ function deriveOwn(incNum) {
 }
 
 // ── GACC LOOKUP ───────────────────────────────────────────────────────────
+// Unit-code-level GACC overrides — checked before state-level mapping.
+// Source: Unit_ID_vs_GACC.xlsx (NICC dispatch center assignments)
+// Manual overrides noted with comments.
+const UNIT_GACC_OVERRIDE = {
+  // Manual override — Perry confirmed
+  'MT-BIP': 'RMCC',  // Bighorn Canyon NRA — dispatched through RMCC
+
+  // EACC
+  'NE-BCR': 'EACC',
+
+  // GBCC
+  'AZ-ASD': 'GBCC',
+  'AZ-GLP': 'GBCC',
+  'AZ-PIP': 'GBCC',
+  'AZ-RAP': 'GBCC',
+  'CA-RMQ': 'GBCC',
+  'ID-10BN': 'GBCC',
+  'ID-1AX': 'GBCC',
+  'ID-1BN': 'GBCC',
+  'ID-1FN': 'GBCC',
+  'ID-1GX': 'GBCC',
+  'ID-1JN': 'GBCC',
+  'ID-1MN': 'GBCC',
+  'ID-1ON': 'GBCC',
+  'ID-1PX': 'GBCC',
+  'ID-1TN': 'GBCC',
+  'ID-1VX': 'GBCC',
+  'ID-1WX': 'GBCC',
+  'ID-2BN': 'GBCC',
+  'ID-2CX': 'GBCC',
+  'ID-2FN': 'GBCC',
+  'ID-2PN': 'GBCC',
+  'ID-3CN': 'GBCC',
+  'ID-4BN': 'GBCC',
+  'ID-5CN': 'GBCC',
+  'ID-6BX': 'GBCC',
+  'ID-8BIN': 'GBCC',
+  'ID-8BN': 'GBCC',
+  'ID-ADX': 'GBCC',
+  'ID-BLR': 'GBCC',
+  'ID-BLX': 'GBCC',
+  'ID-BOD': 'GBCC',
+  'ID-BOF': 'GBCC',
+  'ID-BRD': 'GBCC',
+  'ID-BUD': 'GBCC',
+  'ID-CAX': 'GBCC',
+  'ID-CHD': 'GBCC',
+  'ID-CMP': 'GBCC',
+  'ID-CMX': 'GBCC',
+  'ID-CRP': 'GBCC',
+  'ID-CSR': 'GBCC',
+  'ID-CTF': 'GBCC',
+  'ID-CUX': 'GBCC',
+  'ID-DFR': 'GBCC',
+  'ID-EIS': 'GBCC',
+  'ID-ELX': 'GBCC',
+  'ID-FHA': 'GBCC',
+  'ID-FRD': 'GBCC',
+  'ID-GJX': 'GBCC',
+  'ID-GLR': 'GBCC',
+  'ID-GOX': 'GBCC',
+  'ID-HFP': 'GBCC',
+  'ID-HFR': 'GBCC',
+  'ID-IDS': 'GBCC',
+  'ID-IFD': 'GBCC',
+  'ID-INE': 'GBCC',
+  'ID-IOEM': 'GBCC',
+  'ID-JAD': 'GBCC',
+  'ID-JMX': 'GBCC',
+  'ID-KER': 'GBCC',
+  'ID-LEX': 'GBCC',
+  'ID-LNX': 'GBCC',
+  'ID-LPE': 'GBCC',
+  'ID-MHQ': 'GBCC',
+  'ID-MNR': 'GBCC',
+  'ID-MNX': 'GBCC',
+  'ID-MVH': 'GBCC',
+  'ID-MVX': 'GBCC',
+  'ID-OWD': 'GBCC',
+  'ID-OWX': 'GBCC',
+  'ID-OYNG': 'GBCC',
+  'ID-PAF': 'GBCC',
+  'ID-PAS': 'GBCC',
+  'ID-PFN': 'GBCC',
+  'ID-PLX': 'GBCC',
+  'ID-POD': 'GBCC',
+  'ID-SCF': 'GBCC',
+  'ID-SFD': 'GBCC',
+  'ID-SFH': 'GBCC',
+  'ID-SHD': 'GBCC',
+  'ID-SIS': 'GBCC',
+  'ID-SRL': 'GBCC',
+  'ID-STF': 'GBCC',
+  'ID-SWS': 'GBCC',
+  'ID-TFD': 'GBCC',
+  'ID-TWX': 'GBCC',
+  'ID-UPD': 'GBCC',
+  'WY-BTF': 'GBCC',
+  'WY-GTP': 'GBCC',
+  'WY-JRP': 'GBCC',
+  'WY-NER': 'GBCC',
+  'WY-TDX': 'GBCC',
+
+  // NOPS
+  'AS-ASP': 'NOPS',
+  'AS-PPOW': 'NOPS',
+  'GU-BMQ': 'NOPS',
+  'GU-GFOW': 'NOPS',
+  'GU-GNQ': 'NOPS',
+  'GU-WPP': 'NOPS',
+  'HI-AKP': 'NOPS',
+  'HI-HAR': 'NOPS',
+  'HI-HAWX': 'NOPS',
+  'HI-HFO': 'NOPS',
+  'HI-HFOW': 'NOPS',
+  'HI-HIR': 'NOPS',
+  'HI-HIS': 'NOPS',
+  'HI-HKP': 'NOPS',
+  'HI-HLR': 'NOPS',
+  'HI-HMQ': 'NOPS',
+  'HI-HNLX': 'NOPS',
+  'HI-HNR': 'NOPS',
+  'HI-HOP': 'NOPS',
+  'HI-HVP': 'NOPS',
+  'HI-JCR': 'NOPS',
+  'HI-KAP': 'NOPS',
+  'HI-KAUX': 'NOPS',
+  'HI-KHP': 'NOPS',
+  'HI-KIR': 'NOPS',
+  'HI-KIS': 'NOPS',
+  'HI-KKR': 'NOPS',
+  'HI-KMQ': 'NOPS',
+  'HI-KRNG': 'NOPS',
+  'HI-KWNG': 'NOPS',
+  'HI-KYNG': 'NOPS',
+  'HI-MAS': 'NOPS',
+  'HI-MAUX': 'NOPS',
+  'HI-OAS': 'NOPS',
+  'HI-PCR': 'NOPS',
+  'HI-PHNQ': 'NOPS',
+  'HI-PHP': 'NOPS',
+  'HI-PHR': 'NOPS',
+  'HI-PMNQ': 'NOPS',
+  'HI-PRHW': 'NOPS',
+  'HI-PTYQ': 'NOPS',
+  'HI-PUP': 'NOPS',
+  'HI-PYNG': 'NOPS',
+  'HI-RYNG': 'NOPS',
+  'HI-SFYQ': 'NOPS',
+  'HI-TYNG': 'NOPS',
+  'HI-USP': 'NOPS',
+  'HI-UYNG': 'NOPS',
+  'HI-WYNG': 'NOPS',
+  'MP-AMP': 'NOPS',
+
+  // NRCC
+  'ND-ADR': 'NRCC',
+  'ND-AMR': 'NRCC',
+  'ND-AUR': 'NRCC',
+  'ND-AWR': 'NRCC',
+  'ND-BMW': 'NRCC',
+  'ND-CDR': 'NRCC',
+  'ND-CLR': 'NRCC',
+  'ND-CWR': 'NRCC',
+  'ND-DAL': 'NRCC',
+  'ND-DLR': 'NRCC',
+  'ND-DPF': 'NRCC',
+  'ND-DVR': 'NRCC',
+  'ND-ESR': 'NRCC',
+  'ND-FBA': 'NRCC',
+  'ND-FLR': 'NRCC',
+  'ND-FTA': 'NRCC',
+  'ND-FUP': 'NRCC',
+  'ND-GDR': 'NRCC',
+  'ND-GFAQ': 'NRCC',
+  'ND-GFW': 'NRCC',
+  'ND-GYNG': 'NRCC',
+  'ND-HLR': 'NRCC',
+  'ND-JCR': 'NRCC',
+  'ND-JDR': 'NRCC',
+  'ND-KRP': 'NRCC',
+  'ND-KSR': 'NRCC',
+  'ND-KUR': 'NRCC',
+  'ND-LAR': 'NRCC',
+  'ND-LGR': 'NRCC',
+  'ND-LIR': 'NRCC',
+  'ND-LLR': 'NRCC',
+  'ND-LMR': 'NRCC',
+  'ND-LNR': 'NRCC',
+  'ND-LWR': 'NRCC',
+  'ND-LZR': 'NRCC',
+  'ND-MCR': 'NRCC',
+  'ND-MIAQ': 'NRCC',
+  'ND-NDD': 'NRCC',
+  'ND-NDS': 'NRCC',
+  'ND-SDR': 'NRCC',
+  'ND-SER': 'NRCC',
+  'ND-SHDN': 'NRCC',
+  'ND-SHR': 'NRCC',
+  'ND-STR': 'NRCC',
+  'ND-TDR': 'NRCC',
+  'ND-TMA': 'NRCC',
+  'ND-TRP': 'NRCC',
+  'ND-TWR': 'NRCC',
+  'ND-USR': 'NRCC',
+  'ND-VCR': 'NRCC',
+  'ND-VFR': 'NRCC',
+  'ND-WLR': 'NRCC',
+  'SD-HRX': 'NRCC',
+  'SD-SDD': 'NRCC',
+  'WY-YNP': 'NRCC',
+
+  // SACC
+  'DC-AAP': 'SACC',
+  'DC-ACP': 'SACC',
+  'DC-CDP': 'SACC',
+  'DC-CGP': 'SACC',
+  'DC-CHP': 'SACC',
+  'DC-CWP': 'SACC',
+  'DC-ESO': 'SACC',
+  'DC-FDP': 'SACC',
+  'DC-FE3': 'SACC',
+  'DC-FEMA': 'SACC',
+  'DC-FOP': 'SACC',
+  'DC-FRP': 'SACC',
+  'DC-FTP': 'SACC',
+  'DC-FWP': 'SACC',
+  'DC-GMP': 'SACC',
+  'DC-JEP': 'SACC',
+  'DC-KGP': 'SACC',
+  'DC-KWP': 'SACC',
+  'DC-LIP': 'SACC',
+  'DC-MMP': 'SACC',
+  'DC-NAP': 'SACC',
+  'DC-NEP': 'SACC',
+  'DC-NOJC': 'SACC',
+  'DC-NPP': 'SACC',
+  'DC-OPP': 'SACC',
+  'DC-OSP': 'SACC',
+  'DC-PAP': 'SACC',
+  'DC-PIP': 'SACC',
+  'DC-PMP': 'SACC',
+  'DC-RCP': 'SACC',
+  'DC-SBP': 'SACC',
+  'DC-SUP': 'SACC',
+  'DC-TJP': 'SACC',
+  'DC-USFA': 'SACC',
+  'DC-VVP': 'SACC',
+  'DC-WHP': 'SACC',
+  'DC-WNQ': 'SACC',
+  'DC-WOA': 'SACC',
+  'DC-WOD': 'SACC',
+  'DC-WOF': 'SACC',
+  'DC-WOI': 'SACC',
+  'DC-WOO': 'SACC',
+  'DC-WOP': 'SACC',
+  'DC-WOR': 'SACC',
+  'MD-GRP': 'SACC',
+  'MD-WOW': 'SACC',
+  'PR-BESR': 'SACC',
+  'PR-BNYQ': 'SACC',
+  'PR-CBR': 'SACC',
+  'PR-CIR': 'SACC',
+  'PR-CUR': 'SACC',
+  'PR-DER': 'SACC',
+  'PR-DNR': 'SACC',
+  'PR-EYF': 'SACC',
+  'PR-FE2': 'SACC',
+  'PR-LCR': 'SACC',
+  'PR-PPER': 'SACC',
+  'PR-PRS': 'SACC',
+  'PR-SAP': 'SACC',
+  'PR-SYNG': 'SACC',
+  'PR-VQR': 'SACC',
+  'VI-BIP': 'SACC',
+  'VI-BIR': 'SACC',
+  'VI-CHP': 'SACC',
+  'VI-FE2': 'SACC',
+  'VI-GCR': 'SACC',
+  'VI-SPR': 'SACC',
+  'VI-SRP': 'SACC',
+  'VI-VIP': 'SACC',
+  'VI-VIS': 'SACC',
+  'WV-APP': 'SACC',
+
+  // SOPS
+  'CA-ABL': 'SOPS',
+  'CA-AGL': 'SOPS',
+  'CA-AMQ': 'SOPS',
+  'CA-AND': 'SOPS',
+  'CA-ANF': 'SOPS',
+  'CA-ANG': 'SOPS',
+  'CA-APP': 'SOPS',
+  'CA-ARC': 'SOPS',
+  'CA-ASP': 'SOPS',
+  'CA-ATW': 'SOPS',
+  'CA-AUB': 'SOPS',
+  'CA-AVA': 'SOPS',
+  'CA-AVI': 'SOPS',
+  'CA-AVP': 'SOPS',
+  'CA-BAD': 'SOPS',
+  'CA-BAK': 'SOPS',
+  'CA-BAN': 'SOPS',
+  'CA-BAR': 'SOPS',
+  'CA-BBB': 'SOPS',
+  'CA-BCR': 'SOPS',
+  'CA-BDC': 'SOPS',
+  'CA-BDF': 'SOPS',
+  'CA-BDO': 'SOPS',
+  'CA-BDU': 'SOPS',
+  'CA-BDY': 'SOPS',
+  'CA-BEU': 'SOPS',
+  'CA-BFA': 'SOPS',
+  'CA-BGO': 'SOPS',
+  'CA-BGP': 'SOPS',
+  'CA-BHL': 'SOPS',
+  'CA-BID': 'SOPS',
+  'CA-BKD': 'SOPS',
+  'CA-BKF': 'SOPS',
+  'CA-BLD': 'SOPS',
+  'CA-BLF': 'SOPS',
+  'CA-BLR': 'SOPS',
+  'CA-BLY': 'SOPS',
+  'CA-BMQ': 'SOPS',
+  'CA-BMT': 'SOPS',
+  'CA-BON': 'SOPS',
+  'CA-BRE': 'SOPS',
+  'CA-BRI': 'SOPS',
+  'CA-BRK': 'SOPS',
+  'CA-BRR': 'SOPS',
+  'CA-BRW': 'SOPS',
+  'CA-BSH': 'SOPS',
+  'CA-CAP': 'SOPS',
+  'CA-CBD': 'SOPS',
+  'CA-CDD': 'SOPS',
+  'CA-CDR': 'SOPS',
+  'CA-CED': 'SOPS',
+  'CA-CHO': 'SOPS',
+  'CA-CHV': 'SOPS',
+  'CA-CLNQ': 'SOPS',
+  'CA-CLP': 'SOPS',
+  'CA-CLV': 'SOPS',
+  'CA-CLX': 'SOPS',
+  'CA-CMB': 'SOPS',
+  'CA-CMC': 'SOPS',
+  'CA-CMNQ': 'SOPS',
+  'CA-CMP': 'SOPS',
+  'CA-CND': 'SOPS',
+  'CA-CNF': 'SOPS',
+  'CA-CNP': 'SOPS',
+  'CA-CONQ': 'SOPS',
+  'CA-COP': 'SOPS',
+  'CA-COR': 'SOPS',
+  'CA-COS': 'SOPS',
+  'CA-CPK': 'SOPS',
+  'CA-CPT': 'SOPS',
+  'CA-CRC': 'SOPS',
+  'CA-CRD': 'SOPS',
+  'CA-CRF': 'SOPS',
+  'CA-CRP': 'SOPS',
+  'CA-CTP': 'SOPS',
+  'CA-CUL': 'SOPS',
+  'CA-CVR': 'SOPS',
+  'CA-CVV': 'SOPS',
+  'CA-CYN': 'SOPS',
+  'CA-CZP': 'SOPS',
+  'CA-DAG': 'SOPS',
+  'CA-DBR': 'SOPS',
+  'CA-DIN': 'SOPS',
+  'CA-DMR': 'SOPS',
+  'CA-DNY': 'SOPS',
+  'CA-DPP': 'SOPS',
+  'CA-DSF': 'SOPS',
+  'CA-DSH': 'SOPS',
+  'CA-DVF': 'SOPS',
+  'CA-DVI': 'SOPS',
+  'CA-DVP': 'SOPS',
+  'CA-EBB': 'SOPS',
+  'CA-ECD': 'SOPS',
+  'CA-ECN': 'SOPS',
+  'CA-ECNQ': 'SOPS',
+  'CA-EDAQ': 'SOPS',
+  'CA-EFF': 'SOPS',
+  'CA-ELC': 'SOPS',
+  'CA-ELS': 'SOPS',
+  'CA-ESC': 'SOPS',
+  'CA-EVL': 'SOPS',
+  'CA-EXE': 'SOPS',
+  'CA-FCO': 'SOPS',
+  'CA-FDA': 'SOPS',
+  'CA-FIV': 'SOPS',
+  'CA-FKU': 'SOPS',
+  'CA-FLM': 'SOPS',
+  'CA-FMV': 'SOPS',
+  'CA-FOW': 'SOPS',
+  'CA-FRB': 'SOPS',
+  'CA-FRN': 'SOPS',
+  'CA-FUL': 'SOPS',
+  'CA-FVY': 'SOPS',
+  'CA-GCS': 'SOPS',
+  'CA-GGV': 'SOPS',
+  'CA-GLN': 'SOPS',
+  'CA-GNR': 'SOPS',
+  'CA-GNZ': 'SOPS',
+  'CA-GRN': 'SOPS',
+  'CA-GRR': 'SOPS',
+  'CA-GUA': 'SOPS',
+  'CA-GUS': 'SOPS',
+  'CA-HAN': 'SOPS',
+  'CA-HCF': 'SOPS',
+  'CA-HES': 'SOPS',
+  'CA-HFR': 'SOPS',
+  'CA-HGS': 'SOPS',
+  'CA-HIG': 'SOPS',
+  'CA-HLT': 'SOPS',
+  'CA-HLV': 'SOPS',
+  'CA-HLYQ': 'SOPS',
+  'CA-HMB': 'SOPS',
+  'CA-HMT': 'SOPS',
+  'CA-HOL': 'SOPS',
+  'CA-HPR': 'SOPS',
+  'CA-HRT': 'SOPS',
+  'CA-HTB': 'SOPS',
+  'CA-IBNQ': 'SOPS',
+  'CA-IDL': 'SOPS',
+  'CA-IDP': 'SOPS',
+  'CA-IMB': 'SOPS',
+  'CA-IMP': 'SOPS',
+  'CA-IMR': 'SOPS',
+  'CA-IND': 'SOPS',
+  'CA-INF': 'SOPS',
+  'CA-INW': 'SOPS',
+  'CA-IRYQ': 'SOPS',
+  'CA-JST': 'SOPS',
+  'CA-JTP': 'SOPS',
+  'CA-JUN': 'SOPS',
+  'CA-JVF': 'SOPS',
+  'CA-KCF': 'SOPS',
+  'CA-KEE': 'SOPS',
+  'CA-KEY': 'SOPS',
+  'CA-KIN': 'SOPS',
+  'CA-KNG': 'SOPS',
+  'CA-KNP': 'SOPS',
+  'CA-KRN': 'SOPS',
+  'CA-KRR': 'SOPS',
+  'CA-LAAQ': 'SOPS',
+  'CA-LAB': 'SOPS',
+  'CA-LAC': 'SOPS',
+  'CA-LAQ': 'SOPS',
+  'CA-LAT': 'SOPS',
+  'CA-LBN': 'SOPS',
+  'CA-LEE': 'SOPS',
+  'CA-LEM': 'SOPS',
+  'CA-LFD': 'SOPS',
+  'CA-LGV': 'SOPS',
+  'CA-LHH': 'SOPS',
+  'CA-LIB': 'SOPS',
+  'CA-LKS': 'SOPS',
+  'CA-LMD': 'SOPS',
+  'CA-LMP': 'SOPS',
+  'CA-LMS': 'SOPS',
+  'CA-LNG': 'SOPS',
+  'CA-LNQ': 'SOPS',
+  'CA-LNS': 'SOPS',
+  'CA-LOB': 'SOPS',
+  'CA-LOD': 'SOPS',
+  'CA-LOM': 'SOPS',
+  'CA-LPE': 'SOPS',
+  'CA-LPF': 'SOPS',
+  'CA-LPN': 'SOPS',
+  'CA-LPR': 'SOPS',
+  'CA-LSN': 'SOPS',
+  'CA-LUR': 'SOPS',
+  'CA-LVG': 'SOPS',
+  'CA-LVN': 'SOPS',
+  'CA-LYNG': 'SOPS',
+  'CA-MAM': 'SOPS',
+  'CA-MAN': 'SOPS',
+  'CA-MAQ': 'SOPS',
+  'CA-MAR': 'SOPS',
+  'CA-MCC': 'SOPS',
+  'CA-MCF': 'SOPS',
+  'CA-MCR': 'SOPS',
+  'CA-MDA': 'SOPS',
+  'CA-MDC': 'SOPS',
+  'CA-MEN': 'SOPS',
+  'CA-MER': 'SOPS',
+  'CA-MFE': 'SOPS',
+  'CA-MFR': 'SOPS',
+  'CA-MGO': 'SOPS',
+  'CA-MHB': 'SOPS',
+  'CA-MKE': 'SOPS',
+  'CA-MMNQ': 'SOPS',
+  'CA-MMQ': 'SOPS',
+  'CA-MMU': 'SOPS',
+  'CA-MNP': 'SOPS',
+  'CA-MNQ': 'SOPS',
+  'CA-MNT': 'SOPS',
+  'CA-MOK': 'SOPS',
+  'CA-MON': 'SOPS',
+  'CA-MPA': 'SOPS',
+  'CA-MPK': 'SOPS',
+  'CA-MRA': 'SOPS',
+  'CA-MRB': 'SOPS',
+  'CA-MRD': 'SOPS',
+  'CA-MRK': 'SOPS',
+  'CA-MRP': 'SOPS',
+  'CA-MRV': 'SOPS',
+  'CA-MTB': 'SOPS',
+  'CA-MTC': 'SOPS',
+  'CA-MTO': 'SOPS',
+  'CA-MUR': 'SOPS',
+  'CA-MVU': 'SOPS',
+  'CA-MVW': 'SOPS',
+  'CA-MZP': 'SOPS',
+  'CA-NAG': 'SOPS',
+  'CA-NAT': 'SOPS',
+  'CA-NBY': 'SOPS',
+  'CA-NCD': 'SOPS',
+  'CA-NCF': 'SOPS',
+  'CA-NCN': 'SOPS',
+  'CA-NED': 'SOPS',
+  'CA-NIL': 'SOPS',
+  'CA-NLD': 'SOPS',
+  'CA-NOR': 'SOPS',
+  'CA-NPB': 'SOPS',
+  'CA-OAP': 'SOPS',
+  'CA-OCF': 'SOPS',
+  'CA-OCS': 'SOPS',
+  'CA-ODF': 'SOPS',
+  'CA-ODL': 'SOPS',
+  'CA-OLC': 'SOPS',
+  'CA-ORC': 'SOPS',
+  'CA-ORG': 'SOPS',
+  'CA-OTO': 'SOPS',
+  'CA-OXD': 'SOPS',
+  'CA-OYNG': 'SOPS',
+  'CA-PAR': 'SOPS',
+  'CA-PAS': 'SOPS',
+  'CA-PDF': 'SOPS',
+  'CA-PDS': 'SOPS',
+  'CA-PEB': 'SOPS',
+  'CA-PER': 'SOPS',
+  'CA-PIP': 'SOPS',
+  'CA-PLNQ': 'SOPS',
+  'CA-PLR': 'SOPS',
+  'CA-PMQ': 'SOPS',
+  'CA-PMYQ': 'SOPS',
+  'CA-POW': 'SOPS',
+  'CA-PRD': 'SOPS',
+  'CA-PRF': 'SOPS',
+  'CA-PRG': 'SOPS',
+  'CA-PSD': 'SOPS',
+  'CA-PSM': 'SOPS',
+  'CA-PSP': 'SOPS',
+  'CA-PVL': 'SOPS',
+  'CA-RCD': 'SOPS',
+  'CA-RCF': 'SOPS',
+  'CA-RDB': 'SOPS',
+  'CA-RED': 'SOPS',
+  'CA-REE': 'SOPS',
+  'CA-RIA': 'SOPS',
+  'CA-RIV': 'SOPS',
+  'CA-RMG': 'SOPS',
+  'CA-RRU': 'SOPS',
+  'CA-RSF': 'SOPS',
+  'CA-RSP': 'SOPS',
+  'CA-RVC': 'SOPS',
+  'CA-RVD': 'SOPS',
+  'CA-RWNQ': 'SOPS',
+  'CA-RYNG': 'SOPS',
+  'CA-SAL': 'SOPS',
+  'CA-SAN': 'SOPS',
+  'CA-SAV': 'SOPS',
+  'CA-SBC': 'SOPS',
+  'CA-SBN': 'SOPS',
+  'CA-SBNQ': 'SOPS',
+  'CA-SBY': 'SOPS',
+  'CA-SCA': 'SOPS',
+  'CA-SCCL': 'SOPS',
+  'CA-SCNQ': 'SOPS',
+  'CA-SDF': 'SOPS',
+  'CA-SDYQ': 'SOPS',
+  'CA-SEA': 'SOPS',
+  'CA-SFS': 'SOPS',
+  'CA-SGB': 'SOPS',
+  'CA-SGR': 'SOPS',
+  'CA-SHL': 'SOPS',
+  'CA-SIR': 'SOPS',
+  'CA-SJB': 'SOPS',
+  'CA-SJR': 'SOPS',
+  'CA-SJT': 'SOPS',
+  'CA-SLC': 'SOPS',
+  'CA-SLD': 'SOPS',
+  'CA-SLM': 'SOPS',
+  'CA-SLO': 'SOPS',
+  'CA-SLS': 'SOPS',
+  'CA-SLU': 'SOPS',
+  'CA-SMA': 'SOPS',
+  'CA-SMC': 'SOPS',
+  'CA-SMD': 'SOPS',
+  'CA-SMF': 'SOPS',
+  'CA-SMG': 'SOPS',
+  'CA-SMI': 'SOPS',
+  'CA-SMM': 'SOPS',
+  'CA-SMP': 'SOPS',
+  'CA-SMQ': 'SOPS',
+  'CA-SMR': 'SOPS',
+  'CA-SMV': 'SOPS',
+  'CA-SMY': 'SOPS',
+  'CA-SND': 'SOPS',
+  'CA-SNF': 'SOPS',
+  'CA-SNM': 'SOPS',
+  'CA-SNO': 'SOPS',
+  'CA-SNQ': 'SOPS',
+  'CA-SNT': 'SOPS',
+  'CA-SOF': 'SOPS',
+  'CA-SOL': 'SOPS',
+  'CA-SOR': 'SOPS',
+  'CA-SPA': 'SOPS',
+  'CA-SPK': 'SOPS',
+  'CA-SPS': 'SOPS',
+  'CA-SQF': 'SOPS',
+  'CA-SRPC': 'SOPS',
+  'CA-SSB': 'SOPS',
+  'CA-SSL': 'SOPS',
+  'CA-STA': 'SOPS',
+  'CA-STB': 'SOPS',
+  'CA-STF': 'SOPS',
+  'CA-STO': 'SOPS',
+  'CA-SWF': 'SOPS',
+  'CA-SWV': 'SOPS',
+  'CA-TBR': 'SOPS',
+  'CA-TCU': 'SOPS',
+  'CA-TEM': 'SOPS',
+  'CA-TFT': 'SOPS',
+  'CA-THC': 'SOPS',
+  'CA-THO': 'SOPS',
+  'CA-TJR': 'SOPS',
+  'CA-TLC': 'SOPS',
+  'CA-TLR': 'SOPS',
+  'CA-TLU': 'SOPS',
+  'CA-TMC': 'SOPS',
+  'CA-TMQ': 'SOPS',
+  'CA-TNR': 'SOPS',
+  'CA-TOR': 'SOPS',
+  'CA-TRL': 'SOPS',
+  'CA-TSH': 'SOPS',
+  'CA-TUO': 'SOPS',
+  'CA-TUR': 'SOPS',
+  'CA-TUU': 'SOPS',
+  'CA-TWA': 'SOPS',
+  'CA-TWP': 'SOPS',
+  'CA-UKD': 'SOPS',
+  'CA-UPL': 'SOPS',
+  'CA-VAQ': 'SOPS',
+  'CA-VCF': 'SOPS',
+  'CA-VCV': 'SOPS',
+  'CA-VEN': 'SOPS',
+  'CA-VER': 'SOPS',
+  'CA-VJS': 'SOPS',
+  'CA-VNC': 'SOPS',
+  'CA-VNQ': 'SOPS',
+  'CA-VSA': 'SOPS',
+  'CA-VTA': 'SOPS',
+  'CA-WCV': 'SOPS',
+  'CA-WDR': 'SOPS',
+  'CA-WFNQ': 'SOPS',
+  'CA-WLA': 'SOPS',
+  'CA-WLF': 'SOPS',
+  'CA-WML': 'SOPS',
+  'CA-WMR': 'SOPS',
+  'CA-WMT': 'SOPS',
+  'CA-WPT': 'SOPS',
+  'CA-WSF': 'SOPS',
+  'CA-WSNQ': 'SOPS',
+  'CA-WUK': 'SOPS',
+  'CA-XBE': 'SOPS',
+  'CA-YER': 'SOPS',
+  'CA-YNP': 'SOPS',
+  'CA-YUC': 'SOPS',
+  'CA-ZUM': 'SOPS',
+
+  // SWCC
+  'TX-BLYQ': 'SWCC',
+  'TX-GRR': 'SWCC',
+  'TX-GUP': 'SWCC',
+};
+
 const STATE_TO_GACC = {
   AL:'SACC',AR:'SACC',FL:'SACC',GA:'SACC',KY:'SACC',LA:'SACC',MS:'SACC',
   NC:'SACC',OK:'SACC',SC:'SACC',TN:'SACC',TX:'SACC',VA:'SACC',
@@ -710,15 +1407,15 @@ const STATE_TO_GACC = {
   AK:'AICC',
   AZ:'SWCC',NM:'SWCC',
   CO:'RMCC',UT:'GBCC',
-  NV:'GBCC',WY:'GBCC',
-  CA:'CACC',
-  KS:'RMCC',NE:'RMCC',ND:'RMCC',SD:'RMCC',
+  NV:'GBCC',
+  CA:'NOPS',
+  KS:'RMCC',NE:'RMCC',ND:'RMCC',SD:'RMCC',WY:'RMCC',
 };
-const GACC_ORDER  = ['SACC','SWCC','GBCC','RMCC','NRCC','NWCC','CACC','EACC','AICC','UNKNOWN'];
+const GACC_ORDER  = ['SACC','SWCC','GBCC','RMCC','NRCC','NWCC','NOPS','SOPS','EACC','AICC','UNKNOWN'];
 const GACC_COLORS = {
   SACC:   '#b84a00', SWCC:  '#1a5c96', GBCC: '#4a7a30',
   RMCC:   '#7a4a96', NRCC:  '#006870', NWCC: '#8a6020',
-  CACC:   '#c04060', EACC:  '#406080', AICC: '#606060',
+  NOPS:   '#c04060', SOPS:  '#a03050', EACC: '#406080', AICC: '#606060',
   UNKNOWN:'#909090',
 };
 // ── UNIT LOOKUP (356 entries — managing org by unit code) ────────────────
@@ -2153,6 +2850,7 @@ const UNIT_LOOKUP = {
   "CO-ARR": "Arapaho NWR, FWS",
   "CO-AUX": "Archuleta County (CO)",
   "CO-BAR": "Baca NWR, FWS",
+  "CO-BAX": "Baca County",
   "CO-BCP": "Black Canyon of the Gunnison National Park, NPS",
   "CO-BFP": "Bent's Old Fort National Historic Site, NPS",
   "CO-BLX": "Boulder County (CO)",
@@ -5281,10 +5979,15 @@ function lookupUnit(unitCode) {
   if (!unitCode) return '';
   const raw = UNIT_LOOKUP[unitCode] || '';
   // Normalize spelled-out "National Forest(s)" to "NF" — IMSR standard abbreviation
-  return raw.replace(/National Forests?/g, 'NF');
+  // Only when it follows another word (e.g. "Flathead National Forest" → "Flathead NF")
+  // NOT when it starts the name (e.g. "National Forests in Alabama" stays as-is)
+  return raw.replace(/(\S\s+)National Forests?/g, '$1NF');
 }
 
 function deriveGACC(f) {
+  // Check unit-code override first (e.g. MT-BIP → RMCC)
+  const unitCode = (f.f2 || '').toUpperCase().replace(/-\d+$/, '');
+  if (UNIT_GACC_OVERRIDE[unitCode]) return UNIT_GACC_OVERRIDE[unitCode];
   const state = (f.f2 || '').slice(0, 2).toUpperCase();
   return STATE_TO_GACC[state] || 'UNKNOWN';
 }
@@ -5622,22 +6325,23 @@ function cleanFuels(raw) {
   // Strip "logging" prefix before slash weights
   const s = raw.replace(/\blogging\s+/gi, '');
 
-  // Each pattern matches the full checkbox item including parens and after-comma descriptor,
-  // so overlap detection correctly claims the whole item's span.
+  // Each pattern matches the full checkbox item including parens.
+  // "Dormant Brush, Hardwood Slash" is ONE ICS-209 checkbox — match it explicitly.
+  // No generic after-comma grabber — it swallows subsequent fuel types in space-joined PDF text.
   const FUEL_PATTERNS = [
-    { pat: /Closed\s+Timber\s+Litter(?:\s*\([^)]*\))?(?:\s*,[^,\n]*)?/i, out: 'closed timber litter' },
-    { pat: /Hardwood\s+Litter(?:\s*\([^)]*\))?(?:\s*,[^,\n]*)?/i,         out: 'hardwood litter' },
-    { pat: /Timber(?:\s*\([^)]*\))?(?:\s*,[^,\n]*)?/i,                     out: 'timber' },
-    { pat: /Heavy\s+Slash(?:\s*\([^)]*\))?(?:\s*,[^,\n]*)?/i,              out: 'heavy slash' },
-    { pat: /Medium\s+Slash(?:\s*\([^)]*\))?(?:\s*,[^,\n]*)?/i,             out: 'medium slash' },
-    { pat: /Light\s+Slash(?:\s*\([^)]*\))?(?:\s*,[^,\n]*)?/i,              out: 'light slash' },
-    { pat: /Southern\s+Rough(?:\s*\([^)]*\))?(?:\s*,[^,\n]*)?/i,           out: 'southern rough' },
-    { pat: /Dormant\s+Brush(?:\s*\([^)]*\))?(?:\s*,[^,\n]*)?/i,            out: 'dormant brush' },
-    { pat: /Chaparral(?:\s*\([^)]*\))?(?:\s*,[^,\n]*)?/i,                   out: 'chaparral' },
-    { pat: /Brush(?:\s*\([^)]*\))?(?:\s*,[^,\n]*)?/i,                       out: 'brush' },
-    { pat: /Short\s+Grass(?:\s*\([^)]*\))?(?:\s*,[^,\n]*)?/i,              out: 'grass' },
-    { pat: /Tall\s+Grass(?:\s*\([^)]*\))?(?:\s*,[^,\n]*)?/i,               out: 'grass' },
-    { pat: /\bGrass(?:\s*\([^)]*\))?(?:\s*,[^,\n]*)?\b/i,                 out: 'grass' },
+    { pat: /Closed\s+Timber\s+Litter(?:\s*\([^)]*\))?/i, out: 'closed timber litter' },
+    { pat: /Hardwood\s+Litter(?:\s*\([^)]*\))?/i,         out: 'hardwood litter' },
+    { pat: /Timber(?:\s*\([^)]*\))?/i,                     out: 'timber' },
+    { pat: /Heavy\s+Slash(?:\s*\([^)]*\))?/i,              out: 'heavy slash' },
+    { pat: /Medium\s+Slash(?:\s*\([^)]*\))?/i,             out: 'medium slash' },
+    { pat: /Light\s+Slash(?:\s*\([^)]*\))?/i,              out: 'light slash' },
+    { pat: /Southern\s+Rough(?:\s*\([^)]*\))?/i,           out: 'southern rough' },
+    { pat: /Dormant\s+Brush(?:,\s*Hardwood\s+Slash)?(?:\s*\([^)]*\))?/i, out: 'dormant brush' },
+    { pat: /Chaparral(?:\s*\([^)]*\))?/i,                   out: 'chaparral' },
+    { pat: /Brush(?:\s*\([^)]*\))?/i,                       out: 'brush' },
+    { pat: /Short\s+Grass(?:\s*\([^)]*\))?/i,              out: 'grass' },
+    { pat: /Tall\s+Grass(?:\s*\([^)]*\))?/i,               out: 'grass' },
+    { pat: /\bGrass(?:\s*\([^)]*\))?\b/i,                 out: 'grass' },
   ];
 
   // Collect ALL occurrences of every pattern with their span
@@ -5817,21 +6521,24 @@ function buildNarrativeLine(f) {
   // ART closures/evacuations
   if (f.f34) parts.push(f.f34);
 
-  // "Last report" fires — goes after ART, before sage grouse override
-  if (isLastReport(f)) {
-    parts.push('Last report unless significant activity occurs');
+  // NARR-46 special statement order: sage-grouse → reduction → precipitation (in renderNarrative) → last report
+  // (1) Sage-grouse habitat
+  if (f._sageGrouse) {
+    parts.push('Sage-grouse habitat threatened');
   }
 
-  // Acreage reduction — only when prev IMSR loaded and acres decreased
+  // (2) Acreage reduction — only when prev IMSR loaded and acres decreased
   const prevForAcres = prevMatch(f);
   const todayAc = parseInt((f.f7 || '').replace(/,/g,'')) || 0;
   if (prevForAcres && prevForAcres.acres > 0 && todayAc > 0 && prevForAcres.acres > todayAc) {
     parts.push('Reduction in acreage due to more accurate mapping');
   }
 
-  // Sage-grouse habitat — always last, if applicable
-  if (f._sageGrouse) {
-    parts.push('Sage-grouse habitat threatened');
+  // (3) Precipitation — handled in renderNarrative via user confirmation toggle
+
+  // (4) Last report — kick-off removal tranche only
+  if (isLastReport(f)) {
+    parts.push('Last report unless significant activity occurs');
   }
 
   return { name, parts };
@@ -5868,8 +6575,8 @@ function getColVals(f) {
     const todayPpl = parseInt(f.totalPers) || 0;
     const dAc  = todayAc  - prev.acres;
     const dPpl = todayPpl - prev.ppl;
-    chgeAc  = String(dAc);
-    chgePpl = String(dPpl);
+    chgeAc  = dAc.toLocaleString();
+    chgePpl = dPpl.toLocaleString();
   } else if (f.isInitial) {
     chgeAc  = '---';
     chgePpl = '---';
@@ -5917,7 +6624,7 @@ function buildTableRows(incidents) {
       const v = cv[c.id];
       return `<td class="${(!v || v==='---') ? 'empty' : ''}">${v}</td>`;
     }).join('');
-    return `<tr>${tds}</tr>`;
+    return `<tr${is100(f) ? ' class="ctn100"' : ''}>${tds}</tr>`;
   }).join('');
 }
 
@@ -5934,7 +6641,9 @@ function buildNarrativeLines(incidents, cssClass='') {
     const prev = prevMatch(f);
     const isNew = !prev;
     const asterisk = isNew ? '* ' : '';
-    return `<div class="narr-line ${cssClass}" data-inc="${f.f2}" data-pct="${f.f8a || 0}" onclick="toggleNarrSelect(this)"><strong>${asterisk}${name}</strong><span style="font-weight:normal;">, ${managingOrg}${cimtLabel}. ${sentence}${precipFlag}</span></div>`;
+    const lastRptBadge = (prev && prev.wasLastReport) ? '<span class="last-rpt-badge" title="Previous IMSR said: Last report unless significant activity occurs.">LAST RPT</span>' : '';
+    const lastRptClass = (prev && prev.wasLastReport) ? ' last-rpt' : '';
+    return `<div class="narr-line ${cssClass}${lastRptClass}" data-inc="${f.f2}" data-pct="${f.f8a || 0}" onclick="toggleNarrSelect(this)"><strong>${asterisk}${name}</strong>${lastRptBadge}<span style="font-weight:normal;">, ${managingOrg}${cimtLabel}. ${sentence}${precipFlag}</span></div>`;
   }).join('');
 }
 
@@ -5980,10 +6689,38 @@ function trancheSort(incidents) {
       isNew ? t1.push(f)  : t2.push(f);
     }
   });
+  // SEQ-11: multi-key sort within active buckets
+  // (1) Evacuations  (2) Numerous res/str 100+  (3) Infrastructure
+  // (4) Behavior severity Extreme→Low  (5) Structures threatened <100
+  // (6) Closures  (7) % contained ascending
+  const INTENSITY_RANK = { extreme: 0, 'very active': 1, active: 2, moderate: 3, minimal: 4, low: 5 };
+  function seq11Rank(f) {
+    const evac = (f.f34 && /evacuation/i.test(f.f34)) ? 0 : 1;
+    const maxThreat = Math.max(f.resThreatened || 0, f.strThreatened || 0);
+    const numerous = maxThreat >= 100 ? 0 : 1;
+    const infra = f._infra || {};
+    const hasInfra = (infra.energy || infra.communication || infra.railroad) ? 0 : 1;
+    const raw = (f.f28 || '').toLowerCase();
+    let bRank = 6; // no behavior = lowest
+    for (const [term, rank] of Object.entries(INTENSITY_RANK)) {
+      if (raw.includes(term)) { bRank = rank; break; }
+    }
+    const anyThreat = ((f.resThreatened || 0) > 0 || (f.strThreatened || 0) > 0) && maxThreat < 100 ? 0 : 1;
+    const closures = (f.f34 && /closures? in effect/i.test(f.f34)) ? 0 : 1;
+    const pct = parseInt(f.f8a || 0);
+    return [evac, numerous, hasInfra, bRank, anyThreat, closures, pct];
+  }
+  function bySEQ11(a, b) {
+    const ra = seq11Rank(a), rb = seq11Rank(b);
+    for (let i = 0; i < ra.length; i++) {
+      if (ra[i] !== rb[i]) return ra[i] - rb[i];
+    }
+    return 0;
+  }
   const byPct    = (a, b) => (parseInt(a.f8a||0)) - (parseInt(b.f8a||0));
   const bySubmit = (a, b) => (b._submitTime || 0) - (a._submitTime || 0);
-  t0new.sort(byPct); t0ret.sort(byPct); t0bnew.sort(byPct); t0bret.sort(byPct);
-  t1.sort(byPct); t2.sort(byPct);
+  t0new.sort(bySEQ11); t0ret.sort(bySEQ11); t0bnew.sort(byPct); t0bret.sort(byPct);
+  t1.sort(bySEQ11); t2.sort(bySEQ11);
   t1b.sort(byPct); t2b.sort(byPct);
   t3new.sort(bySubmit); t3ret.sort(bySubmit);
   return [...t0new, ...t0ret, ...t0bnew, ...t0bret, ...t1, ...t2, ...t1b, ...t2b, ...t3new, ...t3ret];
@@ -6011,6 +6748,8 @@ function renderOutput() {
   const qualifying = [];
   const nonQualifying = [];
   allIncidents.forEach(f => {
+    // Skip fires manually deleted by user
+    if (deletedFires.has(normKey(f.f1, f.unit))) return;
     const q = qualifiesForIMSR(f);
     f._qualifies = q.qualifies;
     f._qualifyReason = q.reason;
@@ -6036,7 +6775,9 @@ function renderOutput() {
     for (const [key, p] of prevIMSR) {
       if (p.pct >= 100) continue;
       if (matchedKeys.has(key)) continue;
-      const gacc = STATE_TO_GACC[(p.unit || '').slice(0,2).toUpperCase()] || 'UNKNOWN';
+      if (deletedFires.has(key)) continue;
+      const unitCode = (p.unit || '').toUpperCase().replace(/-\d+$/, '');
+      const gacc = UNIT_GACC_OVERRIDE[unitCode] || STATE_TO_GACC[(p.unit || '').slice(0,2).toUpperCase()] || 'UNKNOWN';
       (missedByGacc[gacc] = missedByGacc[gacc] || []).push(p);
     }
   }
@@ -6079,27 +6820,27 @@ function renderOutput() {
           const moved = manualOrder[gacc][i] !== i;
           const name = (f.f1 || f._filename || '?').slice(0, 40);
           return `<div class="sort-row${moved ? ' sort-moved' : ''}">
-            <span class="sort-name">${name}${moved ? ' ✎' : ''}</span>
-            <span class="sort-pct">${pct}%</span>
             <button class="sort-btn" onclick="moveIncident('${gacc}',${i},-1)" title="Move up">▲</button>
             <button class="sort-btn" onclick="moveIncident('${gacc}',${i},1)" title="Move down">▼</button>
+            <span class="sort-name">${name}${moved ? ' ✎' : ''}</span>
+            <span class="sort-pct">${pct}%</span>
           </div>`;
         }).join('')}
       </div>` : '';
 
 
-    // Narrative order: active → missed (no 209) → lastReport → 100% (qualifying only)
+    // Narrative order: active → lastReport (kick-off) → missed (no 209) → 100%
     const narrLines =
       buildNarrativeLines(activeInc) +
-      buildMissedNarrLines(missed) +
       buildNarrativeLines(lastRptInc) +
+      buildMissedNarrLines(missed) +
       buildNarrativeLines(containedInc);
 
-    // Table row order: active → missed → lastReport → 100% (qualifying only)
+    // Table row order: active → lastReport → missed → 100%
     const tableRows =
       buildTableRows(activeInc) +
-      buildMissedTableRows(missed) +
       buildTableRows(lastRptInc) +
+      buildMissedTableRows(missed) +
       buildTableRows(containedInc);
 
     // Non-qualifying fires — separate labeled section, excluded from copy buttons
@@ -6172,11 +6913,12 @@ function renderOutput() {
   outputEl.style.display = 'block';
   outputEl.innerHTML = `
     <div class="summary">
-      <strong>${qualifying.length}</strong> qualifying · <strong>${nonQualifying.length}</strong> non-qualifying across <strong>${gaccKeys.length}</strong> GACC${gaccKeys.length !== 1 ? 's' : ''}
+      <strong>${qualifying.length}</strong> qualifying · <strong>${nonQualifying.length}</strong> non-qualifying across <strong>${gaccKeys.length}</strong> GACC${gaccKeys.length !== 1 ? 's' : ''}${deletedFires.size ? ` · <span style="color:#c0392b;font-weight:600;">${deletedFires.size} deleted</span>` : ''}
       <span style="float:right;">
         <button class="copy-btn narr" onclick="copyAllNarr(this)" style="margin-right:6px;">Copy All Narratives</button>
         <button class="copy-btn" onclick="copyAllRows(this)" style="margin-right:6px;">Copy All Rows</button>
-        <button class="copy-btn clear" onclick="clearAll()">Clear All</button>
+        <button class="delete-btn" onclick="deleteSelected()" id="deleteSelBtn" disabled title="Select narratives (click green), then delete">Delete Selected</button>
+        <button class="copy-btn clear" onclick="clearAll()" style="margin-left:6px;">Clear All</button>
       </span>
     </div>
     <div class="narr-controls">
@@ -6201,23 +6943,17 @@ function buildCopyLine(f) {
   const prev = prevMatch(f);
   const isNew = !prev;
   const asterisk = isNew ? '* ' : '';
-  // Statement order: ...behavior. threats. ART. precip. last report. sage grouse.
+  // NARR-46 statement order: ...ART. sage-grouse. reduction. precip. last report.
   const LAST_RPT  = 'Last report unless significant activity occurs.';
   const SAGE_GRSE = 'Sage-grouse habitat threatened.';
   let body = sentence;
 
   if (precip) {
-    // Insert precip before "last report" if present; before sage grouse if present
-    const hasSage     = body.endsWith(SAGE_GRSE);
-    const hasLastRpt  = body.endsWith(LAST_RPT) || body.endsWith(LAST_RPT + ' ' + SAGE_GRSE);
-    if (hasSage && body.includes(LAST_RPT)) {
-      // last rpt + sage at end: insert before last rpt
-      body = body.replace(LAST_RPT + ' ' + SAGE_GRSE, precip.trim() + ' ' + LAST_RPT + ' ' + SAGE_GRSE);
-    } else if (hasSage) {
-      body = body.slice(0, -SAGE_GRSE.length).trimEnd() + ' ' + precip.trim() + ' ' + SAGE_GRSE;
-    } else if (body.endsWith(LAST_RPT)) {
+    // Insert precip before "Last report" (which is always last when present)
+    if (body.endsWith(LAST_RPT)) {
       body = body.slice(0, -LAST_RPT.length).trimEnd() + ' ' + precip.trim() + ' ' + LAST_RPT;
     } else {
+      // No last report — precip goes at the end
       body = body.trimEnd().replace(/\.?$/, '') + '. ' + precip.trim();
     }
   }
@@ -6242,6 +6978,36 @@ function toggleNarrSelect(el) {
   const allSelected = document.querySelectorAll('.narr-line.selected').length;
   const allBtn = document.querySelector('.copy-btn.narr[onclick="copyAllNarr(this)"]');
   if (allBtn) allBtn.textContent = allSelected > 0 ? `Copy ${allSelected} Selected` : 'Copy All Narratives';
+  // Update delete button
+  const delBtn = document.getElementById('deleteSelBtn');
+  if (delBtn) {
+    delBtn.disabled = allSelected === 0;
+    delBtn.textContent = allSelected > 0 ? `Delete ${allSelected} Selected` : 'Delete Selected';
+  }
+}
+
+function deleteSelected() {
+  const selected = Array.from(document.querySelectorAll('.narr-line.selected'));
+  if (!selected.length) return;
+
+  let count = 0;
+  for (const el of selected) {
+    // 209-based fire
+    if (el.dataset.inc) {
+      const f = allIncidents.find(i => i.f2 === el.dataset.inc);
+      if (f) {
+        deletedFires.add(normKey(f.f1, f.unit));
+        count++;
+      }
+    }
+    // Missed fire (from previous IMSR, no 209 today)
+    if (el.dataset.missedKey) {
+      deletedFires.add(el.dataset.missedKey);
+      count++;
+    }
+  }
+
+  if (count > 0) renderOutput();
 }
 
 function copyAllNarr(btn) {
@@ -6335,25 +7101,21 @@ function copyRowsFromBlock(btn) {
 function copyPlainText(text, btn, resetLabel) {
   // Write only text/plain to clipboard — prevents Word from picking up
   // the HTML flavor and applying bold/formatting from the source DOM.
+  _btnCopy = true;
+  const done = (ok) => {
+    _btnCopy = false;
+    btn.textContent = ok ? '✓ Copied!' : '✗ Copy failed';
+    setTimeout(() => btn.textContent = resetLabel, 2000);
+  };
   try {
     const item = new ClipboardItem({
       'text/plain': new Blob([text], { type: 'text/plain' })
     });
-    navigator.clipboard.write([item]).then(() => {
-      btn.textContent = '✓ Copied!';
-      setTimeout(() => btn.textContent = resetLabel, 2000);
-    }).catch(() => {
-      // Fallback for browsers that don't support ClipboardItem
-      navigator.clipboard.writeText(text).then(() => {
-        btn.textContent = '✓ Copied!';
-        setTimeout(() => btn.textContent = resetLabel, 2000);
-      });
+    navigator.clipboard.write([item]).then(() => done(true)).catch(() => {
+      navigator.clipboard.writeText(text).then(() => done(true)).catch(() => done(false));
     });
   } catch(e) {
-    navigator.clipboard.writeText(text).then(() => {
-      btn.textContent = '✓ Copied!';
-      setTimeout(() => btn.textContent = resetLabel, 2000);
-    });
+    navigator.clipboard.writeText(text).then(() => done(true)).catch(() => done(false));
   }
 }
 
@@ -6369,17 +7131,10 @@ function togglePrecip(pill, incNum) {
   const PRECIP_STMT = 'Precipitation occurred over the fire area yesterday.';
   const LAST_RPT   = 'Last report unless significant activity occurs.';
 
-  // Build the visible sentence, inserting precip before "last report" if present
+  // Build the visible sentence, inserting precip per NARR-46 order (before last report)
   let sentence = capitalizeSentences(parts.join('. ') + (parts.length ? '.' : ''));
   if (f._precipConfirmed) {
-    const SAGE = 'Sage-grouse habitat threatened.';
-    const hasSage    = sentence.endsWith(SAGE);
-    const hasLastRpt = sentence.includes(LAST_RPT);
-    if (hasSage && hasLastRpt) {
-      sentence = sentence.replace(LAST_RPT + ' ' + SAGE, PRECIP_STMT + ' ' + LAST_RPT + ' ' + SAGE);
-    } else if (hasSage) {
-      sentence = sentence.slice(0, -SAGE.length).trimEnd() + ' ' + PRECIP_STMT + ' ' + SAGE;
-    } else if (sentence.endsWith(LAST_RPT)) {
+    if (sentence.endsWith(LAST_RPT)) {
       sentence = sentence.slice(0, -LAST_RPT.length).trimEnd() + ' ' + PRECIP_STMT + ' ' + LAST_RPT;
     } else {
       sentence = sentence.trimEnd().replace(/\.?$/, '') + '. ' + PRECIP_STMT;
@@ -6429,7 +7184,9 @@ function copyNarrLines(lines, btn, resetLabel) {
   sel.addRange(range);
 
   let ok = false;
+  _btnCopy = true;
   try { ok = document.execCommand('copy'); } catch(e) {}
+  _btnCopy = false;
 
   sel.removeAllRanges();
   document.body.removeChild(el);
@@ -6543,8 +7300,11 @@ function buildMissedNarrLines(missed) {
       ? 'No new information. Last report unless new information is received.'
       : 'No new information.';
     const tail = prevNarr ? `${prevNarr}. ${suffix}` : suffix;
-    return `<div class="narr-line" style="border-left-color:#9090c0;opacity:.8;" data-missed="1" onclick="toggleNarrSelect(this)">
-      <strong>${name}</strong><span style="font-weight:normal;">, ${org}. ${tail}</span>
+    const mKey = normKey(p.name, p.unit);
+    const lastRptBadge = p.wasLastReport ? '<span class="last-rpt-badge" title="Previous IMSR said: Last report unless significant activity occurs.">LAST RPT</span>' : '';
+    const lastRptClass = p.wasLastReport ? ' last-rpt' : '';
+    return `<div class="narr-line${lastRptClass}" style="border-left-color:${p.wasLastReport ? '#d35400' : '#9090c0'};opacity:.8;" data-missed="1" data-missed-key="${mKey}" onclick="toggleNarrSelect(this)">
+      <strong>${name}</strong>${lastRptBadge}<span style="font-weight:normal;">, ${org}. ${tail}</span>
     </div>`;
   }).join('');
 }
@@ -6554,15 +7314,17 @@ function buildMissedTableRows(missed) {
   return missed.map(p => {
     const name = normalizeName(p.name || '');
     const unit = (p.unit || '').replace(/-\d+$/, '');
+    const mKey = normKey(p.name, p.unit);
     const cols = [
       name, unit,
       p.acres ? p.acres.toLocaleString() : '---',
-      '0', String(p.pct), 'Ctn', '---',
-      String(p.ppl), '0',
-      '---','---','---','---','---','---'
+      '---', String(p.pct), 'Ctn', '---',
+      String(p.ppl), '---',
+      String(p.crw || 0), String(p.eng || 0), String(p.heli || 0),
+      String(p.strc || 0), p.cost || 'NR', p.origin || '---'
     ];
     const tds = COLS.map((c, i) => `<td>${cols[i] || '---'}</td>`).join('');
-    return `<tr style="opacity:.7;">${tds}</tr>`;
+    return `<tr style="opacity:.7;" data-missed-key="${mKey}">${tds}</tr>`;
   }).join('');
 }
 
@@ -6599,7 +7361,7 @@ function parseIMSR(text) {
   // ── Step 1: extract narrative lines ──────────────────────────────────
   // PDF.js produces space-joined text per page — no newlines within a page.
   // Match * Name, Org. Narrative... up to the next * fire or 'Incident Name'.
-  const NARR_RE = /\*\s+([A-Z][A-Za-z0-9'\-\.\/ ]{1,50}?),\s+([A-Z][^.]{5,100}?)\.\s+((?:(?!\*\s+[A-Z]|Incident Name).)+?)(?=\s*\*\s+[A-Z]|\s*Incident Name|$)/gs;
+  const NARR_RE = /\*\s+([A-Z0-9][A-Za-z0-9'\-\.\/& ]{0,50}?),\s+([A-Z][^.]{5,100}?)\.\s+((?:(?!\*\s+[A-Z0-9]|Incident Name).)+?)(?=\s*\*\s+[A-Z0-9]|\s*Incident Name|$)/gs;
   const narrativeMap = new Map();
   let nm;
   while ((nm = NARR_RE.exec(text)) !== null) {
@@ -6617,16 +7379,19 @@ function parseIMSR(text) {
   const ROW_RE = new RegExp(
     String.raw`(?:^|` + OWN + String.raw`)\s+` +
     String.raw`(\*\s+)?` +
-    String.raw`([A-Z][A-Za-z0-9'\-\.\/  ]{1,50}?)` +
+    String.raw`([A-Z0-9][A-Za-z0-9'\-\.\/&\u2013  ]{0,50}?)` +
     String.raw`\s+([A-Z]{2}-[A-Z0-9]+)\s+` +
     String.raw`([\d,]+)\s+` +
-    String.raw`([\d,]+|--+)\s+` +
+    String.raw`(-?[\d,]+|--+)\s+` +
     String.raw`(\d+)\s+` +
     String.raw`(?:Ctn|Comp)\s+` +
-    String.raw`([\d\/]+|--+)\s+` +
+    String.raw`([\d\/]+|--+|UNK)\s+` +
     String.raw`(\d+)`,
     'g'
   );
+
+  // Tail columns after PPL: chgePpl, crw, eng, heli, strc, cost, origin
+  const TAIL_RE = /^\s*(-?\d+|--+)\s+(\d+)\s+(\d+)\s+(\d+)\s+(\d+)\s+([\d.]+[KMB]|NR|\d+)\s+(ST|FS|BIA|NPS|FWS|CNTY|DOW|PRI|BLM|TRI)\b/i;
 
   let m;
   while ((m = ROW_RE.exec(text)) !== null) {
@@ -6639,6 +7404,16 @@ function parseIMSR(text) {
     if (name.length < 2) continue;
     if (/^(?:Incident|GACC|Fire Activity|New fires|Uncontained)/i.test(name)) continue;
 
+    // Extract tail columns from text after PPL match
+    const tailText = text.substring(m.index + m[0].length);
+    const tail = TAIL_RE.exec(tailText);
+    const crw    = tail ? parseInt(tail[2]) || 0 : 0;
+    const eng    = tail ? parseInt(tail[3]) || 0 : 0;
+    const heli   = tail ? parseInt(tail[4]) || 0 : 0;
+    const strc   = tail ? parseInt(tail[5]) || 0 : 0;
+    const cost   = tail ? tail[6] : 'NR';
+    const origin = tail ? tail[7].toUpperCase() : '';
+
     // Find matching narrative by name
     const normName = name.toLowerCase().replace(/[^a-z0-9 ]/g,' ').replace(/\s+/g,' ').trim();
     const narrEntry = narrativeMap.get(normName) || { narrative: '', fullNarr: '', missCount: 1 };
@@ -6646,9 +7421,28 @@ function parseIMSR(text) {
     const key = normKey(name, unit);
     if (!map.has(key)) {
       map.set(key, { name, unit, acres, ppl, pct,
+        crw, eng, heli, strc, cost, origin,
         narrative:  narrEntry.narrative,
         fullNarr:   narrEntry.fullNarr,
-        missCount:  narrEntry.missCount });
+        missCount:  narrEntry.missCount,
+        wasLastReport: false });
+    }
+  }
+
+  // ── Step 3: flag fires whose prev narrative had "Last report" ──────
+  for (const [key, entry] of map) {
+    // Check narrativeMap first (asterisked fires)
+    const normName = entry.name.toLowerCase().replace(/[^a-z0-9 ]/g,' ').replace(/\s+/g,' ').trim();
+    const narrInfo = narrativeMap.get(normName);
+    if (narrInfo && /last report unless significant activity occurs/i.test(narrInfo.fullNarr)) {
+      entry.wasLastReport = true;
+      continue;
+    }
+    // For returning fires (no asterisk, not in narrativeMap): scan raw text
+    const escaped = entry.name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    const vicinity = text.match(new RegExp(escaped + '.{0,500}', 'is'));
+    if (vicinity && /last report unless significant activity occurs/i.test(vicinity[0])) {
+      entry.wasLastReport = true;
     }
   }
   return map;
@@ -6674,6 +7468,7 @@ function prevMatch(f) {
 // Intercept Ctrl+C — if any narr-lines are selected, override clipboard
 // with properly spaced HTML so Word paste looks the same as button copy.
 document.addEventListener('copy', function(e) {
+  if (_btnCopy) return; // button-triggered copy — don't interfere
   const selected = Array.from(document.querySelectorAll('.narr-line.selected'));
   if (selected.length === 0) return; // nothing selected — let browser handle it
   e.preventDefault();
@@ -6699,6 +7494,7 @@ document.addEventListener('copy', function(e) {
 
 function clearAll() {
   allIncidents = [];
+  deletedFires.clear();
   fileListEl.innerHTML = '';
   outputEl.style.display = 'none';
   outputEl.innerHTML = '';
