@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>IMSR Prep Tool v4</title>
+<title>IMSR Prep Tool v57</title>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
 <style>
   @import url('https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;600&family=IBM+Plex+Sans:wght@400;500;600&display=swap');
@@ -70,9 +70,17 @@
   .narr-line {
     font-size: 13px; line-height: 1.85; color: var(--text);
     border-left: 3px solid var(--accent); padding: 4px 0 4px 14px;
-    margin-bottom: 10px; word-break: break-word;
+    margin-bottom: 10px; word-break: break-word; cursor: pointer;
+    border-radius: 0 3px 3px 0; transition: background .1s;
   }
   .narr-line:last-of-type { margin-bottom: 0; }
+  .narr-line:hover { background: #faf8f5; }
+  .narr-line.selected { background: #edf7ed; border-left-color: var(--good); outline: 1px solid #b8ddb8; }
+  .last-rpt-badge { display: inline-block; font-size: 9px; font-weight: 700; color: #fff; background: #d35400; padding: 1px 5px; border-radius: 3px; margin-left: 6px; vertical-align: middle; letter-spacing: 0.3px; cursor: help; }
+  .narr-line.last-rpt { border-left-color: #d35400; background: #fef5ed; }
+  .delete-btn { background: #c0392b; color: #fff; border: none; padding: 4px 12px; border-radius: 4px; cursor: pointer; font-size: 11px; font-weight: 600; margin-left: 6px; }
+  .delete-btn:hover { background: #a93226; }
+  .delete-btn:disabled { background: #ccc; cursor: not-allowed; }
   .blank { background: #fff3cd; color: #7a4a00; border-radius: 2px; padding: 0 4px; font-family: 'IBM Plex Mono', monospace; font-size: 11px; }
 
   /* Table */
@@ -92,7 +100,8 @@
   table.imsr th:first-child { text-align: left; }
   table.imsr tr:nth-child(even) td { background: #faf9f7; }
   table.imsr td.manual { background: #f0f7ff !important; }
-  table.imsr td.empty { color: var(--muted); }
+  table.imsr tr.ctn100 td { background: #e8f2fd !important; }
+  table.imsr td.empty { color: var(--text); }
   table.imsr td input {
     background: transparent; border: none; outline: none;
     font-family: Arial, sans-serif; font-size: 9pt;
@@ -153,27 +162,7 @@
   }
   .precip-flag.confirmed { background: #e8f5e8; border-color: #4a9a4a; color: #1a5c1a; }
 
-  /* Debug panel */
-  .debug-toggle {
-    font-family: 'IBM Plex Mono', monospace; font-size: 10px; font-weight: 600;
-    background: none; border: 1px solid var(--border); border-radius: 2px;
-    color: var(--muted); cursor: pointer; padding: 1px 7px; margin-left: 10px;
-    letter-spacing: .04em; vertical-align: middle;
-  }
-  .debug-toggle:hover { border-color: var(--accent2); color: var(--accent2); }
-  .debug-panel {
-    display: none; margin-top: 6px; margin-left: 14px;
-    background: #f5f4f1; border: 1px solid var(--border); border-radius: 3px;
-    padding: 8px 12px; font-family: 'IBM Plex Mono', monospace; font-size: 10px;
-    line-height: 1.7; color: var(--label);
-  }
-  .debug-panel.open { display: block; }
-  .debug-row { display: flex; gap: 12px; border-bottom: 1px solid var(--border); padding: 2px 0; }
-  .debug-row:last-child { border-bottom: none; }
-  .debug-key { color: var(--muted); min-width: 120px; flex-shrink: 0; }
-  .debug-val { color: var(--text); word-break: break-word; }
-  .debug-val.ok { color: var(--good); }
-  .debug-val.warn { color: var(--accent); }
+
   table.imsr.nq th { background: #f0e8d0; }
   table.imsr.nq tr:nth-child(even) td { background: #fdf8f0; }
 
@@ -228,6 +217,13 @@ const fileListEl = document.getElementById('file-list');
 let allIncidents = [];
 // Previous IMSR data for comparison: Map of normKey → {name, unit, acres, ppl, pct}
 let prevIMSR = null;
+let _btnCopy = false; // bypass copy listener during button-triggered copies
+let deletedFires = new Set(); // keys of fires manually removed by user
+
+// Accept PDFs by MIME type OR extension — Windows drag-from-Explorer often sends empty MIME
+function isPDF(f) {
+  return f.type === 'application/pdf' || f.name.toLowerCase().endsWith('.pdf');
+}
 
 dropZone.addEventListener('dragover', e => { e.preventDefault(); dropZone.classList.add('drag-over'); });
 dropZone.addEventListener('dragleave', () => dropZone.classList.remove('drag-over'));
@@ -240,7 +236,7 @@ imsrDropZone.addEventListener('dragover', e => { e.preventDefault(); imsrDropZon
 imsrDropZone.addEventListener('dragleave', () => imsrDropZone.classList.remove('drag-over'));
 imsrDropZone.addEventListener('drop', e => {
   e.preventDefault(); imsrDropZone.classList.remove('drag-over');
-  const files = Array.from(e.dataTransfer.files).filter(f => f.type === 'application/pdf');
+  const files = Array.from(e.dataTransfer.files).filter(isPDF);
   if (files.length) handleIMSRFile(files[0]);
 });
 imsrFileInput.addEventListener('change', e => {
@@ -275,10 +271,10 @@ async function handleIMSRFile(file) {
 
 dropZone.addEventListener('drop', e => {
   e.preventDefault(); dropZone.classList.remove('drag-over');
-  handleFiles(Array.from(e.dataTransfer.files).filter(f => f.type === 'application/pdf'));
+  handleFiles(Array.from(e.dataTransfer.files).filter(isPDF));
 });
 fileInput.addEventListener('change', e => {
-  handleFiles(Array.from(e.target.files).filter(f => f.type === 'application/pdf'));
+  handleFiles(Array.from(e.target.files).filter(isPDF));
   e.target.value = '';
 });
 
@@ -520,7 +516,7 @@ function parseFields(text) {
     /(\d+)\s*%\s+(?:Human|Lightning|Unknown|Undetermined|Natural|Unplanned)/i
   );
 
-  f.f21 = grab(text, /21\.\s*Incident Location Ownership[\s\S]{0,80}?jurisdiction\)?:?\s*([^\n\s][^\n]{0,80})/i);
+  f.f21 = grab(text, /21\.\s*Incident Location Ownership[\s\S]{0,80}?jurisdiction\)?:?\s*([^\n\s][^\n\s]{0,40})(?:\s+22\.)?/i);
   f.f25 = grab(text, /25\.\s*Short Location[\s\S]{0,100}?point\)?:?\s*([^\n]+?)(?=\s*26\.|$)/i);
 
   // PDF.js joins all text items with spaces — no newlines within a page.
@@ -594,7 +590,7 @@ function parseFields(text) {
   const box35 = grabBlock(text, /35\.\s*[\s\S]{0,200}?:\s*/i, /36\.|Narrative:/i);
   const box36 = grabBlock(text, /36\.\s*[\s\S]{0,200}?:\s*/i, /37\.|Narrative:/i);
   const box37 = grabBlock(text, /37\.\s*[\s\S]{0,200}?:\s*/i, /38\.|Narrative:/i);
-  const box38 = grabBlock(text, /38\.\s*[\s\S]{0,200}?:\s*/i, /39\.|Narrative:/i);
+  const box38 = grabBlock(text, /38\.\s*[\s\S]{0,600}?:\s*/i, /39\.|Narrative:/i);
   const box40 = grabBlock(text, /40\.\s*[\s\S]{0,200}?:\s*/i, /41\.|Narrative:/i);
   const box41 = grabBlock(text, /41\.\s*[\s\S]{0,200}?:\s*/i, /42\.|Narrative:/i);
   const box47 = grabBlock(text, /47\.\s*[\s\S]{0,200}?:\s*/i, /48\.|Narrative:/i);
@@ -637,22 +633,42 @@ function parseFields(text) {
   f.resources = parseResources(text);
 
   // Origin ownership: Box 21 governs, Box 2 suffix as fallback
-  const box21val = (f.f21 || '').trim().toLowerCase();
+  // Box 21 may contain either:
+  //   (a) a text description  e.g. "Private Land", "State Agency"
+  //   (b) a unit-code style value e.g. "KY-PRI", "AZ-BLM"
+  const box21raw = (f.f21 || '').trim();
+  const box21val = box21raw.toLowerCase();
   const box2own  = deriveOwn(f.f2);
-  const OWN_PATTERNS = [
-    { re: /private/,  code: 'PRI' },
-    { re: /\bstate\b/, code: 'ST'  },
-    { re: /tribal/,   code: 'TRI' },
-    { re: /county|local/, code: 'CNTY' },
-    { re: /\bnps\b|national park/, code: 'NPS' },
-    { re: /\bblm\b/,  code: 'BLM' },
-    { re: /\busfs\b|forest service/, code: 'FS' },
-    { re: /\bbia\b/,  code: 'BIA' },
-    { re: /\bfws\b|fish and wildlife/, code: 'FWS' },
-  ];
+
+  // First try: extract suffix from unit-code format (e.g. KY-PRI → PRI, AZ-BLM → BLM)
+  const SUFFIX_MAP = {'FS':'FS','BIA':'BIA','BLM':'BLM','NPS':'NPS','FWS':'FWS',
+                      'ST':'ST','CNTY':'CNTY','DOW':'DOW','TRI':'TRI','PRI':'PRI'};
   let box21code = null;
-  for (const { re, code } of OWN_PATTERNS) {
-    if (re.test(box21val)) { box21code = code; break; }
+  // Match unit-code format at start of value — e.g. "KY-PRI", "AZ-BLM"
+  // Use first whitespace-delimited token in case trailing content was captured
+  const firstToken = box21raw.split(/\s+/)[0];
+  const unitCodeM = firstToken.match(/^[A-Z]{2}-([A-Z]+)$/i);
+  if (unitCodeM) {
+    const sfx = unitCodeM[1].toUpperCase();
+    box21code = SUFFIX_MAP[sfx] || null;
+  }
+
+  // Second try: text description patterns
+  if (!box21code) {
+    const OWN_PATTERNS = [
+      { re: /private/,              code: 'PRI'  },
+      { re: /\bstate\b/,           code: 'ST'   },
+      { re: /tribal/,               code: 'TRI'  },
+      { re: /county|local/,         code: 'CNTY' },
+      { re: /\bnps\b|national park/,code: 'NPS'  },
+      { re: /\bblm\b/,             code: 'BLM'  },
+      { re: /\busfs\b|forest service/, code: 'FS' },
+      { re: /\bbia\b/,             code: 'BIA'  },
+      { re: /\bfws\b|fish and wildlife/, code: 'FWS' },
+    ];
+    for (const { re, code } of OWN_PATTERNS) {
+      if (re.test(box21val)) { box21code = code; break; }
+    }
   }
 
   f.privateLand = box21code === 'PRI';
@@ -667,8 +683,6 @@ function parseFields(text) {
   // Final origin ownership: Box 21 if resolved, else Box 2
   f.originOwn = box21code || box2own;
 
-  f._rawText = text;  // retained for debug panel
-
   return f;
 }
 
@@ -677,11 +691,711 @@ function deriveOwn(incNum) {
   const unit = incNum.replace(/-\d+$/, '');
   const parts = unit.split('-');
   if (parts.length < 2) return '';
-  const last = parts[1].slice(-1).toUpperCase();
-  return {'F':'FS','A':'BIA','D':'BLM','P':'NPS','S':'ST','U':'ST','X':'CNTY','Q':'DOW','R':'FWS','T':'TRI'}[last] || last;
+  // Use last ALPHA character — some unit codes end in digits (e.g. LG51) and the
+  // agency suffix is the trailing letter, not the trailing character.
+  const alpha = parts[1].replace(/[^A-Za-z]/g, '');
+  const last = alpha ? alpha.slice(-1).toUpperCase() : '';
+  const code = {'F':'FS','A':'BIA','D':'BLM','P':'NPS','S':'ST','U':'ST','X':'CNTY','Q':'DOW','R':'FWS','T':'TRI'}[last];
+  if (code) return code;
+  // Unrecognized suffix — fall back to unit lookup name.
+  // If the unit name contains "County" it's a county jurisdiction → CNTY.
+  const unitKey = parts.slice(0, 2).join('-'); // e.g. MT-LG51
+  const lookupName = (UNIT_LOOKUP[unitKey] || '').toLowerCase();
+  if (lookupName.includes('county')) return 'CNTY';
+  // Raw suffix as last resort (flags it for human review)
+  return last;
 }
 
 // ── GACC LOOKUP ───────────────────────────────────────────────────────────
+// Unit-code-level GACC overrides — checked before state-level mapping.
+// Source: Unit_ID_vs_GACC.xlsx (NICC dispatch center assignments)
+// Manual overrides noted with comments.
+const UNIT_GACC_OVERRIDE = {
+  // Manual override — Perry confirmed
+  'MT-BIP': 'RMCC',  // Bighorn Canyon NRA — dispatched through RMCC
+
+  // EACC
+  'NE-BCR': 'EACC',
+
+  // GBCC
+  'AZ-ASD': 'GBCC',
+  'AZ-GLP': 'GBCC',
+  'AZ-PIP': 'GBCC',
+  'AZ-RAP': 'GBCC',
+  'CA-RMQ': 'GBCC',
+  'ID-10BN': 'GBCC',
+  'ID-1AX': 'GBCC',
+  'ID-1BN': 'GBCC',
+  'ID-1FN': 'GBCC',
+  'ID-1GX': 'GBCC',
+  'ID-1JN': 'GBCC',
+  'ID-1MN': 'GBCC',
+  'ID-1ON': 'GBCC',
+  'ID-1PX': 'GBCC',
+  'ID-1TN': 'GBCC',
+  'ID-1VX': 'GBCC',
+  'ID-1WX': 'GBCC',
+  'ID-2BN': 'GBCC',
+  'ID-2CX': 'GBCC',
+  'ID-2FN': 'GBCC',
+  'ID-2PN': 'GBCC',
+  'ID-3CN': 'GBCC',
+  'ID-4BN': 'GBCC',
+  'ID-5CN': 'GBCC',
+  'ID-6BX': 'GBCC',
+  'ID-8BIN': 'GBCC',
+  'ID-8BN': 'GBCC',
+  'ID-ADX': 'GBCC',
+  'ID-BLR': 'GBCC',
+  'ID-BLX': 'GBCC',
+  'ID-BOD': 'GBCC',
+  'ID-BOF': 'GBCC',
+  'ID-BRD': 'GBCC',
+  'ID-BUD': 'GBCC',
+  'ID-CAX': 'GBCC',
+  'ID-CHD': 'GBCC',
+  'ID-CMP': 'GBCC',
+  'ID-CMX': 'GBCC',
+  'ID-CRP': 'GBCC',
+  'ID-CSR': 'GBCC',
+  'ID-CTF': 'GBCC',
+  'ID-CUX': 'GBCC',
+  'ID-DFR': 'GBCC',
+  'ID-EIS': 'GBCC',
+  'ID-ELX': 'GBCC',
+  'ID-FHA': 'GBCC',
+  'ID-FRD': 'GBCC',
+  'ID-GJX': 'GBCC',
+  'ID-GLR': 'GBCC',
+  'ID-GOX': 'GBCC',
+  'ID-HFP': 'GBCC',
+  'ID-HFR': 'GBCC',
+  'ID-IDS': 'GBCC',
+  'ID-IFD': 'GBCC',
+  'ID-INE': 'GBCC',
+  'ID-IOEM': 'GBCC',
+  'ID-JAD': 'GBCC',
+  'ID-JMX': 'GBCC',
+  'ID-KER': 'GBCC',
+  'ID-LEX': 'GBCC',
+  'ID-LNX': 'GBCC',
+  'ID-LPE': 'GBCC',
+  'ID-MHQ': 'GBCC',
+  'ID-MNR': 'GBCC',
+  'ID-MNX': 'GBCC',
+  'ID-MVH': 'GBCC',
+  'ID-MVX': 'GBCC',
+  'ID-OWD': 'GBCC',
+  'ID-OWX': 'GBCC',
+  'ID-OYNG': 'GBCC',
+  'ID-PAF': 'GBCC',
+  'ID-PAS': 'GBCC',
+  'ID-PFN': 'GBCC',
+  'ID-PLX': 'GBCC',
+  'ID-POD': 'GBCC',
+  'ID-SCF': 'GBCC',
+  'ID-SFD': 'GBCC',
+  'ID-SFH': 'GBCC',
+  'ID-SHD': 'GBCC',
+  'ID-SIS': 'GBCC',
+  'ID-SRL': 'GBCC',
+  'ID-STF': 'GBCC',
+  'ID-SWS': 'GBCC',
+  'ID-TFD': 'GBCC',
+  'ID-TWX': 'GBCC',
+  'ID-UPD': 'GBCC',
+  'WY-BTF': 'GBCC',
+  'WY-GTP': 'GBCC',
+  'WY-JRP': 'GBCC',
+  'WY-NER': 'GBCC',
+  'WY-TDX': 'GBCC',
+
+  // NOPS
+  'AS-ASP': 'NOPS',
+  'AS-PPOW': 'NOPS',
+  'GU-BMQ': 'NOPS',
+  'GU-GFOW': 'NOPS',
+  'GU-GNQ': 'NOPS',
+  'GU-WPP': 'NOPS',
+  'HI-AKP': 'NOPS',
+  'HI-HAR': 'NOPS',
+  'HI-HAWX': 'NOPS',
+  'HI-HFO': 'NOPS',
+  'HI-HFOW': 'NOPS',
+  'HI-HIR': 'NOPS',
+  'HI-HIS': 'NOPS',
+  'HI-HKP': 'NOPS',
+  'HI-HLR': 'NOPS',
+  'HI-HMQ': 'NOPS',
+  'HI-HNLX': 'NOPS',
+  'HI-HNR': 'NOPS',
+  'HI-HOP': 'NOPS',
+  'HI-HVP': 'NOPS',
+  'HI-JCR': 'NOPS',
+  'HI-KAP': 'NOPS',
+  'HI-KAUX': 'NOPS',
+  'HI-KHP': 'NOPS',
+  'HI-KIR': 'NOPS',
+  'HI-KIS': 'NOPS',
+  'HI-KKR': 'NOPS',
+  'HI-KMQ': 'NOPS',
+  'HI-KRNG': 'NOPS',
+  'HI-KWNG': 'NOPS',
+  'HI-KYNG': 'NOPS',
+  'HI-MAS': 'NOPS',
+  'HI-MAUX': 'NOPS',
+  'HI-OAS': 'NOPS',
+  'HI-PCR': 'NOPS',
+  'HI-PHNQ': 'NOPS',
+  'HI-PHP': 'NOPS',
+  'HI-PHR': 'NOPS',
+  'HI-PMNQ': 'NOPS',
+  'HI-PRHW': 'NOPS',
+  'HI-PTYQ': 'NOPS',
+  'HI-PUP': 'NOPS',
+  'HI-PYNG': 'NOPS',
+  'HI-RYNG': 'NOPS',
+  'HI-SFYQ': 'NOPS',
+  'HI-TYNG': 'NOPS',
+  'HI-USP': 'NOPS',
+  'HI-UYNG': 'NOPS',
+  'HI-WYNG': 'NOPS',
+  'MP-AMP': 'NOPS',
+
+  // NRCC
+  'ND-ADR': 'NRCC',
+  'ND-AMR': 'NRCC',
+  'ND-AUR': 'NRCC',
+  'ND-AWR': 'NRCC',
+  'ND-BMW': 'NRCC',
+  'ND-CDR': 'NRCC',
+  'ND-CLR': 'NRCC',
+  'ND-CWR': 'NRCC',
+  'ND-DAL': 'NRCC',
+  'ND-DLR': 'NRCC',
+  'ND-DPF': 'NRCC',
+  'ND-DVR': 'NRCC',
+  'ND-ESR': 'NRCC',
+  'ND-FBA': 'NRCC',
+  'ND-FLR': 'NRCC',
+  'ND-FTA': 'NRCC',
+  'ND-FUP': 'NRCC',
+  'ND-GDR': 'NRCC',
+  'ND-GFAQ': 'NRCC',
+  'ND-GFW': 'NRCC',
+  'ND-GYNG': 'NRCC',
+  'ND-HLR': 'NRCC',
+  'ND-JCR': 'NRCC',
+  'ND-JDR': 'NRCC',
+  'ND-KRP': 'NRCC',
+  'ND-KSR': 'NRCC',
+  'ND-KUR': 'NRCC',
+  'ND-LAR': 'NRCC',
+  'ND-LGR': 'NRCC',
+  'ND-LIR': 'NRCC',
+  'ND-LLR': 'NRCC',
+  'ND-LMR': 'NRCC',
+  'ND-LNR': 'NRCC',
+  'ND-LWR': 'NRCC',
+  'ND-LZR': 'NRCC',
+  'ND-MCR': 'NRCC',
+  'ND-MIAQ': 'NRCC',
+  'ND-NDD': 'NRCC',
+  'ND-NDS': 'NRCC',
+  'ND-SDR': 'NRCC',
+  'ND-SER': 'NRCC',
+  'ND-SHDN': 'NRCC',
+  'ND-SHR': 'NRCC',
+  'ND-STR': 'NRCC',
+  'ND-TDR': 'NRCC',
+  'ND-TMA': 'NRCC',
+  'ND-TRP': 'NRCC',
+  'ND-TWR': 'NRCC',
+  'ND-USR': 'NRCC',
+  'ND-VCR': 'NRCC',
+  'ND-VFR': 'NRCC',
+  'ND-WLR': 'NRCC',
+  'SD-HRX': 'NRCC',
+  'SD-SDD': 'NRCC',
+  'WY-YNP': 'NRCC',
+
+  // SACC
+  'DC-AAP': 'SACC',
+  'DC-ACP': 'SACC',
+  'DC-CDP': 'SACC',
+  'DC-CGP': 'SACC',
+  'DC-CHP': 'SACC',
+  'DC-CWP': 'SACC',
+  'DC-ESO': 'SACC',
+  'DC-FDP': 'SACC',
+  'DC-FE3': 'SACC',
+  'DC-FEMA': 'SACC',
+  'DC-FOP': 'SACC',
+  'DC-FRP': 'SACC',
+  'DC-FTP': 'SACC',
+  'DC-FWP': 'SACC',
+  'DC-GMP': 'SACC',
+  'DC-JEP': 'SACC',
+  'DC-KGP': 'SACC',
+  'DC-KWP': 'SACC',
+  'DC-LIP': 'SACC',
+  'DC-MMP': 'SACC',
+  'DC-NAP': 'SACC',
+  'DC-NEP': 'SACC',
+  'DC-NOJC': 'SACC',
+  'DC-NPP': 'SACC',
+  'DC-OPP': 'SACC',
+  'DC-OSP': 'SACC',
+  'DC-PAP': 'SACC',
+  'DC-PIP': 'SACC',
+  'DC-PMP': 'SACC',
+  'DC-RCP': 'SACC',
+  'DC-SBP': 'SACC',
+  'DC-SUP': 'SACC',
+  'DC-TJP': 'SACC',
+  'DC-USFA': 'SACC',
+  'DC-VVP': 'SACC',
+  'DC-WHP': 'SACC',
+  'DC-WNQ': 'SACC',
+  'DC-WOA': 'SACC',
+  'DC-WOD': 'SACC',
+  'DC-WOF': 'SACC',
+  'DC-WOI': 'SACC',
+  'DC-WOO': 'SACC',
+  'DC-WOP': 'SACC',
+  'DC-WOR': 'SACC',
+  'MD-GRP': 'SACC',
+  'MD-WOW': 'SACC',
+  'PR-BESR': 'SACC',
+  'PR-BNYQ': 'SACC',
+  'PR-CBR': 'SACC',
+  'PR-CIR': 'SACC',
+  'PR-CUR': 'SACC',
+  'PR-DER': 'SACC',
+  'PR-DNR': 'SACC',
+  'PR-EYF': 'SACC',
+  'PR-FE2': 'SACC',
+  'PR-LCR': 'SACC',
+  'PR-PPER': 'SACC',
+  'PR-PRS': 'SACC',
+  'PR-SAP': 'SACC',
+  'PR-SYNG': 'SACC',
+  'PR-VQR': 'SACC',
+  'VI-BIP': 'SACC',
+  'VI-BIR': 'SACC',
+  'VI-CHP': 'SACC',
+  'VI-FE2': 'SACC',
+  'VI-GCR': 'SACC',
+  'VI-SPR': 'SACC',
+  'VI-SRP': 'SACC',
+  'VI-VIP': 'SACC',
+  'VI-VIS': 'SACC',
+  'WV-APP': 'SACC',
+
+  // SOPS
+  'CA-ABL': 'SOPS',
+  'CA-AGL': 'SOPS',
+  'CA-AMQ': 'SOPS',
+  'CA-AND': 'SOPS',
+  'CA-ANF': 'SOPS',
+  'CA-ANG': 'SOPS',
+  'CA-APP': 'SOPS',
+  'CA-ARC': 'SOPS',
+  'CA-ASP': 'SOPS',
+  'CA-ATW': 'SOPS',
+  'CA-AUB': 'SOPS',
+  'CA-AVA': 'SOPS',
+  'CA-AVI': 'SOPS',
+  'CA-AVP': 'SOPS',
+  'CA-BAD': 'SOPS',
+  'CA-BAK': 'SOPS',
+  'CA-BAN': 'SOPS',
+  'CA-BAR': 'SOPS',
+  'CA-BBB': 'SOPS',
+  'CA-BCR': 'SOPS',
+  'CA-BDC': 'SOPS',
+  'CA-BDF': 'SOPS',
+  'CA-BDO': 'SOPS',
+  'CA-BDU': 'SOPS',
+  'CA-BDY': 'SOPS',
+  'CA-BEU': 'SOPS',
+  'CA-BFA': 'SOPS',
+  'CA-BGO': 'SOPS',
+  'CA-BGP': 'SOPS',
+  'CA-BHL': 'SOPS',
+  'CA-BID': 'SOPS',
+  'CA-BKD': 'SOPS',
+  'CA-BKF': 'SOPS',
+  'CA-BLD': 'SOPS',
+  'CA-BLF': 'SOPS',
+  'CA-BLR': 'SOPS',
+  'CA-BLY': 'SOPS',
+  'CA-BMQ': 'SOPS',
+  'CA-BMT': 'SOPS',
+  'CA-BON': 'SOPS',
+  'CA-BRE': 'SOPS',
+  'CA-BRI': 'SOPS',
+  'CA-BRK': 'SOPS',
+  'CA-BRR': 'SOPS',
+  'CA-BRW': 'SOPS',
+  'CA-BSH': 'SOPS',
+  'CA-CAP': 'SOPS',
+  'CA-CBD': 'SOPS',
+  'CA-CDD': 'SOPS',
+  'CA-CDR': 'SOPS',
+  'CA-CED': 'SOPS',
+  'CA-CHO': 'SOPS',
+  'CA-CHV': 'SOPS',
+  'CA-CLNQ': 'SOPS',
+  'CA-CLP': 'SOPS',
+  'CA-CLV': 'SOPS',
+  'CA-CLX': 'SOPS',
+  'CA-CMB': 'SOPS',
+  'CA-CMC': 'SOPS',
+  'CA-CMNQ': 'SOPS',
+  'CA-CMP': 'SOPS',
+  'CA-CND': 'SOPS',
+  'CA-CNF': 'SOPS',
+  'CA-CNP': 'SOPS',
+  'CA-CONQ': 'SOPS',
+  'CA-COP': 'SOPS',
+  'CA-COR': 'SOPS',
+  'CA-COS': 'SOPS',
+  'CA-CPK': 'SOPS',
+  'CA-CPT': 'SOPS',
+  'CA-CRC': 'SOPS',
+  'CA-CRD': 'SOPS',
+  'CA-CRF': 'SOPS',
+  'CA-CRP': 'SOPS',
+  'CA-CTP': 'SOPS',
+  'CA-CUL': 'SOPS',
+  'CA-CVR': 'SOPS',
+  'CA-CVV': 'SOPS',
+  'CA-CYN': 'SOPS',
+  'CA-CZP': 'SOPS',
+  'CA-DAG': 'SOPS',
+  'CA-DBR': 'SOPS',
+  'CA-DIN': 'SOPS',
+  'CA-DMR': 'SOPS',
+  'CA-DNY': 'SOPS',
+  'CA-DPP': 'SOPS',
+  'CA-DSF': 'SOPS',
+  'CA-DSH': 'SOPS',
+  'CA-DVF': 'SOPS',
+  'CA-DVI': 'SOPS',
+  'CA-DVP': 'SOPS',
+  'CA-EBB': 'SOPS',
+  'CA-ECD': 'SOPS',
+  'CA-ECN': 'SOPS',
+  'CA-ECNQ': 'SOPS',
+  'CA-EDAQ': 'SOPS',
+  'CA-EFF': 'SOPS',
+  'CA-ELC': 'SOPS',
+  'CA-ELS': 'SOPS',
+  'CA-ESC': 'SOPS',
+  'CA-EVL': 'SOPS',
+  'CA-EXE': 'SOPS',
+  'CA-FCO': 'SOPS',
+  'CA-FDA': 'SOPS',
+  'CA-FIV': 'SOPS',
+  'CA-FKU': 'SOPS',
+  'CA-FLM': 'SOPS',
+  'CA-FMV': 'SOPS',
+  'CA-FOW': 'SOPS',
+  'CA-FRB': 'SOPS',
+  'CA-FRN': 'SOPS',
+  'CA-FUL': 'SOPS',
+  'CA-FVY': 'SOPS',
+  'CA-GCS': 'SOPS',
+  'CA-GGV': 'SOPS',
+  'CA-GLN': 'SOPS',
+  'CA-GNR': 'SOPS',
+  'CA-GNZ': 'SOPS',
+  'CA-GRN': 'SOPS',
+  'CA-GRR': 'SOPS',
+  'CA-GUA': 'SOPS',
+  'CA-GUS': 'SOPS',
+  'CA-HAN': 'SOPS',
+  'CA-HCF': 'SOPS',
+  'CA-HES': 'SOPS',
+  'CA-HFR': 'SOPS',
+  'CA-HGS': 'SOPS',
+  'CA-HIG': 'SOPS',
+  'CA-HLT': 'SOPS',
+  'CA-HLV': 'SOPS',
+  'CA-HLYQ': 'SOPS',
+  'CA-HMB': 'SOPS',
+  'CA-HMT': 'SOPS',
+  'CA-HOL': 'SOPS',
+  'CA-HPR': 'SOPS',
+  'CA-HRT': 'SOPS',
+  'CA-HTB': 'SOPS',
+  'CA-IBNQ': 'SOPS',
+  'CA-IDL': 'SOPS',
+  'CA-IDP': 'SOPS',
+  'CA-IMB': 'SOPS',
+  'CA-IMP': 'SOPS',
+  'CA-IMR': 'SOPS',
+  'CA-IND': 'SOPS',
+  'CA-INF': 'SOPS',
+  'CA-INW': 'SOPS',
+  'CA-IRYQ': 'SOPS',
+  'CA-JST': 'SOPS',
+  'CA-JTP': 'SOPS',
+  'CA-JUN': 'SOPS',
+  'CA-JVF': 'SOPS',
+  'CA-KCF': 'SOPS',
+  'CA-KEE': 'SOPS',
+  'CA-KEY': 'SOPS',
+  'CA-KIN': 'SOPS',
+  'CA-KNG': 'SOPS',
+  'CA-KNP': 'SOPS',
+  'CA-KRN': 'SOPS',
+  'CA-KRR': 'SOPS',
+  'CA-LAAQ': 'SOPS',
+  'CA-LAB': 'SOPS',
+  'CA-LAC': 'SOPS',
+  'CA-LAQ': 'SOPS',
+  'CA-LAT': 'SOPS',
+  'CA-LBN': 'SOPS',
+  'CA-LEE': 'SOPS',
+  'CA-LEM': 'SOPS',
+  'CA-LFD': 'SOPS',
+  'CA-LGV': 'SOPS',
+  'CA-LHH': 'SOPS',
+  'CA-LIB': 'SOPS',
+  'CA-LKS': 'SOPS',
+  'CA-LMD': 'SOPS',
+  'CA-LMP': 'SOPS',
+  'CA-LMS': 'SOPS',
+  'CA-LNG': 'SOPS',
+  'CA-LNQ': 'SOPS',
+  'CA-LNS': 'SOPS',
+  'CA-LOB': 'SOPS',
+  'CA-LOD': 'SOPS',
+  'CA-LOM': 'SOPS',
+  'CA-LPE': 'SOPS',
+  'CA-LPF': 'SOPS',
+  'CA-LPN': 'SOPS',
+  'CA-LPR': 'SOPS',
+  'CA-LSN': 'SOPS',
+  'CA-LUR': 'SOPS',
+  'CA-LVG': 'SOPS',
+  'CA-LVN': 'SOPS',
+  'CA-LYNG': 'SOPS',
+  'CA-MAM': 'SOPS',
+  'CA-MAN': 'SOPS',
+  'CA-MAQ': 'SOPS',
+  'CA-MAR': 'SOPS',
+  'CA-MCC': 'SOPS',
+  'CA-MCF': 'SOPS',
+  'CA-MCR': 'SOPS',
+  'CA-MDA': 'SOPS',
+  'CA-MDC': 'SOPS',
+  'CA-MEN': 'SOPS',
+  'CA-MER': 'SOPS',
+  'CA-MFE': 'SOPS',
+  'CA-MFR': 'SOPS',
+  'CA-MGO': 'SOPS',
+  'CA-MHB': 'SOPS',
+  'CA-MKE': 'SOPS',
+  'CA-MMNQ': 'SOPS',
+  'CA-MMQ': 'SOPS',
+  'CA-MMU': 'SOPS',
+  'CA-MNP': 'SOPS',
+  'CA-MNQ': 'SOPS',
+  'CA-MNT': 'SOPS',
+  'CA-MOK': 'SOPS',
+  'CA-MON': 'SOPS',
+  'CA-MPA': 'SOPS',
+  'CA-MPK': 'SOPS',
+  'CA-MRA': 'SOPS',
+  'CA-MRB': 'SOPS',
+  'CA-MRD': 'SOPS',
+  'CA-MRK': 'SOPS',
+  'CA-MRP': 'SOPS',
+  'CA-MRV': 'SOPS',
+  'CA-MTB': 'SOPS',
+  'CA-MTC': 'SOPS',
+  'CA-MTO': 'SOPS',
+  'CA-MUR': 'SOPS',
+  'CA-MVU': 'SOPS',
+  'CA-MVW': 'SOPS',
+  'CA-MZP': 'SOPS',
+  'CA-NAG': 'SOPS',
+  'CA-NAT': 'SOPS',
+  'CA-NBY': 'SOPS',
+  'CA-NCD': 'SOPS',
+  'CA-NCF': 'SOPS',
+  'CA-NCN': 'SOPS',
+  'CA-NED': 'SOPS',
+  'CA-NIL': 'SOPS',
+  'CA-NLD': 'SOPS',
+  'CA-NOR': 'SOPS',
+  'CA-NPB': 'SOPS',
+  'CA-OAP': 'SOPS',
+  'CA-OCF': 'SOPS',
+  'CA-OCS': 'SOPS',
+  'CA-ODF': 'SOPS',
+  'CA-ODL': 'SOPS',
+  'CA-OLC': 'SOPS',
+  'CA-ORC': 'SOPS',
+  'CA-ORG': 'SOPS',
+  'CA-OTO': 'SOPS',
+  'CA-OXD': 'SOPS',
+  'CA-OYNG': 'SOPS',
+  'CA-PAR': 'SOPS',
+  'CA-PAS': 'SOPS',
+  'CA-PDF': 'SOPS',
+  'CA-PDS': 'SOPS',
+  'CA-PEB': 'SOPS',
+  'CA-PER': 'SOPS',
+  'CA-PIP': 'SOPS',
+  'CA-PLNQ': 'SOPS',
+  'CA-PLR': 'SOPS',
+  'CA-PMQ': 'SOPS',
+  'CA-PMYQ': 'SOPS',
+  'CA-POW': 'SOPS',
+  'CA-PRD': 'SOPS',
+  'CA-PRF': 'SOPS',
+  'CA-PRG': 'SOPS',
+  'CA-PSD': 'SOPS',
+  'CA-PSM': 'SOPS',
+  'CA-PSP': 'SOPS',
+  'CA-PVL': 'SOPS',
+  'CA-RCD': 'SOPS',
+  'CA-RCF': 'SOPS',
+  'CA-RDB': 'SOPS',
+  'CA-RED': 'SOPS',
+  'CA-REE': 'SOPS',
+  'CA-RIA': 'SOPS',
+  'CA-RIV': 'SOPS',
+  'CA-RMG': 'SOPS',
+  'CA-RRU': 'SOPS',
+  'CA-RSF': 'SOPS',
+  'CA-RSP': 'SOPS',
+  'CA-RVC': 'SOPS',
+  'CA-RVD': 'SOPS',
+  'CA-RWNQ': 'SOPS',
+  'CA-RYNG': 'SOPS',
+  'CA-SAL': 'SOPS',
+  'CA-SAN': 'SOPS',
+  'CA-SAV': 'SOPS',
+  'CA-SBC': 'SOPS',
+  'CA-SBN': 'SOPS',
+  'CA-SBNQ': 'SOPS',
+  'CA-SBY': 'SOPS',
+  'CA-SCA': 'SOPS',
+  'CA-SCCL': 'SOPS',
+  'CA-SCNQ': 'SOPS',
+  'CA-SDF': 'SOPS',
+  'CA-SDYQ': 'SOPS',
+  'CA-SEA': 'SOPS',
+  'CA-SFS': 'SOPS',
+  'CA-SGB': 'SOPS',
+  'CA-SGR': 'SOPS',
+  'CA-SHL': 'SOPS',
+  'CA-SIR': 'SOPS',
+  'CA-SJB': 'SOPS',
+  'CA-SJR': 'SOPS',
+  'CA-SJT': 'SOPS',
+  'CA-SLC': 'SOPS',
+  'CA-SLD': 'SOPS',
+  'CA-SLM': 'SOPS',
+  'CA-SLO': 'SOPS',
+  'CA-SLS': 'SOPS',
+  'CA-SLU': 'SOPS',
+  'CA-SMA': 'SOPS',
+  'CA-SMC': 'SOPS',
+  'CA-SMD': 'SOPS',
+  'CA-SMF': 'SOPS',
+  'CA-SMG': 'SOPS',
+  'CA-SMI': 'SOPS',
+  'CA-SMM': 'SOPS',
+  'CA-SMP': 'SOPS',
+  'CA-SMQ': 'SOPS',
+  'CA-SMR': 'SOPS',
+  'CA-SMV': 'SOPS',
+  'CA-SMY': 'SOPS',
+  'CA-SND': 'SOPS',
+  'CA-SNF': 'SOPS',
+  'CA-SNM': 'SOPS',
+  'CA-SNO': 'SOPS',
+  'CA-SNQ': 'SOPS',
+  'CA-SNT': 'SOPS',
+  'CA-SOF': 'SOPS',
+  'CA-SOL': 'SOPS',
+  'CA-SOR': 'SOPS',
+  'CA-SPA': 'SOPS',
+  'CA-SPK': 'SOPS',
+  'CA-SPS': 'SOPS',
+  'CA-SQF': 'SOPS',
+  'CA-SRPC': 'SOPS',
+  'CA-SSB': 'SOPS',
+  'CA-SSL': 'SOPS',
+  'CA-STA': 'SOPS',
+  'CA-STB': 'SOPS',
+  'CA-STF': 'SOPS',
+  'CA-STO': 'SOPS',
+  'CA-SWF': 'SOPS',
+  'CA-SWV': 'SOPS',
+  'CA-TBR': 'SOPS',
+  'CA-TCU': 'SOPS',
+  'CA-TEM': 'SOPS',
+  'CA-TFT': 'SOPS',
+  'CA-THC': 'SOPS',
+  'CA-THO': 'SOPS',
+  'CA-TJR': 'SOPS',
+  'CA-TLC': 'SOPS',
+  'CA-TLR': 'SOPS',
+  'CA-TLU': 'SOPS',
+  'CA-TMC': 'SOPS',
+  'CA-TMQ': 'SOPS',
+  'CA-TNR': 'SOPS',
+  'CA-TOR': 'SOPS',
+  'CA-TRL': 'SOPS',
+  'CA-TSH': 'SOPS',
+  'CA-TUO': 'SOPS',
+  'CA-TUR': 'SOPS',
+  'CA-TUU': 'SOPS',
+  'CA-TWA': 'SOPS',
+  'CA-TWP': 'SOPS',
+  'CA-UKD': 'SOPS',
+  'CA-UPL': 'SOPS',
+  'CA-VAQ': 'SOPS',
+  'CA-VCF': 'SOPS',
+  'CA-VCV': 'SOPS',
+  'CA-VEN': 'SOPS',
+  'CA-VER': 'SOPS',
+  'CA-VJS': 'SOPS',
+  'CA-VNC': 'SOPS',
+  'CA-VNQ': 'SOPS',
+  'CA-VSA': 'SOPS',
+  'CA-VTA': 'SOPS',
+  'CA-WCV': 'SOPS',
+  'CA-WDR': 'SOPS',
+  'CA-WFNQ': 'SOPS',
+  'CA-WLA': 'SOPS',
+  'CA-WLF': 'SOPS',
+  'CA-WML': 'SOPS',
+  'CA-WMR': 'SOPS',
+  'CA-WMT': 'SOPS',
+  'CA-WPT': 'SOPS',
+  'CA-WSF': 'SOPS',
+  'CA-WSNQ': 'SOPS',
+  'CA-WUK': 'SOPS',
+  'CA-XBE': 'SOPS',
+  'CA-YER': 'SOPS',
+  'CA-YNP': 'SOPS',
+  'CA-YUC': 'SOPS',
+  'CA-ZUM': 'SOPS',
+
+  // SWCC
+  'TX-BLYQ': 'SWCC',
+  'TX-GRR': 'SWCC',
+  'TX-GUP': 'SWCC',
+};
+
 const STATE_TO_GACC = {
   AL:'SACC',AR:'SACC',FL:'SACC',GA:'SACC',KY:'SACC',LA:'SACC',MS:'SACC',
   NC:'SACC',OK:'SACC',SC:'SACC',TN:'SACC',TX:'SACC',VA:'SACC',
@@ -691,16 +1405,17 @@ const STATE_TO_GACC = {
   ID:'NRCC',MT:'NRCC',
   OR:'NWCC',WA:'NWCC',
   AK:'AICC',
-  AZ:'SWCC',CO:'SWCC',NM:'SWCC',UT:'SWCC',
-  NV:'GBCC',WY:'GBCC',
-  CA:'CACC',
-  KS:'RMCC',NE:'RMCC',ND:'RMCC',SD:'RMCC',
+  AZ:'SWCC',NM:'SWCC',
+  CO:'RMCC',UT:'GBCC',
+  NV:'GBCC',
+  CA:'NOPS',
+  KS:'RMCC',NE:'RMCC',ND:'RMCC',SD:'RMCC',WY:'RMCC',
 };
-const GACC_ORDER  = ['SACC','SWCC','GBCC','RMCC','NRCC','NWCC','CACC','EACC','AICC','UNKNOWN'];
+const GACC_ORDER  = ['SACC','SWCC','GBCC','RMCC','NRCC','NWCC','NOPS','SOPS','EACC','AICC','UNKNOWN'];
 const GACC_COLORS = {
   SACC:   '#b84a00', SWCC:  '#1a5c96', GBCC: '#4a7a30',
   RMCC:   '#7a4a96', NRCC:  '#006870', NWCC: '#8a6020',
-  CACC:   '#c04060', EACC:  '#406080', AICC: '#606060',
+  NOPS:   '#c04060', SOPS:  '#a03050', EACC: '#406080', AICC: '#606060',
   UNKNOWN:'#909090',
 };
 // ── UNIT LOOKUP (356 entries — managing org by unit code) ────────────────
@@ -809,10 +1524,10 @@ const UNIT_LOOKUP = {
   "AK-FARN": "Far West, Incorporated, ANC",
   "AK-FAS": "Fairbanks Area, Alaska DOF",
   "AK-FBD": "Fairbanks District, BLM",
-  "AK-FGQ": "Fort Greely, Army",
+  "AK-FGQ": "Fort Greely, DOW",
   "AK-FGS": "Alaska Department of Fish and Game",
   "AK-FNFX": "Fairbanks North Star Borough",
-  "AK-FWQ": "Fort Wainwright, Army",
+  "AK-FWQ": "Fort Wainwright, DOW",
   "AK-GAD": "Galena Zone, BLM",
   "AK-GANN": "Gana-a 'Yoo, Limited, ANC",
   "AK-GAP": "Gates of the Arctic National Park & Preserve, NPS",
@@ -1042,7 +1757,7 @@ const UNIT_LOOKUP = {
   "AK-ZHON": "Zho-Tse, Incorporated, ANC",
   "AL-ALF": "National Forests in Alabama, USFS",
   "AL-ALS": "Alabama Forestry Commission",
-  "AL-ANYQ": "Anniston Army Depot, Army",
+  "AL-ANYQ": "Anniston Army Depot, DOW",
   "AL-BOR": "Bon Secour NWR, FWS",
   "AL-BWR": "Sauta Cave NWR, FWS",
   "AL-CHR": "Choctaw NWR, FWS",
@@ -1058,7 +1773,7 @@ const UNIT_LOOKUP = {
   "AL-MLR": "Mountain Longleaf NWR, FWS",
   "AL-MYNG": "Fort McClellan Training Center, ARNG",
   "AL-PCT": "Poarch Creek Tribe, Tribal",
-  "AL-RSYQ": "Redstone Arsenal, Army",
+  "AL-RSYQ": "Redstone Arsenal, DOW",
   "AL-RUP": "Russell Cave National Monument, NPS",
   "AL-SMP": "Selma to Montgomery National Historic Trail, NPS",
   "AL-SRS": "Southern Research Station, USFS",
@@ -1092,7 +1807,7 @@ const UNIT_LOOKUP = {
   "AR-OUF": "Ouachita National Forest, USFS",
   "AR-OVR": "Overflow NWR, FWS",
   "AR-OZF": "Ozark-St. Francis National Forests, USFS",
-  "AR-PBYQ": "Pine Bluff Arsenal, Army",
+  "AR-PBYQ": "Pine Bluff Arsenal, DOW",
   "AR-PCR": "Pond Creek NWR, FWS",
   "AR-PEP": "Pea Ridge National Military Park, NPS",
   "AR-RYNG": "Camp Joseph T Robinson, ARNG",
@@ -1123,7 +1838,7 @@ const UNIT_LOOKUP = {
   "AZ-CRT": "Colorado River Indian Tribes, Tribal",
   "AZ-DMQ": "Davis Monthan Air Force Base, USAF",
   "AZ-FBP": "Fort Bowie National Historic Site, NPS",
-  "AZ-FHQ": "Fort Huachuca, Army",
+  "AZ-FHQ": "Fort Huachuca, DOW",
   "AZ-FSNQ": "Naval Observatory Flagstaff Station, USN",
   "AZ-FTA": "Fort Apache Agency, BIA",
   "AZ-FYA": "Fort Yuma Agency, BIA",
@@ -1177,7 +1892,7 @@ const UNIT_LOOKUP = {
   "AZ-YAL": "Yuma Area Office, BOR",
   "AZ-YMQ": "Marine Corps Air Station Yuma, USMC",
   "AZ-YMX": "Yuma County (AZ)",
-  "AZ-YPYQ": "Yuma Proving Ground, Army",
+  "AZ-YPYQ": "Yuma Proving Ground, DOW",
   "AZ-YUFD": "Yuma Field Office, BLM",
   "CA-1NAS": "Ames Research Center",
   "CA-ABL": "Arrowbear Lake Fire Department",
@@ -1350,7 +2065,7 @@ const UNIT_LOOKUP = {
   "CA-CPT": "Calipatria Fire Department",
   "CA-CPV": "California Pines Volunteer Fire Department",
   "CA-CPY": "Capay Fire Protection District",
-  "CA-CPYQ": "Camp Parks, Army",
+  "CA-CPYQ": "Camp Parks, DOW",
   "CA-CRC": "California Rehabilitation Center Fire Department",
   "CA-CRD": "Coronado Fire Department",
   "CA-CRF": "Crest Forest Fire Department",
@@ -1519,7 +2234,7 @@ const UNIT_LOOKUP = {
   "CA-HIG": "Highland Fire Department",
   "CA-HLT": "Holtville Fire Department",
   "CA-HLV": "Huntington Lake Volunteer Fire Department",
-  "CA-HLYQ": "Fort Hunter Liggett, Army",
+  "CA-HLYQ": "Fort Hunter Liggett, DOW",
   "CA-HMB": "Hermosa Beach Fire Department",
   "CA-HMM": "Hammond Ranch Fire Company",
   "CA-HMT": "Hemet Fire Department",
@@ -1546,7 +2261,7 @@ const UNIT_LOOKUP = {
   "CA-INV": "Inverness Public Utility District",
   "CA-INW": "Indian Wells Fire Department",
   "CA-ION": "Ione Fire Department",
-  "CA-IRYQ": "Fort Irwin, Army",
+  "CA-IRYQ": "Fort Irwin, DOW",
   "CA-ISL": "Isleton Fire Department",
   "CA-JBP": "Juan Bautista de Anza National Historic Trail, NPS",
   "CA-JCF": "Junction City Fire Protection District",
@@ -1767,7 +2482,7 @@ const UNIT_LOOKUP = {
   "CA-OCD": "Occidental Volunteer Fire Department",
   "CA-OCF": "Orange Cove Fire Department",
   "CA-OCS": "Oceanside Fire Department",
-  "CA-OCYQ": "Military Ocean Terminal Concord, Army",
+  "CA-OCYQ": "Military Ocean Terminal Concord, DOW",
   "CA-ODF": "Oakdale Fire Department",
   "CA-ODL": "Oakdale Rural Fire Protection District",
   "CA-OES": "California Office of Emergency Services, Fire and Rescue",
@@ -1813,7 +2528,7 @@ const UNIT_LOOKUP = {
   "CA-PLY": "Plymouth Fire Department",
   "CA-PMQ": "Marine Corps Base Camp Pendleton, USMC",
   "CA-PMT": "Post Mountain Volunteer Fire Department",
-  "CA-PMYQ": "Presidio of Monterey, Army",
+  "CA-PMYQ": "Presidio of Monterey, DOW",
   "CA-PNF": "Plumas National Forest, USFS",
   "CA-PNP": "Port Chicago Naval Magazine National Memorial, NPS",
   "CA-PNS": "Peninsula Fire Protection District",
@@ -1888,7 +2603,7 @@ const UNIT_LOOKUP = {
   "CA-SAP": "San Francisco Maritime National Historical Park, NPS",
   "CA-SAR": "Saratoga Fire Protection District",
   "CA-SAV": "San Ardo Volunteer Fire Department",
-  "CA-SAYQ": "Sierra Army Depot, Army",
+  "CA-SAYQ": "Sierra Army Depot, DOW",
   "CA-SBC": "Santa Barbara County Fire Department",
   "CA-SBF": "Sutter Basin Fire Protection District",
   "CA-SBG": "Stones Bengard Community Service District",
@@ -1913,7 +2628,7 @@ const UNIT_LOOKUP = {
   "CA-SDC": "Eldridge Fire Department",
   "CA-SDF": "San Diego County Fire Authority",
   "CA-SDU": "San Diego Unit, Cal Fire",
-  "CA-SDYQ": "Sharpe Army Depot, Army",
+  "CA-SDYQ": "Sharpe Army Depot, DOW",
   "CA-SEA": "Seaside Fire Department",
   "CA-SEB": "Sebastopol Fire Department",
   "CA-SEI": "Seiad Valley Volunteer Fire Department",
@@ -2135,6 +2850,7 @@ const UNIT_LOOKUP = {
   "CO-ARR": "Arapaho NWR, FWS",
   "CO-AUX": "Archuleta County (CO)",
   "CO-BAR": "Baca NWR, FWS",
+  "CO-BAX": "Baca County",
   "CO-BCP": "Black Canyon of the Gunnison National Park, NPS",
   "CO-BFP": "Bent's Old Fort National Historic Site, NPS",
   "CO-BLX": "Boulder County (CO)",
@@ -2158,7 +2874,7 @@ const UNIT_LOOKUP = {
   "CO-EAX": "Eagle County",
   "CO-ELX": "Elbert County",
   "CO-EPX": "El Paso County",
-  "CO-FCQ": "Fort Carson Army Base, Army",
+  "CO-FCQ": "Fort Carson Army Base, DOW",
   "CO-FFP": "Florissant Fossil Beds National Monument, NPS",
   "CO-FRX": "Fremont County",
   "CO-GFX": "Garfield County",
@@ -2198,8 +2914,8 @@ const UNIT_LOOKUP = {
   "CO-OUX": "Ouray County",
   "CO-PAQ": "Peterson Space Force Base, USAF",
   "CO-PAX": "Park County",
-  "CO-PCYQ": "Pinon Canyon Maneuver Site, Army",
-  "CO-PDYQ": "Pueblo Chemical Depot, Army",
+  "CO-PCYQ": "Pinon Canyon Maneuver Site, DOW",
+  "CO-PDYQ": "Pueblo Chemical Depot, DOW",
   "CO-PLTZ": "Platteville Police Department",
   "CO-PLX": "Phillips County",
   "CO-PSF": "Pike and San Isabel National Forest, USFS",
@@ -2351,7 +3067,7 @@ const UNIT_LOOKUP = {
   "FL-MDAQ": "MacDill Air Force Base, USAF",
   "FL-MIR": "Merritt Island NWR, FWS",
   "FL-MIT": "Miccosukee Tribe of Indians, Tribal",
-  "FL-MIYQ": "U.S. Army Garrison-Miami, Army",
+  "FL-MIYQ": "U.S. Army Garrison-Miami, DOW",
   "FL-MLBW": "Melbourne Weather Service Office",
   "FL-MNQ": "Naval Station Mayport, USN",
   "FL-MSFW": "Miami-South Florida Weather Service Office",
@@ -2389,7 +3105,7 @@ const UNIT_LOOKUP = {
   "GA-BGR": "Bo Ginn National Fish Hatchery, FWS",
   "GA-BLR": "Blackbeard Island NWR, FWS",
   "GA-BNR": "Banks Lake NWR, FWS",
-  "GA-BNYQ": "Fort Benning, Army",
+  "GA-BNYQ": "Fort Benning, DOW",
   "GA-BSR": "Bond Swamp NWR, FWS",
   "GA-CHF": "Chattahoochee-Oconee National Forest, USFS",
   "GA-CHFR": "Chattahoochee Forest National Fish Hatchery, FWS",
@@ -2401,7 +3117,7 @@ const UNIT_LOOKUP = {
   "GA-FFP": "Fort Frederica National Monument, NPS",
   "GA-FLE": "Federal Law Enforcement Training Center",
   "GA-FPP": "Fort Pulaski National Monument, NPS",
-  "GA-FSQ": "Fort Stewart, Army",
+  "GA-FSQ": "Fort Stewart, DOW",
   "GA-GAS": "Georgia Forestry Commission",
   "GA-HSR": "Harris Neck NWR, FWS",
   "GA-JCP": "Jimmy Carter National Historical Park, NPS",
@@ -2457,11 +3173,11 @@ const UNIT_LOOKUP = {
   "HI-PHR": "Pearl Harbor NWR, FWS",
   "HI-PMNQ": "Pacific Missile Range Facility Barking Sands, USN",
   "HI-PRHW": "Pacific Region Headquarters",
-  "HI-PTYQ": "U.S. Army Garrison Hawaii - Pohakuloa Training Area, Army",
+  "HI-PTYQ": "U.S. Army Garrison Hawaii - Pohakuloa Training Area, DOW",
   "HI-PUP": "Pu`uhonua O Honaunau National Historical Park, NPS",
   "HI-PYNG": "Pu'unene Readiness Center, ARNG",
   "HI-RYNG": "Ft Ruger Readiness Center, ARNG",
-  "HI-SFYQ": "U.S. Army Garrison Hawaii - Schofield Barracks, Army",
+  "HI-SFYQ": "U.S. Army Garrison Hawaii - Schofield Barracks, DOW",
   "HI-TYNG": "Regional Training Institute, ARNG",
   "HI-USP": "Pearl Harbor National Memorial, NPS",
   "HI-WYNG": "Wahiawa Unit Training and Equipment Site, ARNG",
@@ -2717,7 +3433,7 @@ const UNIT_LOOKUP = {
   "KS-FLP": "Fort Larned National Historic Site, NPS",
   "KS-FLR": "Flint Hills NWR, FWS",
   "KS-FOX": "Ford County",
-  "KS-FRQ": "Fort Riley Kansas, Army",
+  "KS-FRQ": "Fort Riley Kansas, DOW",
   "KS-FRX": "Franklin County",
   "KS-FSP": "Fort Scott National Historic Site, NPS",
   "KS-GEX": "Geary County",
@@ -2749,7 +3465,7 @@ const UNIT_LOOKUP = {
   "KS-LGX": "Logan County",
   "KS-LNX": "Linn County",
   "KS-LVX": "Leavenworth County",
-  "KS-LVYQ": "Fort Leavenworth, Army",
+  "KS-LVYQ": "Fort Leavenworth, DOW",
   "KS-LYX": "Lyon County",
   "KS-MCAQ": "McConnell Air Force Base, USAF",
   "KS-MCR": "Marais des Cygnes NWR, FWS",
@@ -2807,7 +3523,7 @@ const UNIT_LOOKUP = {
   "KS-WSX": "Washington County",
   "KS-WYX": "Wyandotte County",
   "KY-ALP": "Abraham Lincoln Birthplace National Historic Park, NPS",
-  "KY-BGYQ": "Blue Grass Army Depot, Army",
+  "KY-BGYQ": "Blue Grass Army Depot, DOW",
   "KY-CGP": "Cumberland Gap National Historical Park, NPS",
   "KY-CLR": "Clark's River NWR, FWS",
   "KY-CNMP": "Camp Nelson National Monument, NPS",
@@ -2815,10 +3531,10 @@ const UNIT_LOOKUP = {
   "KY-DFWS": "Kentucky Department of Fish & Wildlife Resources",
   "KY-DYNG": "Disney Training Center, ARNG",
   "KY-EYNG": "MTA Eastern KY WETS, ARNG",
-  "KY-FCQ": "Fort Campbell, Army",
+  "KY-FCQ": "Fort Campbell, DOW",
   "KY-FE4": "FEMA Region IV Kentucky",
   "KY-FESR": "Kentucky Ecological Services Field Office, FWS",
-  "KY-FKQ": "Fort Knox, Army",
+  "KY-FKQ": "Fort Knox, DOW",
   "KY-GRR": "Green River NWR, FWS",
   "KY-KYS": "Kentucky DOF",
   "KY-LBF": "Land Between the Lakes National Recreation Area, USFS",
@@ -2885,7 +3601,7 @@ const UNIT_LOOKUP = {
   "MA-BOXW": "Boston Weather Forecast Office",
   "MA-BSP": "Boston Support Office, NPS",
   "MA-CCP": "Cape Cod National Seashore, NPS",
-  "MA-DVYQ": "Fort Devens, Army",
+  "MA-DVYQ": "Fort Devens, DOW",
   "MA-EMR": "Eastern Massachusetts NWR Complex, FWS",
   "MA-ESP": "Essex National Heritage Area, NPS",
   "MA-EYNG": "MTA Camp Edwards, ARNG",
@@ -2915,7 +3631,7 @@ const UNIT_LOOKUP = {
   "MA-SPP": "Springfield Armory National Historic Site, NPS",
   "MA-TIR": "Thatcher Island NWR, FWS",
   "MA-WEQ": "Westover Air Force Base, USAF",
-  "MD-ABQ": "Aberdeen Proving Grounds, Army",
+  "MD-ABQ": "Aberdeen Proving Grounds, DOW",
   "MD-AIP": "Assateague Island National Seashore, NPS",
   "MD-ANAQ": "Joint Base Andrews, USAF",
   "MD-ANP": "Antietam National Battlefield, NPS",
@@ -2940,7 +3656,7 @@ const UNIT_LOOKUP = {
   "MD-IHNQ": "Naval Support Facility Indian Head, USN",
   "MD-MDFN": "Maryland Field Office, TNC",
   "MD-MDS": "Maryland DNR Forest Service",
-  "MD-MDYQ": "Fort Meade, Army",
+  "MD-MDYQ": "Fort Meade, DOW",
   "MD-MOP": "Monocacy National Battlefield, NPS",
   "MD-MTR": "Martin NWR, FWS",
   "MD-OFP": "Oxon Cove Park & Oxon Hill Farm, NPS",
@@ -3081,8 +3797,8 @@ const UNIT_LOOKUP = {
   "MO-HTP": "Harry S Truman National Historic Site, NPS",
   "MO-JEP": "Jefferson National Expansion Memorial, NPS",
   "MO-LBR": "Loess Bluffs NWR, FWS",
-  "MO-LCYQ": "Lake City Army Ammunition Plant, Army",
-  "MO-LWYQ": "Fort Leonard Wood, Army",
+  "MO-LCYQ": "Lake City Army Ammunition Plant, DOW",
+  "MO-LWYQ": "Fort Leonard Wood, DOW",
   "MO-MOR": "Mingo NWR, FWS",
   "MO-MOS": "Missouri Department of Conservation",
   "MO-MTF": "Mark Twain National Forest, USFS",
@@ -3298,7 +4014,7 @@ const UNIT_LOOKUP = {
   "NC-CSP": "Carl Sandburg Home National Historic Site, NPS",
   "NC-ECA": "Eastern Cherokee Agency, BIA",
   "NC-EDFH": "Edenton National Fish Hatchery, FWS",
-  "NC-FBQ": "Fort Bragg, Army",
+  "NC-FBQ": "Fort Bragg, DOW",
   "NC-FE4": "FEMA Region IV North Carolina",
   "NC-FHP": "Forest Health Protection - Asheville Field Office, USFS",
   "NC-FRP": "Fort Raleigh National Historic Site, NPS",
@@ -3312,7 +4028,7 @@ const UNIT_LOOKUP = {
   "NC-NCF": "National Forests in North Carolina, USFS",
   "NC-NCS": "North Carolina Forest Service",
   "NC-NMQ": "Marine Corps Air Station New River, USMC",
-  "NC-OSYQ": "Military Ocean Terminal Sunny Point, Army",
+  "NC-OSYQ": "Military Ocean Terminal Sunny Point, DOW",
   "NC-PER": "Pee Dee NWR, FWS",
   "NC-PLR": "Pea Island NWR, FWS",
   "NC-POR": "Pocosin Lakes NWR, FWS",
@@ -3424,7 +4140,7 @@ const UNIT_LOOKUP = {
   "NJ-MOP": "Morristown National Historical Park, NPS",
   "NJ-NESR": "New Jersey Ecological Services Field Office, FWS",
   "NJ-NJS": "New Jersey Forest Fire Service",
-  "NJ-PAYQ": "Picatinny Arsenal, Army",
+  "NJ-PAYQ": "Picatinny Arsenal, DOW",
   "NJ-PGP": "Paterson Great Falls National Historical Park, NPS",
   "NJ-PIBN": "TNC New Jersey Field Office, TNC",
   "NJ-PIP": "New Jersey Pinelands National Reserve, NPS",
@@ -3497,7 +4213,7 @@ const UNIT_LOOKUP = {
   "NM-VCP": "Valles Caldera National Preserve, NPS",
   "NM-VOR": "Valle de Oro NWR, FWS",
   "NM-WHP": "White Sands National Park, NPS",
-  "NM-WSQ": "White Sands Missile Range, Army",
+  "NM-WSQ": "White Sands Missile Range, DOW",
   "NM-ZUA": "Zuni Agency, BIA",
   "NV-AIR": "Anaho Island NWR, FWS",
   "NV-AMR": "Ash Meadows NWR, FWS",
@@ -3523,7 +4239,7 @@ const UNIT_LOOKUP = {
   "NV-FLR": "Fallon NWR, FWS",
   "NV-FNQ": "Naval Air Station Fallon, USN",
   "NV-GBP": "Great Basin National Park, NPS",
-  "NV-HADQ": "Hawthorne Army Depot, Army",
+  "NV-HADQ": "Hawthorne Army Depot, DOW",
   "NV-HTF": "Humboldt-Toiyabe National Forest, USFS",
   "NV-HUD": "Humboldt Field Office, BLM",
   "NV-HUMX": "Humboldt County",
@@ -3573,7 +4289,7 @@ const UNIT_LOOKUP = {
   "NY-EIP": "Ellis Island National Monument, NPS",
   "NY-ERP": "Eleanor Roosevelt National Historic Site, NPS",
   "NY-FDP": "Home of Franklin D. Roosevelt National Historic Site, NPS",
-  "NY-FDQ": "Fort Drum Military Reservation, Army",
+  "NY-FDQ": "Fort Drum Military Reservation, DOW",
   "NY-FHP": "Federal Hall National Memorial, NPS",
   "NY-FIP": "Fire Island National Seashore, NPS",
   "NY-FOP": "Fort Stanwix National Monument, NPS",
@@ -3610,7 +4326,7 @@ const UNIT_LOOKUP = {
   "NY-TRR": "Target Rock NWR, FWS",
   "NY-WHR": "Wertheim NWR, FWS",
   "NY-WOP": "Woman's Rights National Historical Park, NPS",
-  "NY-WPQ": "West Point Military Reservation, Army",
+  "NY-WPQ": "West Point Military Reservation, DOW",
   "OH-CPR": "Cedar Point NWR, FWS",
   "OH-CVP": "Cuyahoga Valley National Park, NPS",
   "OH-CYP": "Charles Young Buffalo Soldiers National Monument, NPS",
@@ -3648,7 +4364,7 @@ const UNIT_LOOKUP = {
   "OK-KWT": "Kiowa Tribe, Tribal",
   "OK-LRR": "Little River NWR, FWS",
   "OK-LSR": "Little Sandy NWR, FWS",
-  "OK-MCYQ": "McAlester Army Ammunition Plant, Army",
+  "OK-MCYQ": "McAlester Army Ammunition Plant, DOW",
   "OK-MIA": "Miami Agency, BIA",
   "OK-OCP": "Oklahoma City National Memorial, NPS",
   "OK-OESR": "Oklahoma Ecological Services Field Office, FWS",
@@ -3662,7 +4378,7 @@ const UNIT_LOOKUP = {
   "OK-PAA": "Pawnee Agency, BIA",
   "OK-SEM": "Oklahoma Department Of Emergency Management",
   "OK-SLR": "Salt Plains NWR, FWS",
-  "OK-SLYQ": "Fort Sill, Army",
+  "OK-SLYQ": "Fort Sill, DOW",
   "OK-SPA": "Southern Plains Regional Office, BIA",
   "OK-SQR": "Sequoyah NWR, FWS",
   "OK-TIAQ": "Tinker Air Force Base, USAF",
@@ -4141,7 +4857,7 @@ const UNIT_LOOKUP = {
   "PA-INP": "Independence National Historical Park, NPS",
   "PA-IYNG": "Fort Indiantown Gap, ARNG",
   "PA-JFP": "Johnstown Flood National Memorial, NPS",
-  "PA-LKYQ": "Letterkenny Army Depot, Army",
+  "PA-LKYQ": "Letterkenny Army Depot, DOW",
   "PA-LMR": "Lamar National Fish Hatchery and Northeast Fishery Center, FWS",
   "PA-MNQ": "Naval Support Activity Mechanicsburg, USN",
   "PA-PAFN": "Pennsylvania Field Office, TNC",
@@ -4155,7 +4871,7 @@ const UNIT_LOOKUP = {
   "PA-UDP": "Upper Delaware Scenic & Recreational River, NPS",
   "PA-VFP": "Valley Forge National Historical Park, NPS",
   "PR-BESR": "Caribbean Ecological Services Field Office, FWS",
-  "PR-BNYQ": "Fort Buchanan, Army",
+  "PR-BNYQ": "Fort Buchanan, DOW",
   "PR-CBR": "Cabo Rojo NWR, FWS",
   "PR-CIR": "Caribbean Island Refuge, FWS",
   "PR-CUR": "Culebra NWR, FWS",
@@ -4195,7 +4911,7 @@ const UNIT_LOOKUP = {
   "SC-CSP": "Congaree National Park, NPS",
   "SC-CWP": "Cowpens National Battlefield, NPS",
   "SC-FE4": "FEMA Region IV South Carolina",
-  "SC-FJQ": "Fort Jackson Army Training Center, Army",
+  "SC-FJQ": "Fort Jackson Army Training Center, DOW",
   "SC-FMF": "Francis Marion & Sumter National Forests, USFS",
   "SC-FSP": "Fort Sumter & Fort Moultrie National Historical Park, NPS",
   "SC-GSPW": "Greenville-Spartanburg, SC Weather Forecast Office",
@@ -4353,12 +5069,12 @@ const UNIT_LOOKUP = {
   "TN-FDP": "Fort Donelson National Battlefield, NPS",
   "TN-FE4": "FEMA Region IV Tennessee",
   "TN-GSP": "Great Smoky Mountains National Park, NPS",
-  "TN-HOYQ": "Holston Army Ammunition Plant, Army",
+  "TN-HOYQ": "Holston Army Ammunition Plant, DOW",
   "TN-HTR": "Hatchie NWR, FWS",
   "TN-LHR": "Lower Hatchie NWR, FWS",
   "TN-LIR": "Lake Isom NWR, FWS",
   "TN-MEMW": "Memphis Weather Forecast Office",
-  "TN-MIYQ": "Milan Army Ammunition Plant, Army",
+  "TN-MIYQ": "Milan Army Ammunition Plant, DOW",
   "TN-MPRX": "Mcemergency Service District #6 Porter Fire Department",
   "TN-MSNQ": "Naval Support Activity Mid-South, USN",
   "TN-MYNG": "VTS Milan, ARNG",
@@ -4418,7 +5134,7 @@ const UNIT_LOOKUP = {
   "TX-BISM": "Big Spring Fire Department",
   "TX-BLOM": "Blossom Volunteer Fire Department",
   "TX-BLUM": "Blue Mound Volunteer Fire Department",
-  "TX-BLYQ": "Fort Bliss, Army",
+  "TX-BLYQ": "Fort Bliss, DOW",
   "TX-BMZX": "Berlin - Mill Creek - Zionsville Volunteer Fire Department",
   "TX-BOEX": "Boerne Fire Department",
   "TX-BORM": "Borger Fire Department",
@@ -4446,7 +5162,7 @@ const UNIT_LOOKUP = {
   "TX-CCER": "Corpus Christi Ecological Services Field Office, FWS",
   "TX-CCMX": "Central Community Volunteer Fire Department",
   "TX-CCNQ": "Naval Air Station Corpus Christi, USN",
-  "TX-CCYQ": "Corpus Christi Army Depot, Army",
+  "TX-CCYQ": "Corpus Christi Army Depot, DOW",
   "TX-CEBX": "CE-Bar Fire Department",
   "TX-CEHM": "Cedar Hill Fire Department",
   "TX-CELM": "Celina Fire Department",
@@ -4668,7 +5384,7 @@ const UNIT_LOOKUP = {
   "TX-ROWM": "Rowlett Fire Department",
   "TX-ROXX": "Roxton Volunteer Fire Department",
   "TX-ROYM": "Royse City Fire Department",
-  "TX-RRYQ": "Red River Army Depot, Army",
+  "TX-RRYQ": "Red River Army Depot, DOW",
   "TX-SAAM": "San Angelo Fire Department",
   "TX-SACM": "Sachse Fire Department",
   "TX-SAGM": "Sanger Fire Department",
@@ -4782,7 +5498,7 @@ const UNIT_LOOKUP = {
   "UT-CYD": "Canyon Country District, BLM",
   "UT-DGX": "Daggett County",
   "UT-DIF": "Dixie National Forest, USFS",
-  "UT-DPYQ": "Dugway Proving Ground, Army",
+  "UT-DPYQ": "Dugway Proving Ground, DOW",
   "UT-DRD": "Desert Rivers Fire and Aviation Management Unit, BLM",
   "UT-DUX": "Duchesne County",
   "UT-ESR": "Ecological Service Office, FWS",
@@ -4823,7 +5539,7 @@ const UNIT_LOOKUP = {
   "UT-SVX": "Sevier County",
   "UT-SWS": "Southwest Area, Utah DOF",
   "UT-TIP": "Timpanogos Cave National Monument, NPS",
-  "UT-TOYQ": "Tooele Army Depot, Army",
+  "UT-TOYQ": "Tooele Army Depot, DOW",
   "UT-UIX": "Uintah County",
   "UT-UOA": "Uintah and Ouray Agency, BIA",
   "UT-UTS": "Utah Division Forestry Fire State Lands",
@@ -4838,7 +5554,7 @@ const UNIT_LOOKUP = {
   "VA-ACP": "Appomattox Court House National Historical Park, NPS",
   "VA-ARP": "Arlington House, The Robert E. Lee Memorial, NPS",
   "VA-BBR": "Back Bay NWR, FWS",
-  "VA-BVYQ": "Fort Belvoir, Army",
+  "VA-BVYQ": "Fort Belvoir, DOW",
   "VA-BWP": "Booker T. Washington National Monument, NPS",
   "VA-BYNG": "Fort Barfoot, ARNG",
   "VA-CBP": "Cedar Creek & Belle Grove National Historical Park, NPS",
@@ -4865,7 +5581,7 @@ const UNIT_LOOKUP = {
   "VA-LGP": "LBJ Memorial Grove on the Potomac, NPS",
   "VA-LPFD": "BLM - Lower Potomac Field Station, BLM",
   "VA-MAP": "Manassas National Battlefield Park, NPS",
-  "VA-MHYQ": "Joint Base Myer-Henderson Hall, Army",
+  "VA-MHYQ": "Joint Base Myer-Henderson Hall, DOW",
   "VA-MNR": "Elizabeth Hartwell Mason Neck NWR, FWS",
   "VA-NMR": "Nansemond NWR, FWS",
   "VA-NNQ": "Naval Station Norfolk, USN",
@@ -4879,7 +5595,7 @@ const UNIT_LOOKUP = {
   "VA-PTR": "Plum Tree Island NWR, FWS",
   "VA-PWP": "Prince William Forest Park, NPS",
   "VA-QMQ": "Marine Corps Base Quantico, USMC",
-  "VA-RAYQ": "Radford Army Ammunition Plant, Army",
+  "VA-RAYQ": "Radford Army Ammunition Plant, DOW",
   "VA-RIP": "Richmond National Battlefield Park, NPS",
   "VA-RVR": "Rappahannock River Valley NWR, FWS",
   "VA-SCNQ": "Surface Combat Systems Center, USN",
@@ -5021,7 +5737,7 @@ const UNIT_LOOKUP = {
   "WA-LCP": "Lake Chelan National Recreation Area, NPS",
   "WA-LECN": "Lewis County Fire Districts",
   "WA-LIDN": "Lincoln County Fire Districts",
-  "WA-LMYQ": "Joint Base Lewis McChord, Army",
+  "WA-LMYQ": "Joint Base Lewis McChord, DOW",
   "WA-LONN": "Long Beach Volunteer Fire Department",
   "WA-LOVN": "Longview Fire Department",
   "WA-LPR": "Little Pend Oreille NWR, FWS",
@@ -5152,7 +5868,7 @@ const UNIT_LOOKUP = {
   "WA-YAA": "Yakama Agency, BIA",
   "WA-YAKN": "Yakima Fire Department",
   "WA-YKCN": "Yakima County Fire Districts",
-  "WA-YTYQ": "Yakima Training Center, Army",
+  "WA-YTYQ": "Yakima Training Center, DOW",
   "WA-ZILN": "Zillah Fire & Rescue",
   "WI-AIP": "Apostle Islands National Lakeshore, NPS",
   "WI-CNF": "Chequamegon-Nicolet National Forest, USFS",
@@ -5167,7 +5883,7 @@ const UNIT_LOOKUP = {
   "WI-JRR": "Jordan River National Fish Hatchery, FWS",
   "WI-LCR": "LaCrosse District, Upper Mississippi NWR, FWS",
   "WI-LPR": "Leopold Wetland Management District, FWS",
-  "WI-MCYQ": "Fort McCoy, Army",
+  "WI-MCYQ": "Fort McCoy, DOW",
   "WI-MID": "Northeastern States District, BLM",
   "WI-NCP": "North Country National Scenic Trail, NPS",
   "WI-NCR": "Necedah NWR, FWS",
@@ -5261,10 +5977,17 @@ const UNIT_LOOKUP = {
 };
 function lookupUnit(unitCode) {
   if (!unitCode) return '';
-  return UNIT_LOOKUP[unitCode] || '';
+  const raw = UNIT_LOOKUP[unitCode] || '';
+  // Normalize spelled-out "National Forest(s)" to "NF" — IMSR standard abbreviation
+  // Only when it follows another word (e.g. "Flathead National Forest" → "Flathead NF")
+  // NOT when it starts the name (e.g. "National Forests in Alabama" stays as-is)
+  return raw.replace(/(\S\s+)National Forests?/g, '$1NF');
 }
 
 function deriveGACC(f) {
+  // Check unit-code override first (e.g. MT-BIP → RMCC)
+  const unitCode = (f.f2 || '').toUpperCase().replace(/-\d+$/, '');
+  if (UNIT_GACC_OVERRIDE[unitCode]) return UNIT_GACC_OVERRIDE[unitCode];
   const state = (f.f2 || '').slice(0, 2).toUpperCase();
   return STATE_TO_GACC[state] || 'UNKNOWN';
 }
@@ -5423,13 +6146,20 @@ function parseResources(text) {
     if (t === 'heli')        res.helicopters += vals[i];
     else if (t === 'engine') res.engines     += vals[i];
     else if (t === 'crew') {
-      // Only count crew resources if the column's total personnel >= 18.
-      // This filters out a crew listed in rsrc but with fewer than a full crew's
-      // worth of people assigned. Falls back to counting if pers data is unavailable.
+      // Accumulate crew personnel for post-loop calculation
       const crewPers = (persVals.length > 0 && i < persVals.length) ? persVals[i] : null;
-      if (crewPers === null || crewPers >= 18) res.crews += vals[i];
+      res._crewPersTotal = (res._crewPersTotal || 0) + (crewPers !== null ? crewPers : vals[i] * 18);
+      res._crewRsrcTotal = (res._crewRsrcTotal || 0) + vals[i];
     }
   });
+
+  // NWCG crew standard: minimum 18 personnel per crew.
+  // Correct reported crew count using floor(total_crew_personnel / 18).
+  // If no personnel data available, trust the reported count.
+  if (res._crewRsrcTotal > 0) {
+    const totalCrewPers = res._crewPersTotal || 0;
+    res.crews = totalCrewPers > 0 ? Math.floor(totalCrewPers / 18) : 0;
+  }
 
   return res;
 }
@@ -5523,6 +6253,16 @@ function normalizeName(name) {
 
 function spellMiles(str) {
   if (!str) return str;
+  // Protect state abbreviations (2-letter caps after comma+space or at end) before
+  // direction substitution — otherwise NE (Nebraska), ME, etc. get clobbered.
+  // Strategy: temporarily replace ", XX" state suffix with a placeholder.
+  const STATE_RE = /,\s*([A-Z]{2})(?=\s*$|\s*[.,])/g;
+  const placeholders = [];
+  str = str.replace(STATE_RE, (match, abbr) => {
+    placeholders.push(abbr);
+    return ',  STATE' + (placeholders.length - 1) + ' ';
+  });
+
   // Spell out cardinal directions
   str = str
     .replace(/\bNNE\b/g, 'north-northeast')
@@ -5537,6 +6277,9 @@ function spellMiles(str) {
     .replace(/\bS\b/g,   'south')
     .replace(/\bE\b/g,   'east')
     .replace(/\bW\b/g,   'west');
+
+  // Restore state abbreviations
+  str = str.replace(/ STATE(\d+) /g, (_, i) => placeholders[+i]);
   // Mid-sentence number rule: spell out if < 10, numeral if >= 10
   // Also normalize mile/miles: singular if 1, plural otherwise, always lowercase
   return str.replace(/\b(\d+)(\s*[Mm]iles?\b)/g, (match, num, suffix) => {
@@ -5582,22 +6325,23 @@ function cleanFuels(raw) {
   // Strip "logging" prefix before slash weights
   const s = raw.replace(/\blogging\s+/gi, '');
 
-  // Each pattern matches the full checkbox item including parens and after-comma descriptor,
-  // so overlap detection correctly claims the whole item's span.
+  // Each pattern matches the full checkbox item including parens.
+  // "Dormant Brush, Hardwood Slash" is ONE ICS-209 checkbox — match it explicitly.
+  // No generic after-comma grabber — it swallows subsequent fuel types in space-joined PDF text.
   const FUEL_PATTERNS = [
-    { pat: /Closed\s+Timber\s+Litter(?:\s*\([^)]*\))?(?:\s*,[^,\n]*)?/i, out: 'closed timber litter' },
-    { pat: /Hardwood\s+Litter(?:\s*\([^)]*\))?(?:\s*,[^,\n]*)?/i,         out: 'hardwood litter' },
-    { pat: /Timber(?:\s*\([^)]*\))?(?:\s*,[^,\n]*)?/i,                     out: 'timber' },
-    { pat: /Heavy\s+Slash(?:\s*\([^)]*\))?(?:\s*,[^,\n]*)?/i,              out: 'heavy slash' },
-    { pat: /Medium\s+Slash(?:\s*\([^)]*\))?(?:\s*,[^,\n]*)?/i,             out: 'medium slash' },
-    { pat: /Light\s+Slash(?:\s*\([^)]*\))?(?:\s*,[^,\n]*)?/i,              out: 'light slash' },
-    { pat: /Southern\s+Rough(?:\s*\([^)]*\))?(?:\s*,[^,\n]*)?/i,           out: 'southern rough' },
-    { pat: /Dormant\s+Brush(?:\s*\([^)]*\))?(?:\s*,[^,\n]*)?/i,            out: 'dormant brush' },
-    { pat: /Chaparral(?:\s*\([^)]*\))?(?:\s*,[^,\n]*)?/i,                   out: 'chaparral' },
-    { pat: /Brush(?:\s*\([^)]*\))?(?:\s*,[^,\n]*)?/i,                       out: 'brush' },
-    { pat: /Short\s+Grass(?:\s*\([^)]*\))?(?:\s*,[^,\n]*)?/i,              out: 'grass' },
-    { pat: /Tall\s+Grass(?:\s*\([^)]*\))?(?:\s*,[^,\n]*)?/i,               out: 'grass' },
-    { pat: /\bGrass(?:\s*\([^)]*\))?(?:\s*,[^,\n]*)?\b/i,                 out: 'grass' },
+    { pat: /Closed\s+Timber\s+Litter(?:\s*\([^)]*\))?/i, out: 'closed timber litter' },
+    { pat: /Hardwood\s+Litter(?:\s*\([^)]*\))?/i,         out: 'hardwood litter' },
+    { pat: /Timber(?:\s*\([^)]*\))?/i,                     out: 'timber' },
+    { pat: /Heavy\s+Slash(?:\s*\([^)]*\))?/i,              out: 'heavy slash' },
+    { pat: /Medium\s+Slash(?:\s*\([^)]*\))?/i,             out: 'medium slash' },
+    { pat: /Light\s+Slash(?:\s*\([^)]*\))?/i,              out: 'light slash' },
+    { pat: /Southern\s+Rough(?:\s*\([^)]*\))?/i,           out: 'southern rough' },
+    { pat: /Dormant\s+Brush(?:,\s*Hardwood\s+Slash)?(?:\s*\([^)]*\))?/i, out: 'dormant brush' },
+    { pat: /Chaparral(?:\s*\([^)]*\))?/i,                   out: 'chaparral' },
+    { pat: /Brush(?:\s*\([^)]*\))?/i,                       out: 'brush' },
+    { pat: /Short\s+Grass(?:\s*\([^)]*\))?/i,              out: 'grass' },
+    { pat: /Tall\s+Grass(?:\s*\([^)]*\))?/i,               out: 'grass' },
+    { pat: /\bGrass(?:\s*\([^)]*\))?\b/i,                 out: 'grass' },
   ];
 
   // Collect ALL occurrences of every pattern with their span
@@ -5777,21 +6521,24 @@ function buildNarrativeLine(f) {
   // ART closures/evacuations
   if (f.f34) parts.push(f.f34);
 
-  // "Last report" fires — goes after ART, before sage grouse override
-  if (isLastReport(f)) {
-    parts.push('Last report unless significant activity occurs');
+  // NARR-46 special statement order: sage-grouse → reduction → precipitation (in renderNarrative) → last report
+  // (1) Sage-grouse habitat
+  if (f._sageGrouse) {
+    parts.push('Sage-grouse habitat threatened');
   }
 
-  // Acreage reduction — only when prev IMSR loaded and acres decreased
+  // (2) Acreage reduction — only when prev IMSR loaded and acres decreased
   const prevForAcres = prevMatch(f);
   const todayAc = parseInt((f.f7 || '').replace(/,/g,'')) || 0;
   if (prevForAcres && prevForAcres.acres > 0 && todayAc > 0 && prevForAcres.acres > todayAc) {
     parts.push('Reduction in acreage due to more accurate mapping');
   }
 
-  // Sage-grouse habitat — always last, if applicable
-  if (f._sageGrouse) {
-    parts.push('Sage-grouse habitat threatened');
+  // (3) Precipitation — handled in renderNarrative via user confirmation toggle
+
+  // (4) Last report — kick-off removal tranche only
+  if (isLastReport(f)) {
+    parts.push('Last report unless significant activity occurs');
   }
 
   return { name, parts };
@@ -5828,8 +6575,8 @@ function getColVals(f) {
     const todayPpl = parseInt(f.totalPers) || 0;
     const dAc  = todayAc  - prev.acres;
     const dPpl = todayPpl - prev.ppl;
-    chgeAc  = String(dAc);
-    chgePpl = String(dPpl);
+    chgeAc  = dAc.toLocaleString();
+    chgePpl = dPpl.toLocaleString();
   } else if (f.isInitial) {
     chgeAc  = '---';
     chgePpl = '---';
@@ -5877,41 +6624,10 @@ function buildTableRows(incidents) {
       const v = cv[c.id];
       return `<td class="${(!v || v==='---') ? 'empty' : ''}">${v}</td>`;
     }).join('');
-    return `<tr>${tds}</tr>`;
+    return `<tr${is100(f) ? ' class="ctn100"' : ''}>${tds}</tr>`;
   }).join('');
 }
 
-function buildDebugPanel(f) {
-  const uid = 'dbg_' + Math.random().toString(36).slice(2);
-  const orgRaw = lookupUnit(f.unit) || fv(f.unit) || '';
-  const orgClean = orgRaw.replace(/\s*\([A-Z]{2}\)$/, '') || '[not found]';
-
-  // Closure states
-  const txt = (f._rawText || '');
-  const hasH = /H\.\s*Evacuation.*?X|X.*?H\.\s*Evacuation/i.test(txt);
-  const hasO = /O\.\s*Road Closure\s+X/i.test(txt);
-  const hasP = /P\.\s*Trail Closure\s+X/i.test(txt);
-  const hasQ = /Q\.\s*Area Closure\s+X/i.test(txt);
-
-  const rows = [
-    { k: 'Unit code',    v: fv(f.unit),                              warn: !f.unit },
-    { k: 'Lookup →',     v: orgClean,                                warn: orgClean === '[not found]' },
-    { k: 'f28 behavior', v: (f.f28 || '').replace(/\n/g, ' | '),    warn: !f.f28 },
-    { k: 'f29 fuels',    v: f.f29 || '---',                          warn: !f.f29 },
-    { k: 'f34 life/sfty',v: f.f34 || '---',                         warn: false },
-    { k: 'H evac',       v: hasH ? '✓ CHECKED' : '—',               warn: false },
-    { k: 'O road close', v: hasO ? '✓ CHECKED' : '—',               warn: false },
-    { k: 'P trail close',v: hasP ? '✓ CHECKED' : '—',               warn: false },
-    { k: 'Q area close', v: hasQ ? '✓ CHECKED' : '—',               warn: false },
-  ];
-
-  const rowsHtml = rows.map(r =>
-    `<div class="debug-row"><span class="debug-key">${r.k}</span><span class="debug-val${r.warn ? ' warn' : ''}">${r.v}</span></div>`
-  ).join('');
-
-  return `<button class="debug-toggle" onclick="document.getElementById('${uid}').classList.toggle('open')">debug ▾</button>
-<div class="debug-panel" id="${uid}">${rowsHtml}</div>`;
-}
 
 function buildNarrativeLines(incidents, cssClass='') {
   return incidents.map((f) => {
@@ -5919,14 +6635,15 @@ function buildNarrativeLines(incidents, cssClass='') {
     const sentence = capitalizeSentences(parts.join('. ') + (parts.length ? '.' : ''));
     const managingOrg = (lookupUnit(f.unit) || fv(f.unit) || '').replace(/\s*\([A-Z]{2}\)$/,'') || '<span class="blank">[MANAGING ORG]</span>';
     const cimtLabel = f.hasNIMO ? ' (NIMO ASSIGNED)' : f.hasCIMT ? ' (CIMT ASSIGNED)' : '';
-    const debug = buildDebugPanel(f);
     const precipFlag = f._precipDetected
-      ? `<span class="precip-flag${f._precipConfirmed ? ' confirmed' : ''}" title="Definitive precipitation detected in boxes 35/40/47" onclick="togglePrecip(this, '${f.f2}')">🌧 ${f._precipConfirmed ? 'Precip added' : 'Add precip statement'}</span>`
+      ? `<span class="precip-flag${f._precipConfirmed ? ' confirmed' : ''}" title="Definitive precipitation detected in boxes 35/40/47" onclick="event.stopPropagation();togglePrecip(this,'${f.f2}')">🌧 ${f._precipConfirmed ? 'Precip added' : 'Add precip statement'}</span>`
       : '';
     const prev = prevMatch(f);
     const isNew = !prev;
     const asterisk = isNew ? '* ' : '';
-    return `<div class="narr-line ${cssClass}" data-inc="${f.f2}" data-pct="${f.f8a || 0}"><strong>${asterisk}${name}</strong><span style="font-weight:normal;">, ${managingOrg}${cimtLabel}. ${sentence}${precipFlag}</span>${debug}</div>`;
+    const lastRptBadge = (prev && prev.wasLastReport) ? '<span class="last-rpt-badge" title="Previous IMSR said: Last report unless significant activity occurs.">LAST RPT</span>' : '';
+    const lastRptClass = (prev && prev.wasLastReport) ? ' last-rpt' : '';
+    return `<div class="narr-line ${cssClass}${lastRptClass}" data-inc="${f.f2}" data-pct="${f.f8a || 0}" onclick="toggleNarrSelect(this)"><strong>${asterisk}${name}</strong>${lastRptBadge}<span style="font-weight:normal;">, ${managingOrg}${cimtLabel}. ${sentence}${precipFlag}</span></div>`;
   }).join('');
 }
 
@@ -5972,10 +6689,38 @@ function trancheSort(incidents) {
       isNew ? t1.push(f)  : t2.push(f);
     }
   });
+  // SEQ-11: multi-key sort within active buckets
+  // (1) Evacuations  (2) Numerous res/str 100+  (3) Infrastructure
+  // (4) Behavior severity Extreme→Low  (5) Structures threatened <100
+  // (6) Closures  (7) % contained ascending
+  const INTENSITY_RANK = { extreme: 0, 'very active': 1, active: 2, moderate: 3, minimal: 4, low: 5 };
+  function seq11Rank(f) {
+    const evac = (f.f34 && /evacuation/i.test(f.f34)) ? 0 : 1;
+    const maxThreat = Math.max(f.resThreatened || 0, f.strThreatened || 0);
+    const numerous = maxThreat >= 100 ? 0 : 1;
+    const infra = f._infra || {};
+    const hasInfra = (infra.energy || infra.communication || infra.railroad) ? 0 : 1;
+    const raw = (f.f28 || '').toLowerCase();
+    let bRank = 6; // no behavior = lowest
+    for (const [term, rank] of Object.entries(INTENSITY_RANK)) {
+      if (raw.includes(term)) { bRank = rank; break; }
+    }
+    const anyThreat = ((f.resThreatened || 0) > 0 || (f.strThreatened || 0) > 0) && maxThreat < 100 ? 0 : 1;
+    const closures = (f.f34 && /closures? in effect/i.test(f.f34)) ? 0 : 1;
+    const pct = parseInt(f.f8a || 0);
+    return [evac, numerous, hasInfra, bRank, anyThreat, closures, pct];
+  }
+  function bySEQ11(a, b) {
+    const ra = seq11Rank(a), rb = seq11Rank(b);
+    for (let i = 0; i < ra.length; i++) {
+      if (ra[i] !== rb[i]) return ra[i] - rb[i];
+    }
+    return 0;
+  }
   const byPct    = (a, b) => (parseInt(a.f8a||0)) - (parseInt(b.f8a||0));
   const bySubmit = (a, b) => (b._submitTime || 0) - (a._submitTime || 0);
-  t0new.sort(byPct); t0ret.sort(byPct); t0bnew.sort(byPct); t0bret.sort(byPct);
-  t1.sort(byPct); t2.sort(byPct);
+  t0new.sort(bySEQ11); t0ret.sort(bySEQ11); t0bnew.sort(byPct); t0bret.sort(byPct);
+  t1.sort(bySEQ11); t2.sort(bySEQ11);
   t1b.sort(byPct); t2b.sort(byPct);
   t3new.sort(bySubmit); t3ret.sort(bySubmit);
   return [...t0new, ...t0ret, ...t0bnew, ...t0bret, ...t1, ...t2, ...t1b, ...t2b, ...t3new, ...t3ret];
@@ -6003,6 +6748,8 @@ function renderOutput() {
   const qualifying = [];
   const nonQualifying = [];
   allIncidents.forEach(f => {
+    // Skip fires manually deleted by user
+    if (deletedFires.has(normKey(f.f1, f.unit))) return;
     const q = qualifiesForIMSR(f);
     f._qualifies = q.qualifies;
     f._qualifyReason = q.reason;
@@ -6028,7 +6775,9 @@ function renderOutput() {
     for (const [key, p] of prevIMSR) {
       if (p.pct >= 100) continue;
       if (matchedKeys.has(key)) continue;
-      const gacc = STATE_TO_GACC[(p.unit || '').slice(0,2).toUpperCase()] || 'UNKNOWN';
+      if (deletedFires.has(key)) continue;
+      const unitCode = (p.unit || '').toUpperCase().replace(/-\d+$/, '');
+      const gacc = UNIT_GACC_OVERRIDE[unitCode] || STATE_TO_GACC[(p.unit || '').slice(0,2).toUpperCase()] || 'UNKNOWN';
       (missedByGacc[gacc] = missedByGacc[gacc] || []).push(p);
     }
   }
@@ -6071,27 +6820,27 @@ function renderOutput() {
           const moved = manualOrder[gacc][i] !== i;
           const name = (f.f1 || f._filename || '?').slice(0, 40);
           return `<div class="sort-row${moved ? ' sort-moved' : ''}">
-            <span class="sort-name">${name}${moved ? ' ✎' : ''}</span>
-            <span class="sort-pct">${pct}%</span>
             <button class="sort-btn" onclick="moveIncident('${gacc}',${i},-1)" title="Move up">▲</button>
             <button class="sort-btn" onclick="moveIncident('${gacc}',${i},1)" title="Move down">▼</button>
+            <span class="sort-name">${name}${moved ? ' ✎' : ''}</span>
+            <span class="sort-pct">${pct}%</span>
           </div>`;
         }).join('')}
       </div>` : '';
 
 
-    // Narrative order: active → missed (no 209) → lastReport → 100% (qualifying only)
+    // Narrative order: active → lastReport (kick-off) → missed (no 209) → 100%
     const narrLines =
       buildNarrativeLines(activeInc) +
-      buildMissedNarrLines(missed) +
       buildNarrativeLines(lastRptInc) +
+      buildMissedNarrLines(missed) +
       buildNarrativeLines(containedInc);
 
-    // Table row order: active → missed → lastReport → 100% (qualifying only)
+    // Table row order: active → lastReport → missed → 100%
     const tableRows =
       buildTableRows(activeInc) +
-      buildMissedTableRows(missed) +
       buildTableRows(lastRptInc) +
+      buildMissedTableRows(missed) +
       buildTableRows(containedInc);
 
     // Non-qualifying fires — separate labeled section, excluded from copy buttons
@@ -6164,11 +6913,12 @@ function renderOutput() {
   outputEl.style.display = 'block';
   outputEl.innerHTML = `
     <div class="summary">
-      <strong>${qualifying.length}</strong> qualifying · <strong>${nonQualifying.length}</strong> non-qualifying across <strong>${gaccKeys.length}</strong> GACC${gaccKeys.length !== 1 ? 's' : ''}
+      <strong>${qualifying.length}</strong> qualifying · <strong>${nonQualifying.length}</strong> non-qualifying across <strong>${gaccKeys.length}</strong> GACC${gaccKeys.length !== 1 ? 's' : ''}${deletedFires.size ? ` · <span style="color:#c0392b;font-weight:600;">${deletedFires.size} deleted</span>` : ''}
       <span style="float:right;">
         <button class="copy-btn narr" onclick="copyAllNarr(this)" style="margin-right:6px;">Copy All Narratives</button>
         <button class="copy-btn" onclick="copyAllRows(this)" style="margin-right:6px;">Copy All Rows</button>
-        <button class="copy-btn clear" onclick="clearAll()">Clear All</button>
+        <button class="delete-btn" onclick="deleteSelected()" id="deleteSelBtn" disabled title="Select narratives (click green), then delete">Delete Selected</button>
+        <button class="copy-btn clear" onclick="clearAll()" style="margin-left:6px;">Clear All</button>
       </span>
     </div>
     <div class="narr-controls">
@@ -6193,38 +6943,80 @@ function buildCopyLine(f) {
   const prev = prevMatch(f);
   const isNew = !prev;
   const asterisk = isNew ? '* ' : '';
-  // Statement order: ...behavior. threats. ART. precip. last report. sage grouse.
+  // NARR-46 statement order: ...ART. sage-grouse. reduction. precip. last report.
   const LAST_RPT  = 'Last report unless significant activity occurs.';
   const SAGE_GRSE = 'Sage-grouse habitat threatened.';
   let body = sentence;
 
   if (precip) {
-    // Insert precip before "last report" if present; before sage grouse if present
-    const hasSage     = body.endsWith(SAGE_GRSE);
-    const hasLastRpt  = body.endsWith(LAST_RPT) || body.endsWith(LAST_RPT + ' ' + SAGE_GRSE);
-    if (hasSage && body.includes(LAST_RPT)) {
-      // last rpt + sage at end: insert before last rpt
-      body = body.replace(LAST_RPT + ' ' + SAGE_GRSE, precip.trim() + ' ' + LAST_RPT + ' ' + SAGE_GRSE);
-    } else if (hasSage) {
-      body = body.slice(0, -SAGE_GRSE.length).trimEnd() + ' ' + precip.trim() + ' ' + SAGE_GRSE;
-    } else if (body.endsWith(LAST_RPT)) {
+    // Insert precip before "Last report" (which is always last when present)
+    if (body.endsWith(LAST_RPT)) {
       body = body.slice(0, -LAST_RPT.length).trimEnd() + ' ' + precip.trim() + ' ' + LAST_RPT;
     } else {
+      // No last report — precip goes at the end
       body = body.trimEnd().replace(/\.?$/, '') + '. ' + precip.trim();
     }
   }
   const tail = `, ${org}${cimtLabel}. ${body}`;
   const plain = `${asterisk}${name}${tail}`;
   // Bold only the asterisk+name; rest is normal weight
-  const boldPart = asterisk ? `<b>* ${name}</b>` : name;
+  const boldPart = asterisk ? `<b>* ${name}</b>` : `<b>${name}</b>`;
   const html = `<span style="font-family:Arial,sans-serif;font-size:11pt;">${boldPart}<span style="font-weight:normal;">${tail.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;')}</span></span>`;
   return { html, plain };
 }
 
+function toggleNarrSelect(el) {
+  el.classList.toggle('selected');
+  // Update the per-GACC copy button label
+  const block = el.closest('.block');
+  if (!block) return;
+  const btn = block.querySelector('.copy-btn.narr');
+  if (!btn) return;
+  const count = block.querySelectorAll('.narr-line.selected').length;
+  btn.textContent = count > 0 ? `Copy ${count} Selected` : 'Copy Narratives';
+  // Update the global Copy All button
+  const allSelected = document.querySelectorAll('.narr-line.selected').length;
+  const allBtn = document.querySelector('.copy-btn.narr[onclick="copyAllNarr(this)"]');
+  if (allBtn) allBtn.textContent = allSelected > 0 ? `Copy ${allSelected} Selected` : 'Copy All Narratives';
+  // Update delete button
+  const delBtn = document.getElementById('deleteSelBtn');
+  if (delBtn) {
+    delBtn.disabled = allSelected === 0;
+    delBtn.textContent = allSelected > 0 ? `Delete ${allSelected} Selected` : 'Delete Selected';
+  }
+}
+
+function deleteSelected() {
+  const selected = Array.from(document.querySelectorAll('.narr-line.selected'));
+  if (!selected.length) return;
+
+  let count = 0;
+  for (const el of selected) {
+    // 209-based fire
+    if (el.dataset.inc) {
+      const f = allIncidents.find(i => i.f2 === el.dataset.inc);
+      if (f) {
+        deletedFires.add(normKey(f.f1, f.unit));
+        count++;
+      }
+    }
+    // Missed fire (from previous IMSR, no 209 today)
+    if (el.dataset.missedKey) {
+      deletedFires.add(el.dataset.missedKey);
+      count++;
+    }
+  }
+
+  if (count > 0) renderOutput();
+}
+
 function copyAllNarr(btn) {
-  // Collect all visible narrative lines in DOM order (respects tranche sort)
+  // Collect visible narrative lines — selected if any, otherwise all
+  const allVisible = Array.from(document.querySelectorAll('.gacc-section .narr-line:not(.hidden-100)'));
+  const selected   = allVisible.filter(el => el.classList.contains('selected'));
+  const targets    = selected.length > 0 ? selected : allVisible;
   const lines = [];
-  document.querySelectorAll('.gacc-section .narr-line:not(.hidden-100)').forEach(div => {
+  targets.forEach(div => {
     if (div.dataset.inc) {
       const f = allIncidents.find(i => i.f2 === div.dataset.inc);
       if (f) lines.push(buildCopyLine(f));
@@ -6264,15 +7056,15 @@ function copyAllRows(btn) {
 
 function copyNarrFromBlock(btn) {
   const block = btn.closest('.block');
+  const allLines = Array.from(block.querySelectorAll('.narr-line:not(.hidden-100)'));
+  const selected = allLines.filter(el => el.classList.contains('selected'));
+  const targets  = selected.length > 0 ? selected : allLines;
   const lines = [];
-  block.querySelectorAll('.narr-line').forEach(el => {
-    if (el.classList.contains('hidden-100')) return;
+  targets.forEach(el => {
     if (el.dataset.inc) {
-      // Regular 209-sourced fire
       const f = allIncidents.find(i => i.f2 === el.dataset.inc);
       if (f) lines.push(buildCopyLine(f));
     } else if (el.dataset.missed) {
-      // Missed fire — build plain/html from DOM directly
       const strong = el.querySelector('strong');
       const span   = el.querySelector('span');
       const name   = strong ? strong.textContent.trim() : '';
@@ -6283,7 +7075,7 @@ function copyNarrFromBlock(btn) {
       lines.push({ html, plain });
     }
   });
-  copyNarrLines(lines, btn, 'Copy Narratives');
+  copyNarrLines(lines, btn, selected.length > 0 ? 'Copy Narratives' : 'Copy Narratives');
 }
 
 function copyRowsFromBlock(btn) {
@@ -6309,25 +7101,21 @@ function copyRowsFromBlock(btn) {
 function copyPlainText(text, btn, resetLabel) {
   // Write only text/plain to clipboard — prevents Word from picking up
   // the HTML flavor and applying bold/formatting from the source DOM.
+  _btnCopy = true;
+  const done = (ok) => {
+    _btnCopy = false;
+    btn.textContent = ok ? '✓ Copied!' : '✗ Copy failed';
+    setTimeout(() => btn.textContent = resetLabel, 2000);
+  };
   try {
     const item = new ClipboardItem({
       'text/plain': new Blob([text], { type: 'text/plain' })
     });
-    navigator.clipboard.write([item]).then(() => {
-      btn.textContent = '✓ Copied!';
-      setTimeout(() => btn.textContent = resetLabel, 2000);
-    }).catch(() => {
-      // Fallback for browsers that don't support ClipboardItem
-      navigator.clipboard.writeText(text).then(() => {
-        btn.textContent = '✓ Copied!';
-        setTimeout(() => btn.textContent = resetLabel, 2000);
-      });
+    navigator.clipboard.write([item]).then(() => done(true)).catch(() => {
+      navigator.clipboard.writeText(text).then(() => done(true)).catch(() => done(false));
     });
   } catch(e) {
-    navigator.clipboard.writeText(text).then(() => {
-      btn.textContent = '✓ Copied!';
-      setTimeout(() => btn.textContent = resetLabel, 2000);
-    });
+    navigator.clipboard.writeText(text).then(() => done(true)).catch(() => done(false));
   }
 }
 
@@ -6343,17 +7131,10 @@ function togglePrecip(pill, incNum) {
   const PRECIP_STMT = 'Precipitation occurred over the fire area yesterday.';
   const LAST_RPT   = 'Last report unless significant activity occurs.';
 
-  // Build the visible sentence, inserting precip before "last report" if present
+  // Build the visible sentence, inserting precip per NARR-46 order (before last report)
   let sentence = capitalizeSentences(parts.join('. ') + (parts.length ? '.' : ''));
   if (f._precipConfirmed) {
-    const SAGE = 'Sage-grouse habitat threatened.';
-    const hasSage    = sentence.endsWith(SAGE);
-    const hasLastRpt = sentence.includes(LAST_RPT);
-    if (hasSage && hasLastRpt) {
-      sentence = sentence.replace(LAST_RPT + ' ' + SAGE, PRECIP_STMT + ' ' + LAST_RPT + ' ' + SAGE);
-    } else if (hasSage) {
-      sentence = sentence.slice(0, -SAGE.length).trimEnd() + ' ' + PRECIP_STMT + ' ' + SAGE;
-    } else if (sentence.endsWith(LAST_RPT)) {
+    if (sentence.endsWith(LAST_RPT)) {
       sentence = sentence.slice(0, -LAST_RPT.length).trimEnd() + ' ' + PRECIP_STMT + ' ' + LAST_RPT;
     } else {
       sentence = sentence.trimEnd().replace(/\.?$/, '') + '. ' + PRECIP_STMT;
@@ -6372,30 +7153,56 @@ function togglePrecip(pill, incNum) {
 }
 
 // Copy narrative lines with mixed bold formatting for Word
+// Uses contenteditable + execCommand — synchronous, no clipboard-write permission needed,
+// works reliably on repeated clicks even after tabbing away to Word.
+function buildNarrHtml(lines) {
+  // Use real empty <p> spacers between narratives — Word ignores CSS margin-bottom on paste,
+  // but cannot collapse an actual empty paragraph node.
+  const NARR  = `font-family:Arial,sans-serif;font-size:11pt;line-height:1.15;margin:0;padding:0;`;
+  const SPACE = `font-family:Arial,sans-serif;font-size:11pt;line-height:1.0;margin:0;padding:0;`;
+  return lines.map((l, i) => {
+    const p = `<p style="${NARR}">${l.html}</p>`;
+    const spacer = i < lines.length - 1 ? `<p style="${SPACE}"><span style="font-size:11pt;">&nbsp;</span></p>` : '';
+    return p + spacer;
+  }).join('');
+}
+
 function copyNarrLines(lines, btn, resetLabel) {
-  const htmlLines = lines.map(l => l.html).join('<br>');
-  const plainLines = lines.map(l => l.plain).join('\n');
-  const fullHtml = `<html><body>${htmlLines}</body></html>`;
-  try {
-    const item = new ClipboardItem({
-      'text/html':  new Blob([fullHtml],   { type: 'text/html' }),
-      'text/plain': new Blob([plainLines], { type: 'text/plain' })
-    });
-    navigator.clipboard.write([item]).then(() => {
-      btn.textContent = '✓ Copied!';
-      setTimeout(() => btn.textContent = resetLabel, 2000);
-    }).catch(() => {
-      navigator.clipboard.writeText(plainLines).then(() => {
-        btn.textContent = '✓ Copied!';
-        setTimeout(() => btn.textContent = resetLabel, 2000);
-      });
-    });
-  } catch(e) {
-    navigator.clipboard.writeText(plainLines).then(() => {
-      btn.textContent = '✓ Copied!';
-      setTimeout(() => btn.textContent = resetLabel, 2000);
-    });
-  }
+  const htmlContent = buildNarrHtml(lines);
+
+  // Create off-screen contenteditable, select it, execCommand copy
+  const el = document.createElement('div');
+  el.setAttribute('contenteditable', 'true');
+  el.style.cssText = 'position:fixed;top:-9999px;left:-9999px;opacity:0;pointer-events:none;white-space:normal;';
+  el.innerHTML = htmlContent;
+  document.body.appendChild(el);
+
+  const range = document.createRange();
+  range.selectNodeContents(el);
+  const sel = window.getSelection();
+  sel.removeAllRanges();
+  sel.addRange(range);
+
+  let ok = false;
+  _btnCopy = true;
+  try { ok = document.execCommand('copy'); } catch(e) {}
+  _btnCopy = false;
+
+  sel.removeAllRanges();
+  document.body.removeChild(el);
+
+  btn.textContent = ok ? '✓ Copied!' : '✗ Copy failed — use Ctrl+C';
+  setTimeout(() => {
+    // Restore label accounting for current selection count
+    const block = btn.closest('.block');
+    if (block) {
+      const n = block.querySelectorAll('.narr-line.selected').length;
+      btn.textContent = n > 0 ? `Copy ${n} Selected` : resetLabel;
+    } else {
+      const n = document.querySelectorAll('.narr-line.selected').length;
+      btn.textContent = n > 0 ? `Copy ${n} Selected` : resetLabel;
+    }
+  }, 2000);
 }
 
 function applyNarrFilter(val) {
@@ -6493,8 +7300,11 @@ function buildMissedNarrLines(missed) {
       ? 'No new information. Last report unless new information is received.'
       : 'No new information.';
     const tail = prevNarr ? `${prevNarr}. ${suffix}` : suffix;
-    return `<div class="narr-line" style="border-left-color:#9090c0;opacity:.8;" data-missed="1">
-      <strong>${name}</strong><span style="font-weight:normal;">, ${org}. ${tail}</span>
+    const mKey = normKey(p.name, p.unit);
+    const lastRptBadge = p.wasLastReport ? '<span class="last-rpt-badge" title="Previous IMSR said: Last report unless significant activity occurs.">LAST RPT</span>' : '';
+    const lastRptClass = p.wasLastReport ? ' last-rpt' : '';
+    return `<div class="narr-line${lastRptClass}" style="border-left-color:${p.wasLastReport ? '#d35400' : '#9090c0'};opacity:.8;" data-missed="1" data-missed-key="${mKey}" onclick="toggleNarrSelect(this)">
+      <strong>${name}</strong>${lastRptBadge}<span style="font-weight:normal;">, ${org}. ${tail}</span>
     </div>`;
   }).join('');
 }
@@ -6504,15 +7314,17 @@ function buildMissedTableRows(missed) {
   return missed.map(p => {
     const name = normalizeName(p.name || '');
     const unit = (p.unit || '').replace(/-\d+$/, '');
+    const mKey = normKey(p.name, p.unit);
     const cols = [
       name, unit,
       p.acres ? p.acres.toLocaleString() : '---',
-      '0', String(p.pct), 'Ctn', '---',
-      String(p.ppl), '0',
-      '---','---','---','---','---','---'
+      '---', String(p.pct), 'Ctn', '---',
+      String(p.ppl), '---',
+      String(p.crw || 0), String(p.eng || 0), String(p.heli || 0),
+      String(p.strc || 0), p.cost || 'NR', p.origin || '---'
     ];
     const tds = COLS.map((c, i) => `<td>${cols[i] || '---'}</td>`).join('');
-    return `<tr style="opacity:.7;">${tds}</tr>`;
+    return `<tr style="opacity:.7;" data-missed-key="${mKey}">${tds}</tr>`;
   }).join('');
 }
 
@@ -6549,7 +7361,7 @@ function parseIMSR(text) {
   // ── Step 1: extract narrative lines ──────────────────────────────────
   // PDF.js produces space-joined text per page — no newlines within a page.
   // Match * Name, Org. Narrative... up to the next * fire or 'Incident Name'.
-  const NARR_RE = /\*\s+([A-Z][A-Za-z0-9'\-\.\/ ]{1,50}?),\s+([A-Z][^.]{5,100}?)\.\s+((?:(?!\*\s+[A-Z]|Incident Name).)+?)(?=\s*\*\s+[A-Z]|\s*Incident Name|$)/gs;
+  const NARR_RE = /\*\s+([A-Z0-9][A-Za-z0-9'\-\.\/& ]{0,50}?),\s+([A-Z][^.]{5,100}?)\.\s+((?:(?!\*\s+[A-Z0-9]|Incident Name).)+?)(?=\s*\*\s+[A-Z0-9]|\s*Incident Name|$)/gs;
   const narrativeMap = new Map();
   let nm;
   while ((nm = NARR_RE.exec(text)) !== null) {
@@ -6567,16 +7379,19 @@ function parseIMSR(text) {
   const ROW_RE = new RegExp(
     String.raw`(?:^|` + OWN + String.raw`)\s+` +
     String.raw`(\*\s+)?` +
-    String.raw`([A-Z][A-Za-z0-9'\-\.\/  ]{1,50}?)` +
+    String.raw`([A-Z0-9][A-Za-z0-9'\-\.\/&\u2013  ]{0,50}?)` +
     String.raw`\s+([A-Z]{2}-[A-Z0-9]+)\s+` +
     String.raw`([\d,]+)\s+` +
-    String.raw`([\d,]+|--+)\s+` +
+    String.raw`(-?[\d,]+|--+)\s+` +
     String.raw`(\d+)\s+` +
     String.raw`(?:Ctn|Comp)\s+` +
-    String.raw`([\d\/]+|--+)\s+` +
+    String.raw`([\d\/]+|--+|UNK)\s+` +
     String.raw`(\d+)`,
     'g'
   );
+
+  // Tail columns after PPL: chgePpl, crw, eng, heli, strc, cost, origin
+  const TAIL_RE = /^\s*(-?\d+|--+)\s+(\d+)\s+(\d+)\s+(\d+)\s+(\d+)\s+([\d.]+[KMB]|NR|\d+)\s+(ST|FS|BIA|NPS|FWS|CNTY|DOW|PRI|BLM|TRI)\b/i;
 
   let m;
   while ((m = ROW_RE.exec(text)) !== null) {
@@ -6589,6 +7404,16 @@ function parseIMSR(text) {
     if (name.length < 2) continue;
     if (/^(?:Incident|GACC|Fire Activity|New fires|Uncontained)/i.test(name)) continue;
 
+    // Extract tail columns from text after PPL match
+    const tailText = text.substring(m.index + m[0].length);
+    const tail = TAIL_RE.exec(tailText);
+    const crw    = tail ? parseInt(tail[2]) || 0 : 0;
+    const eng    = tail ? parseInt(tail[3]) || 0 : 0;
+    const heli   = tail ? parseInt(tail[4]) || 0 : 0;
+    const strc   = tail ? parseInt(tail[5]) || 0 : 0;
+    const cost   = tail ? tail[6] : 'NR';
+    const origin = tail ? tail[7].toUpperCase() : '';
+
     // Find matching narrative by name
     const normName = name.toLowerCase().replace(/[^a-z0-9 ]/g,' ').replace(/\s+/g,' ').trim();
     const narrEntry = narrativeMap.get(normName) || { narrative: '', fullNarr: '', missCount: 1 };
@@ -6596,9 +7421,28 @@ function parseIMSR(text) {
     const key = normKey(name, unit);
     if (!map.has(key)) {
       map.set(key, { name, unit, acres, ppl, pct,
+        crw, eng, heli, strc, cost, origin,
         narrative:  narrEntry.narrative,
         fullNarr:   narrEntry.fullNarr,
-        missCount:  narrEntry.missCount });
+        missCount:  narrEntry.missCount,
+        wasLastReport: false });
+    }
+  }
+
+  // ── Step 3: flag fires whose prev narrative had "Last report" ──────
+  for (const [key, entry] of map) {
+    // Check narrativeMap first (asterisked fires)
+    const normName = entry.name.toLowerCase().replace(/[^a-z0-9 ]/g,' ').replace(/\s+/g,' ').trim();
+    const narrInfo = narrativeMap.get(normName);
+    if (narrInfo && /last report unless significant activity occurs/i.test(narrInfo.fullNarr)) {
+      entry.wasLastReport = true;
+      continue;
+    }
+    // For returning fires (no asterisk, not in narrativeMap): scan raw text
+    const escaped = entry.name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    const vicinity = text.match(new RegExp(escaped + '.{0,500}', 'is'));
+    if (vicinity && /last report unless significant activity occurs/i.test(vicinity[0])) {
+      entry.wasLastReport = true;
     }
   }
   return map;
@@ -6621,8 +7465,36 @@ function prevMatch(f) {
   return null;
 }
 
+// Intercept Ctrl+C — if any narr-lines are selected, override clipboard
+// with properly spaced HTML so Word paste looks the same as button copy.
+document.addEventListener('copy', function(e) {
+  if (_btnCopy) return; // button-triggered copy — don't interfere
+  const selected = Array.from(document.querySelectorAll('.narr-line.selected'));
+  if (selected.length === 0) return; // nothing selected — let browser handle it
+  e.preventDefault();
+  const lines = [];
+  selected.forEach(el => {
+    if (el.dataset.inc) {
+      const f = allIncidents.find(i => i.f2 === el.dataset.inc);
+      if (f) lines.push(buildCopyLine(f));
+    } else if (el.dataset.missed) {
+      const strong = el.querySelector('strong');
+      const span   = el.querySelector('span');
+      const name   = strong ? strong.textContent.trim() : '';
+      const rest   = span  ? span.textContent.trim()   : '';
+      const boldPart = name ? `<b>${name}</b>` : '';
+      const html = `<span style="font-family:Arial,sans-serif;font-size:11pt;">${boldPart}<span style="font-weight:normal;">${rest.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;')}</span></span>`;
+      lines.push({ html, plain: name + rest });
+    }
+  });
+  if (!lines.length) return;
+  e.clipboardData.setData('text/html',  buildNarrHtml(lines));
+  e.clipboardData.setData('text/plain', lines.map(l => l.plain).join('\n\n'));
+});
+
 function clearAll() {
   allIncidents = [];
+  deletedFires.clear();
   fileListEl.innerHTML = '';
   outputEl.style.display = 'none';
   outputEl.innerHTML = '';
