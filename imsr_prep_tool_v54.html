@@ -101,6 +101,12 @@
   table.imsr tr:nth-child(even) td { background: #faf9f7; }
   table.imsr td.manual { background: #f0f7ff !important; }
   table.imsr tr.ctn100 td { background: #e8f2fd !important; }
+  table.imsr tr.returning-100 td { background: #fff8e1 !important; }
+  .narr-line.returning-100 { border-left-color: #c8a000; background: #fffbe6; }
+  .narr-line.discrep { border-left-color: #c0392b; background: #fdf0ee; }
+  .ret100-badge { display: inline-block; font-size: 9px; font-weight: 700; color: #fff; background: #b8960a; padding: 1px 5px; border-radius: 3px; margin-left: 6px; vertical-align: middle; letter-spacing: 0.3px; cursor: help; }
+  .discrep-badge { display: inline-block; font-size: 9px; font-weight: 700; color: #fff; background: #c0392b; padding: 1px 5px; border-radius: 3px; margin-left: 6px; vertical-align: middle; letter-spacing: 0.3px; cursor: help; }
+  table.imsr tr.discrep td { outline: 2px solid #c0392b; outline-offset: -2px; }
   table.imsr td.empty { color: var(--text); }
   table.imsr td input {
     background: transparent; border: none; outline: none;
@@ -6633,7 +6639,15 @@ function buildTableRows(incidents) {
       const v = cv[c.id];
       return `<td class="${(!v || v==='---') ? 'empty' : ''}">${v}</td>`;
     }).join('');
-    return `<tr${is100(f) ? ' class="ctn100"' : ''}>${tds}</tr>`;
+    // Build row classes
+    const classes = [];
+    if (is100(f)) classes.push('ctn100');
+    const prev = prevMatch(f);
+    if (prev && prev.pct >= 100 && is100(f)) classes.push('returning-100');
+    const pctV = parseInt(f.f8a || 0);
+    if ((f.isFinal && pctV < 100) || (!f.isFinal && pctV >= 100)) classes.push('discrep');
+    const classAttr = classes.length ? ` class="${classes.join(' ')}"` : '';
+    return `<tr${classAttr}>${tds}</tr>`;
   }).join('');
 }
 
@@ -6653,6 +6667,16 @@ function buildNarrativeLines(incidents, cssClass='') {
     const lastRptBadge = (prev && prev.wasLastReport) ? '<span class="last-rpt-badge" title="Previous IMSR said: Last report unless significant activity occurs.">LAST RPT</span>' : '';
     const lastRptClass = (prev && prev.wasLastReport) ? ' last-rpt' : '';
 
+    // Returning 100% fire — was in prev IMSR and still 100%
+    const ret100 = (prev && prev.pct >= 100 && is100(f)) ? ' returning-100' : '';
+    const ret100Badge = (prev && prev.pct >= 100 && is100(f)) ? '<span class="ret100-badge" title="Returning fire still at 100% contained — was 100% in previous IMSR">RET 100%</span>' : '';
+
+    // Box 3 vs Box 8a discrepancy
+    const pctVal = parseInt(f.f8a || 0);
+    const box3Discrep = (f.isFinal && pctVal < 100) || (!f.isFinal && pctVal >= 100);
+    const discrepClass = box3Discrep ? ' discrep' : '';
+    const discrepBadge = box3Discrep ? `<span class="discrep-badge" title="${f.isFinal ? 'Box 3 = Final but % contained is ' + pctVal + '%' : 'Box 8a = ' + pctVal + '% but Box 3 is not Final'}">BOX 3/8a ✗</span>` : '';
+
     // Kick-off controls: toggle label and/or move to active
     let kickoffControls = '';
     const pct = parseInt(f.f8a || 0);
@@ -6666,7 +6690,7 @@ function buildNarrativeLines(incidents, cssClass='') {
       kickoffControls = labelBtn + activeBtn;
     }
 
-    return `<div class="narr-line ${cssClass}${lastRptClass}" data-inc="${f.f2}" data-pct="${f.f8a || 0}" onclick="toggleNarrSelect(this)"><strong>${asterisk}${name}</strong>${lastRptBadge}<span style="font-weight:normal;">, ${managingOrg}${cimtLabel}. ${sentence}${precipFlag}${kickoffControls}</span></div>`;
+    return `<div class="narr-line ${cssClass}${lastRptClass}${ret100}${discrepClass}" data-inc="${f.f2}" data-pct="${f.f8a || 0}" onclick="toggleNarrSelect(this)"><strong>${asterisk}${name}</strong>${lastRptBadge}${ret100Badge}${discrepBadge}<span style="font-weight:normal;">, ${managingOrg}${cimtLabel}. ${sentence}${precipFlag}${kickoffControls}</span></div>`;
   }).join('');
 }
 
@@ -6716,7 +6740,7 @@ function trancheSort(incidents) {
   });
   // SEQ-11: multi-key sort within active buckets
   // (1) Evacuations  (2) Numerous res/str 100+  (3) Infrastructure
-  // (4) Behavior severity Extreme→Low  (5) Structures threatened <100
+  // (4) Structures threatened <100 (binary)  (5) Behavior severity Extreme→Low
   // (6) Closures  (7) % contained ascending
   const INTENSITY_RANK = { extreme: 0, 'very active': 1, active: 2, moderate: 3, minimal: 4, low: 5 };
   function seq11Rank(f) {
@@ -6725,15 +6749,15 @@ function trancheSort(incidents) {
     const numerous = maxThreat >= 100 ? 0 : 1;
     const infra = f._infra || {};
     const hasInfra = (infra.energy || infra.communication || infra.railroad) ? 0 : 1;
+    const anyThreat = ((f.resThreatened || 0) > 0 || (f.strThreatened || 0) > 0) && maxThreat < 100 ? 0 : 1;
     const raw = (f.f28 || '').toLowerCase();
     let bRank = 6; // no behavior = lowest
     for (const [term, rank] of Object.entries(INTENSITY_RANK)) {
       if (raw.includes(term)) { bRank = rank; break; }
     }
-    const anyThreat = ((f.resThreatened || 0) > 0 || (f.strThreatened || 0) > 0) && maxThreat < 100 ? 0 : 1;
     const closures = (f.f34 && /closures? in effect/i.test(f.f34)) ? 0 : 1;
     const pct = parseInt(f.f8a || 0);
-    return [evac, numerous, hasInfra, bRank, anyThreat, closures, pct];
+    return [evac, numerous, hasInfra, anyThreat, bRank, closures, pct];
   }
   function bySEQ11(a, b) {
     const ra = seq11Rank(a), rb = seq11Rank(b);
