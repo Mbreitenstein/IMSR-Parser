@@ -161,6 +161,13 @@
     user-select: none;
   }
   .precip-flag.confirmed { background: #e8f5e8; border-color: #4a9a4a; color: #1a5c1a; }
+  .kickoff-toggle {
+    display: inline-block; margin-left: 8px; background: #f0e8f8; border: 1px solid #b090d0;
+    border-radius: 3px; padding: 1px 8px; font-family: 'IBM Plex Mono', monospace;
+    font-size: 10px; color: #6a40a0; cursor: pointer; vertical-align: middle; user-select: none;
+  }
+  .kickoff-toggle:hover { background: #e0d0f0; }
+  .kickoff-toggle.toggled { background: #e8f5e8; border-color: #4a9a4a; color: #1a5c1a; }
 
 
   table.imsr.nq th { background: #f0e8d0; }
@@ -219,6 +226,8 @@ let allIncidents = [];
 let prevIMSR = null;
 let _btnCopy = false; // bypass copy listener during button-triggered copies
 let deletedFires = new Set(); // keys of fires manually removed by user
+let lastRptLabelOff = new Set();   // fires with kick-off label suppressed
+let lastRptForceActive = new Set(); // fires forced back to active sort
 
 // Accept PDFs by MIME type OR extension — Windows drag-from-Explorer often sends empty MIME
 function isPDF(f) {
@@ -546,8 +555,8 @@ function parseFields(text) {
   f.resThreatened = (resRowE ? parseInt(resRowE[1]) : 0) + (resRowF ? parseInt(resRowF[1]) : 0);
   f.resDestroyed  = (resRowE ? parseInt(resRowE[2]) : 0) + (resRowF ? parseInt(resRowF[2]) : 0);
 
-  const strRowG = text.match(/G\.\s*Mixed Use\s+(\d+)\s+\d+\s+(\d+)/i);
-  const strRowH = text.match(/H\.\s*Commercial and Industrial\s+(\d+)\s+\d+\s+(\d+)/i);
+  const strRowG = text.match(/G\.\s*(?:Mixed Use|Mixed Commercial\s*\/?\s*Residential)\s+(\d+)\s+\d+\s+(\d+)/i);
+  const strRowH = text.match(/H\.\s*(?:Commercial and Industrial|Nonresidential\s+Commercial\s+Property)\s+(\d+)\s+\d+\s+(\d+)/i);
   const strRowI = text.match(/I\.\s*Other Minor Structures\s+(\d+)\s+\d+\s+(\d+)/i);
   f.strThreatened = (strRowG ? parseInt(strRowG[1]) : 0) + (strRowH ? parseInt(strRowH[1]) : 0) + (strRowI ? parseInt(strRowI[1]) : 0);
   f.strDestroyed  = (strRowG ? parseInt(strRowG[2]) : 0) + (strRowH ? parseInt(strRowH[2]) : 0) + (strRowI ? parseInt(strRowI[2]) : 0);
@@ -6103,7 +6112,7 @@ function parseResources(text) {
     colTypes = cols.map(c => isHeliEng(c) ? 'heli' : isEngineEng(c) ? 'engine' : isCrewEng(c) ? 'crew' : null);
   } else {
     // Short code format — extract codes, skip category labels
-    const skip = new Set(['AIRCRAFT','CREWS','EQUIPMENT','OVERHEAD','TOTAL','AERIAL','OVH','LEAD','LP','OR','ORG']);
+    const skip = new Set(['AIRCRAFT','CREWS','EQUIPMENT','OVERHEAD','TOTAL','AERIAL','OR','ORG']);
     const codes = [...colArea.matchAll(/\b([A-Z]{2,6}\d*(?:IA)?)\b/g)]
       .map(m => m[1]).filter(c => !skip.has(c));
     colTypes = codes.map(c => isHeliCode(c) ? 'heli' : isEngineCode(c) ? 'engine' : isCrewCode(c) ? 'crew' : null);
@@ -6537,7 +6546,7 @@ function buildNarrativeLine(f) {
   // (3) Precipitation — handled in renderNarrative via user confirmation toggle
 
   // (4) Last report — kick-off removal tranche only
-  if (isLastReport(f)) {
+  if (isLastReport(f) && !lastRptLabelOff.has(f.f2)) {
     parts.push('Last report unless significant activity occurs');
   }
 
@@ -6643,12 +6652,28 @@ function buildNarrativeLines(incidents, cssClass='') {
     const asterisk = isNew ? '* ' : '';
     const lastRptBadge = (prev && prev.wasLastReport) ? '<span class="last-rpt-badge" title="Previous IMSR said: Last report unless significant activity occurs.">LAST RPT</span>' : '';
     const lastRptClass = (prev && prev.wasLastReport) ? ' last-rpt' : '';
-    return `<div class="narr-line ${cssClass}${lastRptClass}" data-inc="${f.f2}" data-pct="${f.f8a || 0}" onclick="toggleNarrSelect(this)"><strong>${asterisk}${name}</strong>${lastRptBadge}<span style="font-weight:normal;">, ${managingOrg}${cimtLabel}. ${sentence}${precipFlag}</span></div>`;
+
+    // Kick-off controls: toggle label and/or move to active
+    let kickoffControls = '';
+    const pct = parseInt(f.f8a || 0);
+    const ppl = parseInt(f.totalPers || 0);
+    const meetsKickoff = pct >= 90 && pct < 100 && ppl < 100;
+    if (meetsKickoff) {
+      const labelOff = lastRptLabelOff.has(f.f2);
+      const forcedActive = lastRptForceActive.has(f.f2);
+      const labelBtn = `<span class="kickoff-toggle${labelOff ? ' toggled' : ''}" title="${labelOff ? 'Restore last-report statement' : 'Remove last-report statement'}" onclick="event.stopPropagation();toggleLastRptLabel('${f.f2}')">${labelOff ? '✓ Label removed' : '✕ Remove label'}</span>`;
+      const activeBtn = `<span class="kickoff-toggle${forcedActive ? ' toggled' : ''}" title="${forcedActive ? 'Return to kick-off sort' : 'Move to active sort'}" onclick="event.stopPropagation();toggleForceActive('${f.f2}')">${forcedActive ? '↑ In active' : '↑ Move to active'}</span>`;
+      kickoffControls = labelBtn + activeBtn;
+    }
+
+    return `<div class="narr-line ${cssClass}${lastRptClass}" data-inc="${f.f2}" data-pct="${f.f8a || 0}" onclick="toggleNarrSelect(this)"><strong>${asterisk}${name}</strong>${lastRptBadge}<span style="font-weight:normal;">, ${managingOrg}${cimtLabel}. ${sentence}${precipFlag}${kickoffControls}</span></div>`;
   }).join('');
 }
 
 // "Last report" fires: >90% contained AND <100 total personnel (not yet 100%)
 function isLastReport(f) {
+  // If Intel forced this fire back to active, it's not a last-report fire
+  if (lastRptForceActive.has(f.f2)) return false;
   const pct = parseInt(f.f8a || 0);
   const ppl = parseInt(f.totalPers || 0);
   return pct >= 90 && pct < 100 && ppl < 100;
@@ -6812,6 +6837,13 @@ function renderOutput() {
     }
     activeInc = manualOrder[gacc].map(i => activeInc[i]);
 
+    // Apply manual sort order to lastRptInc — separate order key
+    const lrKey = gacc + '_lr';
+    if (!manualOrder[lrKey] || manualOrder[lrKey].length !== lastRptInc.length) {
+      manualOrder[lrKey] = lastRptInc.map((_, i) => i);
+    }
+    const sortedLastRpt = manualOrder[lrKey].map(i => lastRptInc[i]);
+
     // Build sort panel for activeInc
     const sortPanel = activeInc.length > 1 ? `
       <div class="sort-panel">
@@ -6828,18 +6860,35 @@ function renderOutput() {
         }).join('')}
       </div>` : '';
 
+    // Build sort panel for lastRptInc (kick-off fires)
+    const lrSortPanel = sortedLastRpt.length > 1 ? `
+      <div class="sort-panel" style="margin-top:4px;border-color:#b090d0;">
+        <div style="font-family:'IBM Plex Mono',monospace;font-size:9px;color:#6a40a0;padding:3px 8px;background:#f0e8f8;border-bottom:1px solid #b090d0;font-weight:600;letter-spacing:.08em;">KICK-OFF</div>
+        ${sortedLastRpt.map((f, i) => {
+          const pct = parseInt(f.f8a) || 0;
+          const moved = manualOrder[lrKey][i] !== i;
+          const name = (f.f1 || f._filename || '?').slice(0, 40);
+          return `<div class="sort-row${moved ? ' sort-moved' : ''}">
+            <button class="sort-btn" onclick="moveIncident('${lrKey}',${i},-1)" title="Move up">▲</button>
+            <button class="sort-btn" onclick="moveIncident('${lrKey}',${i},1)" title="Move down">▼</button>
+            <span class="sort-name">${name}${moved ? ' ✎' : ''}</span>
+            <span class="sort-pct">${pct}%</span>
+          </div>`;
+        }).join('')}
+      </div>` : '';
+
 
     // Narrative order: active → lastReport (kick-off) → missed (no 209) → 100%
     const narrLines =
       buildNarrativeLines(activeInc) +
-      buildNarrativeLines(lastRptInc) +
+      buildNarrativeLines(sortedLastRpt) +
       buildMissedNarrLines(missed) +
       buildNarrativeLines(containedInc);
 
     // Table row order: active → lastReport → missed → 100%
     const tableRows =
       buildTableRows(activeInc) +
-      buildTableRows(lastRptInc) +
+      buildTableRows(sortedLastRpt) +
       buildMissedTableRows(missed) +
       buildTableRows(containedInc);
 
@@ -6887,6 +6936,7 @@ function renderOutput() {
             <button class="copy-btn narr" onclick="copyNarrFromBlock(this)">Copy Narratives</button>
           </div>
           ${sortPanel}
+          ${lrSortPanel}
           ${narrLines}
         </div>
         <div class="block">
@@ -7119,6 +7169,18 @@ function copyPlainText(text, btn, resetLabel) {
   }
 }
 
+function toggleLastRptLabel(incNum) {
+  if (lastRptLabelOff.has(incNum)) lastRptLabelOff.delete(incNum);
+  else lastRptLabelOff.add(incNum);
+  renderOutput();
+}
+
+function toggleForceActive(incNum) {
+  if (lastRptForceActive.has(incNum)) lastRptForceActive.delete(incNum);
+  else lastRptForceActive.add(incNum);
+  renderOutput();
+}
+
 function togglePrecip(pill, incNum) {
   const f = allIncidents.find(i => i.f2 === incNum);
   if (!f) return;
@@ -7315,10 +7377,29 @@ function buildMissedTableRows(missed) {
     const name = normalizeName(p.name || '');
     const unit = (p.unit || '').replace(/-\d+$/, '');
     const mKey = normKey(p.name, p.unit);
+
+    // Est carry-over logic:
+    // 100% contained → "---" (TBL-07)
+    // Date passed AND <100% → "UNK"
+    // Otherwise → carry over from prev IMSR
+    let estVal = p.est || '---';
+    if (p.pct >= 100) {
+      estVal = '---';
+    } else {
+      const dm = (estVal || '').match(/^(\d{1,2})\/(\d{1,2})$/);
+      if (dm) {
+        const now = new Date();
+        const candidate = new Date(now.getFullYear(), parseInt(dm[1]) - 1, parseInt(dm[2]));
+        if (candidate < now && (now - candidate) < 180 * 86400000) {
+          estVal = 'UNK';
+        }
+      }
+    }
+
     const cols = [
       name, unit,
       p.acres ? p.acres.toLocaleString() : '---',
-      '---', String(p.pct), 'Ctn', '---',
+      '---', String(p.pct), 'Ctn', estVal,
       String(p.ppl), '---',
       String(p.crw || 0), String(p.eng || 0), String(p.heli || 0),
       String(p.strc || 0), p.cost || 'NR', p.origin || '---'
@@ -7368,8 +7449,15 @@ function parseIMSR(text) {
     const rawName = nm[1].trim();
     if (rawName.length < 2 || /^(?:Incident|Fire Activity|New fires|Understanding|This report)/i.test(rawName)) continue;
     const fullNarr = nm[3].replace(/\s+/g, ' ').trim();
-    const missCount = /no new information/i.test(fullNarr) ? 2 : 1;
-    const stripped = fullNarr.replace(/\.?\s*(Very Active|Extreme|Active|Moderate|Minimal|Low)\s+fire behavior[\s\S]*/i, '').trim();
+    const missCount = /last narrative report unless new information/i.test(fullNarr) ? 3
+      : /no new information/i.test(fullNarr) ? 2 : 1;
+    // Strip: fall-off statements, kick-off statement, behavior terms and everything after
+    const stripped = fullNarr
+      .replace(/\.?\s*No new information\.?\s*/gi, '')
+      .replace(/\.?\s*Last narrative report unless new information is received\.?\s*/gi, '')
+      .replace(/\.?\s*Last report unless significant activity occurs\.?\s*/gi, '')
+      .replace(/\.?\s*(Very Active|Extreme|Active|Moderate|Minimal|Low)\s+fire behavior[\s\S]*/i, '')
+      .trim();
     const normName = rawName.toLowerCase().replace(/[^a-z0-9 ]/g,' ').replace(/\s+/g,' ').trim();
     narrativeMap.set(normName, { narrative: stripped, fullNarr, missCount });
   }
@@ -7414,18 +7502,113 @@ function parseIMSR(text) {
     const cost   = tail ? tail[6] : 'NR';
     const origin = tail ? tail[7].toUpperCase() : '';
 
-    // Find matching narrative by name
+    // Find matching narrative by name — check asterisked narratives first
     const normName = name.toLowerCase().replace(/[^a-z0-9 ]/g,' ').replace(/\s+/g,' ').trim();
-    const narrEntry = narrativeMap.get(normName) || { narrative: '', fullNarr: '', missCount: 1 };
+    let narrEntry = narrativeMap.get(normName) || null;
+
+    // Step 1b: If no asterisked narrative found, search for non-asterisked narrative.
+    // Use the known fire name as anchor in the IMSR text, grab content until the next
+    // known fire name or section boundary. Simpler than regex — uses text positions.
+    if (!narrEntry) {
+      const escaped = name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+      // Find the fire name in the narrative section (not in table rows)
+      // Look for "Name," pattern — the comma after the name distinguishes narrative from table
+      const nameRe = new RegExp(escaped + '\\s*,\\s+', 'gi');
+      let nameMatch;
+      let bestMatch = null;
+      while ((nameMatch = nameRe.exec(text)) !== null) {
+        // Skip if this looks like it's inside a table row (preceded by unit code pattern)
+        const before = text.slice(Math.max(0, nameMatch.index - 30), nameMatch.index);
+        if (/[A-Z]{2}-[A-Z]{2,}\s+[\d,]+\s*$/.test(before)) continue;
+        // Skip if preceded by "* " (that's an asterisked fire, already captured in Step 1)
+        if (/\*\s+$/.test(before)) continue;
+        bestMatch = nameMatch;
+        break;
+      }
+      if (bestMatch) {
+        // Grab text from after "Name, " up to 600 chars
+        const startPos = bestMatch.index + bestMatch[0].length;
+        const chunk = text.slice(startPos, startPos + 600);
+        // Find org text: everything up to first period
+        const orgEnd = chunk.indexOf('.');
+        if (orgEnd > 0 && orgEnd < 150) {
+          const afterOrg = chunk.slice(orgEnd + 1).trim();
+          // Grab narrative until next fire boundary: asterisk, "Incident Name", or end
+          // Use a simple scan — stop at patterns that look like another fire's narrative start
+          let narrText = afterOrg;
+          // Truncate at next "FireName, OrgText." boundary or table section
+          const stopPatterns = [/\bIncident Name\b/i, /\bTABLE ROWS\b/i, /\b[A-Z]{2}-[A-Z]{2,}\s+[\d,]+\s/];
+          for (const sp of stopPatterns) {
+            const sm = sp.exec(narrText);
+            if (sm) narrText = narrText.slice(0, sm.index).trim();
+          }
+          if (narrText.length > 5) {
+            const fullNarr = narrText.replace(/\s+/g, ' ').trim();
+            const missCount = /last narrative report unless new information/i.test(fullNarr) ? 3
+              : /no new information/i.test(fullNarr) ? 2 : 1;
+            const stripped = fullNarr
+              .replace(/\.?\s*No new information\.?\s*/gi, '')
+              .replace(/\.?\s*Last narrative report unless new information is received\.?\s*/gi, '')
+              .replace(/\.?\s*Last report unless significant activity occurs\.?\s*/gi, '')
+              .replace(/\.?\s*(Very Active|Extreme|Active|Moderate|Minimal|Low)\s+fire behavior[\s\S]*/i, '')
+              .trim();
+            narrEntry = { narrative: stripped, fullNarr, missCount };
+            narrativeMap.set(normName, narrEntry);
+          } else {
+          }
+        } else {
+        }
+      } else {
+      }
+    }
+    if (!narrEntry) narrEntry = { narrative: '', fullNarr: '', missCount: 1 };
+
+    const est = m[7];  // Est from prev IMSR table: M/DD, ---, or UNK
 
     const key = normKey(name, unit);
     if (!map.has(key)) {
-      map.set(key, { name, unit, acres, ppl, pct,
+      map.set(key, { name, unit, acres, ppl, pct, est,
         crw, eng, heli, strc, cost, origin,
         narrative:  narrEntry.narrative,
         fullNarr:   narrEntry.fullNarr,
         missCount:  narrEntry.missCount,
         wasLastReport: false });
+    }
+  }
+
+  // ── Step 2b: fix over-captured narratives ──────────────────────────────
+  // NARR_RE (Step 1) only stops at asterisked fires. If a non-asterisked
+  // fire sits between two asterisked fires, its narrative text gets
+  // swallowed into the preceding fire's capture. Now that we have all
+  // fire names from Step 2, truncate any narrative that bleeds into
+  // another fire's "Name, OrgText." pattern.
+  const allNames = [...map.values()].map(e => e.name);
+  for (const [key, entry] of map) {
+    if (!entry.fullNarr) continue;
+    // Build regex: look for another fire's name followed by ", CapitalWord"
+    for (const otherName of allNames) {
+      if (otherName === entry.name) continue;
+      const esc = otherName.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+      const cutRe = new RegExp('\\b' + esc + '\\s*,\\s+[A-Z]', 'i');
+      const cutM = cutRe.exec(entry.fullNarr);
+      if (cutM) {
+        // Truncate at the bleed point, strip trailing asterisks/whitespace
+        const truncated = entry.fullNarr.slice(0, cutM.index).replace(/[\s*]+$/, '').trim();
+        entry.fullNarr = truncated;
+        // Re-evaluate missCount and stripped narrative from clean text
+        entry.missCount = /last narrative report unless new information/i.test(truncated) ? 3
+          : /no new information/i.test(truncated) ? 2 : 1;
+        entry.narrative = truncated
+          .replace(/\.?\s*No new information\.?\s*/gi, '')
+          .replace(/\.?\s*Last narrative report unless new information is received\.?\s*/gi, '')
+          .replace(/\.?\s*Last report unless significant activity occurs\.?\s*/gi, '')
+          .replace(/\.?\s*(Very Active|Extreme|Active|Moderate|Minimal|Low)\s+fire behavior[\s\S]*/i, '')
+          .trim();
+        // Also update narrativeMap so Step 3 uses corrected text
+        const normName = entry.name.toLowerCase().replace(/[^a-z0-9 ]/g,' ').replace(/\s+/g,' ').trim();
+        narrativeMap.set(normName, { narrative: entry.narrative, fullNarr: entry.fullNarr, missCount: entry.missCount });
+        break;  // only need to find the first bleed
+      }
     }
   }
 
@@ -7439,9 +7622,12 @@ function parseIMSR(text) {
       continue;
     }
     // For returning fires (no asterisk, not in narrativeMap): scan raw text
+    // Limit vicinity to stop at next fire name (asterisked or bold), unit code,
+    // or table header — prevents bleed from adjacent fires' narratives.
     const escaped = entry.name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-    const vicinity = text.match(new RegExp(escaped + '.{0,500}', 'is'));
-    if (vicinity && /last report unless significant activity occurs/i.test(vicinity[0])) {
+    const vicinityRe = new RegExp(escaped + '((?:(?!\\*\\s+[A-Z0-9]|\\bIncident Name\\b|\\b[A-Z]{2}-[A-Z]{2,}\\s+\\d).){0,400})', 'is');
+    const vicinity = text.match(vicinityRe);
+    if (vicinity && /last report unless significant activity occurs/i.test(vicinity[1])) {
       entry.wasLastReport = true;
     }
   }
@@ -7495,6 +7681,8 @@ document.addEventListener('copy', function(e) {
 function clearAll() {
   allIncidents = [];
   deletedFires.clear();
+  lastRptLabelOff.clear();
+  lastRptForceActive.clear();
   fileListEl.innerHTML = '';
   outputEl.style.display = 'none';
   outputEl.innerHTML = '';
