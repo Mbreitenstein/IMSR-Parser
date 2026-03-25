@@ -70,13 +70,17 @@
   .narr-line {
     font-size: 13px; line-height: 1.85; color: var(--text);
     border-left: 3px solid var(--accent); padding: 4px 0 4px 14px;
-    margin-bottom: 10px; word-break: break-word; cursor: pointer;
+    margin-bottom: 10px; word-break: break-word; cursor: text;
     border-radius: 0 3px 3px 0; transition: background .1s;
   }
   .narr-line:last-of-type { margin-bottom: 0; }
   .narr-line:hover { background: #faf8f5; }
   .narr-line.selected { background: #edf7ed; border-left-color: var(--good); outline: 1px solid #b8ddb8; }
-  .last-rpt-badge { display: inline-block; font-size: 9px; font-weight: 700; color: #fff; background: #d35400; padding: 1px 5px; border-radius: 3px; margin-left: 6px; vertical-align: middle; letter-spacing: 0.3px; cursor: help; }
+  .narr-del { float: right; background: none; border: 1px solid var(--border); border-radius: 3px; color: var(--muted); font-size: 10px; line-height: 14px; padding: 0 4px; cursor: pointer; margin-left: 6px; margin-top: 2px; -webkit-user-select: none; user-select: none; }
+  .narr-line:hover .narr-del { color: #c0392b; border-color: #c0392b; }
+  .narr-del:hover { opacity: 1 !important; color: #c0392b; border-color: #c0392b; }
+  .narr-spacer { font-size: 1px; line-height: 1px; margin: 0; padding: 0; overflow: hidden; }
+  .last-rpt-badge { display: inline-block; font-size: 9px; font-weight: 700; color: #fff; background: #d35400; padding: 1px 5px; border-radius: 3px; margin-left: 6px; vertical-align: middle; letter-spacing: 0.3px; cursor: help; -webkit-user-select: none; user-select: none; }
   .narr-line.last-rpt { border-left-color: #d35400; background: #fef5ed; }
   .delete-btn { background: #c0392b; color: #fff; border: none; padding: 4px 12px; border-radius: 4px; cursor: pointer; font-size: 11px; font-weight: 600; margin-left: 6px; }
   .delete-btn:hover { background: #a93226; }
@@ -104,8 +108,8 @@
   table.imsr tr.returning-100 td { background: #fff8e1 !important; }
   .narr-line.returning-100 { border-left-color: #c8a000; background: #fffbe6; }
   .narr-line.discrep { border-left-color: #c0392b; background: #fdf0ee; }
-  .ret100-badge { display: inline-block; font-size: 9px; font-weight: 700; color: #fff; background: #b8960a; padding: 1px 5px; border-radius: 3px; margin-left: 6px; vertical-align: middle; letter-spacing: 0.3px; cursor: help; }
-  .discrep-badge { display: inline-block; font-size: 9px; font-weight: 700; color: #fff; background: #c0392b; padding: 1px 5px; border-radius: 3px; margin-left: 6px; vertical-align: middle; letter-spacing: 0.3px; cursor: help; }
+  .ret100-badge { display: inline-block; font-size: 9px; font-weight: 700; color: #fff; background: #b8960a; padding: 1px 5px; border-radius: 3px; margin-left: 6px; vertical-align: middle; letter-spacing: 0.3px; cursor: help; -webkit-user-select: none; user-select: none; }
+  .discrep-badge { display: inline-block; font-size: 9px; font-weight: 700; color: #fff; background: #c0392b; padding: 1px 5px; border-radius: 3px; margin-left: 6px; vertical-align: middle; letter-spacing: 0.3px; cursor: help; -webkit-user-select: none; user-select: none; }
   table.imsr tr.discrep td { outline: 2px solid #c0392b; outline-offset: -2px; }
   table.imsr td.empty { color: var(--text); }
   table.imsr td input {
@@ -372,7 +376,7 @@ async function handleFiles(files) {
 
   updateFileList();
   renderOutput();
-  setStatus(`✓ ${allIncidents.length} incident${allIncidents.length !== 1 ? 's' : ''} loaded — sorted by % contained`, 'ok');
+  setStatus(`✓ ${allIncidents.length} incident${allIncidents.length !== 1 ? 's' : ''} loaded — sorted by threat → behavior → % contained`, 'ok');
 }
 
 function updateFileList() {
@@ -6275,7 +6279,7 @@ function spellMiles(str) {
   const placeholders = [];
   str = str.replace(STATE_RE, (match, abbr) => {
     placeholders.push(abbr);
-    return ',  STATE' + (placeholders.length - 1) + ' ';
+    return ', STATE' + (placeholders.length - 1) + '';
   });
 
   // Spell out cardinal directions
@@ -6294,7 +6298,7 @@ function spellMiles(str) {
     .replace(/\bW\b/g,   'west');
 
   // Restore state abbreviations
-  str = str.replace(/ STATE(\d+) /g, (_, i) => placeholders[+i]);
+  str = str.replace(/STATE(\d+)/g, (_, i) => placeholders[+i]);
   // Mid-sentence number rule: spell out if < 10, numeral if >= 10
   // Also normalize mile/miles: singular if 1, plural otherwise, always lowercase
   return str.replace(/\b(\d+)(\s*[Mm]iles?\b)/g, (match, num, suffix) => {
@@ -6657,7 +6661,7 @@ function buildNarrativeLines(incidents, cssClass='') {
     const { name, parts } = buildNarrativeLine(f);
     const sentence = capitalizeSentences(parts.join('. ') + (parts.length ? '.' : ''));
     const managingOrg = (lookupUnit(f.unit) || fv(f.unit) || '').replace(/\s*\([A-Z]{2}\)$/,'') || '<span class="blank">[MANAGING ORG]</span>';
-    const cimtLabel = f.hasNIMO ? ' (NIMO ASSIGNED)' : f.hasCIMT ? ' (CIMT ASSIGNED)' : '';
+    const cimtLabel = f.hasNIMO ? '. NIMO (___)' : f.hasCIMT ? '. CIMT (___)' : '';
     const precipFlag = f._precipDetected
       ? `<span class="precip-flag${f._precipConfirmed ? ' confirmed' : ''}" title="Definitive precipitation detected in boxes 35/40/47" onclick="event.stopPropagation();togglePrecip(this,'${f.f2}')">🌧 ${f._precipConfirmed ? 'Precip added' : 'Add precip statement'}</span>`
       : '';
@@ -6690,8 +6694,9 @@ function buildNarrativeLines(incidents, cssClass='') {
       kickoffControls = labelBtn + activeBtn;
     }
 
-    return `<div class="narr-line ${cssClass}${lastRptClass}${ret100}${discrepClass}" data-inc="${f.f2}" data-pct="${f.f8a || 0}" onclick="toggleNarrSelect(this)"><strong>${asterisk}${name}</strong>${lastRptBadge}${ret100Badge}${discrepBadge}<span style="font-weight:normal;">, ${managingOrg}${cimtLabel}. ${sentence}${precipFlag}${kickoffControls}</span></div>`;
-  }).join('');
+    const delBtn = `<button class="narr-del" title="Remove this fire" onclick="deleteSingleFire('${f.f2}','')">✕</button>`;
+    return `<div class="narr-line ${cssClass}${lastRptClass}${ret100}${discrepClass}" data-inc="${f.f2}" data-pct="${f.f8a || 0}"><b>${asterisk}${name}</b>${lastRptBadge}${ret100Badge}${discrepBadge}, ${managingOrg}${cimtLabel}. ${sentence}${precipFlag}${kickoffControls}${delBtn}</div>`;
+  }).join('<div class="narr-spacer"><br></div>');
 }
 
 // "Last report" fires: >90% contained AND <100 total personnel (not yet 100%)
@@ -6703,13 +6708,12 @@ function isLastReport(f) {
   return pct >= 90 && pct < 100 && ppl < 100;
 }
 
-// Tranche order:
-//   T1    — new, not lastReport       → pct asc
-//   T2    — returning, not lastReport → pct asc
-//   T1b   — new, lastReport           → pct asc  (all lastReport sink below all active)
-//   T2b   — returning, lastReport     → pct asc
-//   T3new — 100% new                  → submit time desc
-//   T3ret — 100% returning            → submit time desc
+// Tranche order (Option A — severity-driven, new/old is tiebreaker):
+//   T0    — CIMT/NIMO, active         → SEQ-11 (new above old as key 9)
+//   T0b   — CIMT/NIMO, lastReport     → pct asc
+//   T1    — all active (new+returning) → SEQ-11 (new above old as key 9)
+//   T1b   — all lastReport             → pct asc
+//   T2    — 100% contained             → submit time desc
 // A fire is "finaled" (100%) if isFinal is set OR f8a parses to >= 100.
 function is100(f) {
   if (f.isFinal) return true;
@@ -6718,30 +6722,21 @@ function is100(f) {
 }
 
 function trancheSort(incidents) {
-  const t0new = [], t0ret = [], t0bnew = [], t0bret = [];
-  const t1 = [], t1b = [], t2 = [], t2b = [], t3new = [], t3ret = [];
+  // Option A: 5 buckets — new/old mixed, severity drives order
+  const t0 = [], t0b = [], t1 = [], t1b = [], t2 = [];
   incidents.forEach(f => {
-    const isNew = !prevMatch(f);
-    if (is100(f)) {
-      isNew ? t3new.push(f) : t3ret.push(f);
-      return;
-    }
+    if (is100(f)) { t2.push(f); return; }
     if (f.hasCIMT || f.hasNIMO) {
-      // CIMT/NIMO fires float to top: new above returning, lastReport below active
-      if (isLastReport(f)) { isNew ? t0bnew.push(f) : t0bret.push(f); }
-      else                  { isNew ? t0new.push(f)  : t0ret.push(f);  }
+      isLastReport(f) ? t0b.push(f) : t0.push(f);
       return;
     }
-    if (isLastReport(f)) {
-      isNew ? t1b.push(f) : t2b.push(f);
-    } else {
-      isNew ? t1.push(f)  : t2.push(f);
-    }
+    isLastReport(f) ? t1b.push(f) : t1.push(f);
   });
   // SEQ-11: multi-key sort within active buckets
   // (1) Evacuations  (2) Numerous res/str 100+  (3) Infrastructure
-  // (4) Structures threatened <100 (binary)  (5) Behavior severity Extreme→Low
-  // (6) Closures  (7) % contained ascending
+  // (4) Structures threatened <100 (binary)  (5) Behavior intensity Extreme→Low
+  // (6) Descriptor severity (best descriptor present)  (7) Closures
+  // (8) % contained ascending  (9) New above returning
   const INTENSITY_RANK = { extreme: 0, 'very active': 1, active: 2, moderate: 3, minimal: 4, low: 5 };
   function seq11Rank(f) {
     const evac = (f.f34 && /evacuation/i.test(f.f34)) ? 0 : 1;
@@ -6755,9 +6750,33 @@ function trancheSort(incidents) {
     for (const [term, rank] of Object.entries(INTENSITY_RANK)) {
       if (raw.includes(term)) { bRank = rank; break; }
     }
+    // Best (lowest) descriptor severity — tiebreaks within same intensity
+    // Use regex with word boundaries; check compound terms before generic
+    // to avoid "short-range spotting" also matching standalone "spotting"
+    let dRank = 5; // no descriptors
+    const DESC_CHECKS = [
+      [/\bcrowning\b/i, 1], [/\bshort crown runs\b/i, 1], [/\blong[\s-]range spotting\b/i, 1],
+      [/\bwind[\s-]driven runs\b/i, 2], [/\brunning\b/i, 2],
+      [/\bgroup torching\b/i, 2], [/\buphill runs\b/i, 2],
+      [/\bflanking\b/i, 3], [/\bshort[\s-]range spotting\b/i, 3],
+      [/\bbacking\b/i, 4], [/\bcreeping\b/i, 4],
+      [/\bisolated torching\b/i, 4], [/\bsingle tree torching\b/i, 4], [/\bsmoldering\b/i, 4],
+    ];
+    // Generic 'spotting'/'torching' only if no compound form already matched
+    let hasCompoundSpot = false, hasCompoundTorch = false;
+    for (const [re, rank] of DESC_CHECKS) {
+      if (re.test(raw)) {
+        if (rank < dRank) dRank = rank;
+        if (/range spotting/i.test(re.source)) hasCompoundSpot = true;
+        if (/group|isolated|single tree/i.test(re.source)) hasCompoundTorch = true;
+      }
+    }
+    if (!hasCompoundSpot && /\bspotting\b/i.test(raw)) { if (2 < dRank) dRank = 2; }
+    if (!hasCompoundTorch && /\btorching\b/i.test(raw)) { if (3 < dRank) dRank = 3; }
     const closures = (f.f34 && /closures? in effect/i.test(f.f34)) ? 0 : 1;
     const pct = parseInt(f.f8a || 0);
-    return [evac, numerous, hasInfra, anyThreat, bRank, closures, pct];
+    const isNew = !prevMatch(f) ? 0 : 1; // new fires first as tiebreaker
+    return [evac, numerous, hasInfra, anyThreat, bRank, dRank, closures, pct, isNew];
   }
   function bySEQ11(a, b) {
     const ra = seq11Rank(a), rb = seq11Rank(b);
@@ -6768,11 +6787,10 @@ function trancheSort(incidents) {
   }
   const byPct    = (a, b) => (parseInt(a.f8a||0)) - (parseInt(b.f8a||0));
   const bySubmit = (a, b) => (b._submitTime || 0) - (a._submitTime || 0);
-  t0new.sort(bySEQ11); t0ret.sort(bySEQ11); t0bnew.sort(byPct); t0bret.sort(byPct);
-  t1.sort(bySEQ11); t2.sort(bySEQ11);
-  t1b.sort(byPct); t2b.sort(byPct);
-  t3new.sort(bySubmit); t3ret.sort(bySubmit);
-  return [...t0new, ...t0ret, ...t0bnew, ...t0bret, ...t1, ...t2, ...t1b, ...t2b, ...t3new, ...t3ret];
+  t0.sort(bySEQ11); t0b.sort(byPct);
+  t1.sort(bySEQ11); t1b.sort(byPct);
+  t2.sort(bySubmit);
+  return [...t0, ...t0b, ...t1, ...t1b, ...t2];
 }
 
 // Manual sort overrides per GACC — stores reordered index arrays for activeInc only
@@ -6903,11 +6921,14 @@ function renderOutput() {
 
 
     // Narrative order: active → lastReport (kick-off) → missed (no 209) → 100%
-    const narrLines =
-      buildNarrativeLines(activeInc) +
-      buildNarrativeLines(sortedLastRpt) +
-      buildMissedNarrLines(missed) +
-      buildNarrativeLines(containedInc);
+    const NARR_SPACER = '<div class="narr-spacer"><br></div>';
+    const narrGroups = [
+      buildNarrativeLines(activeInc),
+      buildNarrativeLines(sortedLastRpt),
+      buildMissedNarrLines(missed),
+      buildNarrativeLines(containedInc),
+    ].filter(g => g.length > 0);
+    const narrLines = narrGroups.join(NARR_SPACER);
 
     // Table row order: active → lastReport → missed → 100%
     const tableRows =
@@ -6926,7 +6947,7 @@ function renderOutput() {
         const prev = prevMatch(f);
         const asterisk = prev ? '' : '* ';
         return `<div class="narr-line nq" data-inc="${f.f2}" data-pct="${f.f8a || 0}" style="opacity:.7;border-left-color:#c8a050;">
-          <strong>${asterisk}${name}</strong><span style="font-weight:normal;">, ${managingOrg}. ${sentence}</span>
+          <b>${asterisk}${name}</b>, ${managingOrg}. ${sentence}
           <span style="font-size:9px;color:#9a6010;margin-left:6px;font-style:italic;">${f._qualifyReason}</span>
         </div>`;
       }).join('');
@@ -6991,7 +7012,6 @@ function renderOutput() {
       <span style="float:right;">
         <button class="copy-btn narr" onclick="copyAllNarr(this)" style="margin-right:6px;">Copy All Narratives</button>
         <button class="copy-btn" onclick="copyAllRows(this)" style="margin-right:6px;">Copy All Rows</button>
-        <button class="delete-btn" onclick="deleteSelected()" id="deleteSelBtn" disabled title="Select narratives (click green), then delete">Delete Selected</button>
         <button class="copy-btn clear" onclick="clearAll()" style="margin-left:6px;">Clear All</button>
       </span>
     </div>
@@ -7012,7 +7032,7 @@ function buildCopyLine(f) {
   const { name, parts } = buildNarrativeLine(f);
   const sentence = capitalizeSentences(parts.join('. ') + (parts.length ? '.' : ''));
   const org = (lookupUnit(f.unit) || fv(f.unit) || '').replace(/\s*\([A-Z]{2}\)$/,'') || '[MANAGING ORG]';
-  const cimtLabel = f.hasNIMO ? ' (NIMO ASSIGNED)' : f.hasCIMT ? ' (CIMT ASSIGNED)' : '';
+  const cimtLabel = f.hasNIMO ? '. NIMO (___)' : f.hasCIMT ? '. CIMT (___)' : '';
   const precip = f._precipConfirmed ? ' Precipitation occurred over the fire area yesterday.' : '';
   const prev = prevMatch(f);
   const isNew = !prev;
@@ -7039,69 +7059,39 @@ function buildCopyLine(f) {
   return { html, plain };
 }
 
-function toggleNarrSelect(el) {
-  el.classList.toggle('selected');
-  // Update the per-GACC copy button label
-  const block = el.closest('.block');
-  if (!block) return;
-  const btn = block.querySelector('.copy-btn.narr');
-  if (!btn) return;
-  const count = block.querySelectorAll('.narr-line.selected').length;
-  btn.textContent = count > 0 ? `Copy ${count} Selected` : 'Copy Narratives';
-  // Update the global Copy All button
-  const allSelected = document.querySelectorAll('.narr-line.selected').length;
-  const allBtn = document.querySelector('.copy-btn.narr[onclick="copyAllNarr(this)"]');
-  if (allBtn) allBtn.textContent = allSelected > 0 ? `Copy ${allSelected} Selected` : 'Copy All Narratives';
-  // Update delete button
-  const delBtn = document.getElementById('deleteSelBtn');
-  if (delBtn) {
-    delBtn.disabled = allSelected === 0;
-    delBtn.textContent = allSelected > 0 ? `Delete ${allSelected} Selected` : 'Delete Selected';
+function deleteSingleFire(incNum, missedKey) {
+  if (incNum) {
+    const f = allIncidents.find(i => i.f2 === incNum);
+    if (f) deletedFires.add(normKey(f.f1, f.unit));
   }
+  if (missedKey) {
+    deletedFires.add(missedKey);
+  }
+  renderOutput();
 }
 
 function deleteSelected() {
-  const selected = Array.from(document.querySelectorAll('.narr-line.selected'));
-  if (!selected.length) return;
-
-  let count = 0;
-  for (const el of selected) {
-    // 209-based fire
-    if (el.dataset.inc) {
-      const f = allIncidents.find(i => i.f2 === el.dataset.inc);
-      if (f) {
-        deletedFires.add(normKey(f.f1, f.unit));
-        count++;
-      }
-    }
-    // Missed fire (from previous IMSR, no 209 today)
-    if (el.dataset.missedKey) {
-      deletedFires.add(el.dataset.missedKey);
-      count++;
-    }
-  }
-
-  if (count > 0) renderOutput();
+  // Legacy — no-op (individual delete buttons handle this now)
 }
 
 function copyAllNarr(btn) {
-  // Collect visible narrative lines — selected if any, otherwise all
-  const allVisible = Array.from(document.querySelectorAll('.gacc-section .narr-line:not(.hidden-100)'));
-  const selected   = allVisible.filter(el => el.classList.contains('selected'));
-  const targets    = selected.length > 0 ? selected : allVisible;
+  // Collect all visible narrative lines
+  const targets = Array.from(document.querySelectorAll('.gacc-section .narr-line:not(.hidden-100)'));
   const lines = [];
   targets.forEach(div => {
     if (div.dataset.inc) {
       const f = allIncidents.find(i => i.f2 === div.dataset.inc);
       if (f) lines.push(buildCopyLine(f));
     } else if (div.dataset.missed) {
-      const strong = div.querySelector('strong');
-      const span   = div.querySelector('span');
-      const name   = strong ? strong.textContent.trim() : '';
-      const rest   = span  ? span.textContent.trim() : '';
+      const bEl = div.querySelector('b');
+      const name = bEl ? bEl.textContent.trim() : '';
+      const clone = div.cloneNode(true);
+      clone.querySelectorAll('button, .last-rpt-badge, .ret100-badge, .discrep-badge').forEach(el => el.remove());
+      const fullText = clone.textContent.trim();
+      const rest = name && fullText.startsWith(name) ? fullText.slice(name.length) : fullText;
       const plain  = name + rest;
       const boldPart = name ? `<b>${name}</b>` : '';
-      const html = `<span style="font-family:Arial,sans-serif;font-size:11pt;">${boldPart}<span style="font-weight:normal;">${rest.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;')}</span></span>`;
+      const html = `<span style="font-family:Arial,sans-serif;font-size:11pt;">${boldPart}${rest.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;')}</span>`;
       lines.push({ html, plain });
     }
   });
@@ -7130,26 +7120,26 @@ function copyAllRows(btn) {
 
 function copyNarrFromBlock(btn) {
   const block = btn.closest('.block');
-  const allLines = Array.from(block.querySelectorAll('.narr-line:not(.hidden-100)'));
-  const selected = allLines.filter(el => el.classList.contains('selected'));
-  const targets  = selected.length > 0 ? selected : allLines;
+  const targets = Array.from(block.querySelectorAll('.narr-line:not(.hidden-100)'));
   const lines = [];
   targets.forEach(el => {
     if (el.dataset.inc) {
       const f = allIncidents.find(i => i.f2 === el.dataset.inc);
       if (f) lines.push(buildCopyLine(f));
     } else if (el.dataset.missed) {
-      const strong = el.querySelector('strong');
-      const span   = el.querySelector('span');
-      const name   = strong ? strong.textContent.trim() : '';
-      const rest   = span  ? span.textContent.trim() : '';
+      const bEl = el.querySelector('b');
+      const name = bEl ? bEl.textContent.trim() : '';
+      const clone = el.cloneNode(true);
+      clone.querySelectorAll('button, .last-rpt-badge, .ret100-badge, .discrep-badge').forEach(n => n.remove());
+      const fullText = clone.textContent.trim();
+      const rest = name && fullText.startsWith(name) ? fullText.slice(name.length) : fullText;
       const plain  = name + rest;
       const boldPart = name ? `<b>${name}</b>` : '';
-      const html = `<span style="font-family:Arial,sans-serif;font-size:11pt;">${boldPart}<span style="font-weight:normal;">${rest.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;')}</span></span>`;
+      const html = `<span style="font-family:Arial,sans-serif;font-size:11pt;">${boldPart}${rest.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;')}</span>`;
       lines.push({ html, plain });
     }
   });
-  copyNarrLines(lines, btn, selected.length > 0 ? 'Copy Narratives' : 'Copy Narratives');
+  copyNarrLines(lines, btn, 'Copy Narratives');
 }
 
 function copyRowsFromBlock(btn) {
@@ -7230,12 +7220,13 @@ function togglePrecip(pill, incNum) {
   const prev      = prevMatch(f);
   const asterisk  = prev ? '' : '* ';
   const managingOrg = (lookupUnit(f.unit) || fv(f.unit) || '').replace(/\s*\([A-Z]{2}\)$/,'') || '[MANAGING ORG]';
-  const cimtLabel = f.hasNIMO ? ' (NIMO ASSIGNED)' : f.hasCIMT ? ' (CIMT ASSIGNED)' : '';
+  const cimtLabel = f.hasNIMO ? '. NIMO (___)' : f.hasCIMT ? '. CIMT (___)' : '';
   const pillHtml  = f._precipConfirmed
     ? `<span class="precip-flag confirmed" title="Click to remove precip statement" onclick="togglePrecip(this,'${incNum}')">🌧 Precip added</span>`
     : `<span class="precip-flag" title="Definitive precipitation detected in boxes 35/40/47" onclick="togglePrecip(this,'${incNum}')">🌧 Add precip statement</span>`;
 
-  line.innerHTML = `<strong>${asterisk}${name}</strong><span style="font-weight:normal;">, ${managingOrg}${cimtLabel}. ${sentence}${pillHtml}</span>`;
+  const delBtn = `<button class="narr-del" title="Remove this fire" onclick="deleteSingleFire('${incNum}','')">✕</button>`;
+  line.innerHTML = `<b>${asterisk}${name}</b>, ${managingOrg}${cimtLabel}. ${sentence}${pillHtml}${delBtn}`;
 }
 
 // Copy narrative lines with mixed bold formatting for Word
@@ -7278,17 +7269,7 @@ function copyNarrLines(lines, btn, resetLabel) {
   document.body.removeChild(el);
 
   btn.textContent = ok ? '✓ Copied!' : '✗ Copy failed — use Ctrl+C';
-  setTimeout(() => {
-    // Restore label accounting for current selection count
-    const block = btn.closest('.block');
-    if (block) {
-      const n = block.querySelectorAll('.narr-line.selected').length;
-      btn.textContent = n > 0 ? `Copy ${n} Selected` : resetLabel;
-    } else {
-      const n = document.querySelectorAll('.narr-line.selected').length;
-      btn.textContent = n > 0 ? `Copy ${n} Selected` : resetLabel;
-    }
-  }, 2000);
+  setTimeout(() => { btn.textContent = resetLabel; }, 2000);
 }
 
 function applyNarrFilter(val) {
@@ -7389,10 +7370,11 @@ function buildMissedNarrLines(missed) {
     const mKey = normKey(p.name, p.unit);
     const lastRptBadge = p.wasLastReport ? '<span class="last-rpt-badge" title="Previous IMSR said: Last report unless significant activity occurs.">LAST RPT</span>' : '';
     const lastRptClass = p.wasLastReport ? ' last-rpt' : '';
-    return `<div class="narr-line${lastRptClass}" style="border-left-color:${p.wasLastReport ? '#d35400' : '#9090c0'};opacity:.8;" data-missed="1" data-missed-key="${mKey}" onclick="toggleNarrSelect(this)">
-      <strong>${name}</strong>${lastRptBadge}<span style="font-weight:normal;">, ${org}. ${tail}</span>
+    const delBtn = `<button class="narr-del" title="Remove this fire" onclick="deleteSingleFire('','${mKey}')">✕</button>`;
+    return `<div class="narr-line${lastRptClass}" style="border-left-color:${p.wasLastReport ? '#d35400' : '#9090c0'};opacity:.8;" data-missed="1" data-missed-key="${mKey}">
+      <b>${name}</b>${lastRptBadge}, ${org}. ${tail}${delBtn}
     </div>`;
-  }).join('');
+  }).join('<div class="narr-spacer"><br></div>');
 }
 
 // Build table rows for missed fires
@@ -7436,13 +7418,15 @@ function buildMissedTableRows(missed) {
 function copyMissedNarr(btn) {
   const block = btn.closest('.block');
   const lines = Array.from(block.querySelectorAll('.narr-line[data-missed]')).map(div => {
-    const strong = div.querySelector('strong');
-    const span   = div.querySelector('span');
-    const name   = strong ? strong.textContent.trim() : '';
-    const rest   = span  ? span.textContent.trim() : '';
+    const bEl = div.querySelector('b');
+    const name = bEl ? bEl.textContent.trim() : '';
+    const clone = div.cloneNode(true);
+    clone.querySelectorAll('button, .last-rpt-badge, .ret100-badge, .discrep-badge').forEach(el => el.remove());
+    const fullText = clone.textContent.trim();
+    const rest = name && fullText.startsWith(name) ? fullText.slice(name.length) : fullText;
     const plain  = name + rest;
     const boldPart = name ? `<b>${name}</b>` : '';
-    const html = `<span style="font-family:Arial,sans-serif;font-size:11pt;">${boldPart}<span style="font-weight:normal;">${rest.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;')}</span></span>`;
+    const html = `<span style="font-family:Arial,sans-serif;font-size:11pt;">${boldPart}${rest.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;')}</span>`;
     return { html, plain };
   });
   copyNarrLines(lines, btn, 'Copy Narratives');
@@ -7637,21 +7621,10 @@ function parseIMSR(text) {
   }
 
   // ── Step 3: flag fires whose prev narrative had "Last report" ──────
+  // Check each entry's own fullNarr (already truncated at fire boundaries
+  // by Steps 1/2a/2b) — no raw-text vicinity scan needed.
   for (const [key, entry] of map) {
-    // Check narrativeMap first (asterisked fires)
-    const normName = entry.name.toLowerCase().replace(/[^a-z0-9 ]/g,' ').replace(/\s+/g,' ').trim();
-    const narrInfo = narrativeMap.get(normName);
-    if (narrInfo && /last report unless significant activity occurs/i.test(narrInfo.fullNarr)) {
-      entry.wasLastReport = true;
-      continue;
-    }
-    // For returning fires (no asterisk, not in narrativeMap): scan raw text
-    // Limit vicinity to stop at next fire name (asterisked or bold), unit code,
-    // or table header — prevents bleed from adjacent fires' narratives.
-    const escaped = entry.name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-    const vicinityRe = new RegExp(escaped + '((?:(?!\\*\\s+[A-Z0-9]|\\bIncident Name\\b|\\b[A-Z]{2}-[A-Z]{2,}\\s+\\d).){0,400})', 'is');
-    const vicinity = text.match(vicinityRe);
-    if (vicinity && /last report unless significant activity occurs/i.test(vicinity[1])) {
+    if (entry.fullNarr && /last report unless significant activity occurs/i.test(entry.fullNarr)) {
       entry.wasLastReport = true;
     }
   }
@@ -7677,30 +7650,8 @@ function prevMatch(f) {
 
 // Intercept Ctrl+C — if any narr-lines are selected, override clipboard
 // with properly spaced HTML so Word paste looks the same as button copy.
-document.addEventListener('copy', function(e) {
-  if (_btnCopy) return; // button-triggered copy — don't interfere
-  const selected = Array.from(document.querySelectorAll('.narr-line.selected'));
-  if (selected.length === 0) return; // nothing selected — let browser handle it
-  e.preventDefault();
-  const lines = [];
-  selected.forEach(el => {
-    if (el.dataset.inc) {
-      const f = allIncidents.find(i => i.f2 === el.dataset.inc);
-      if (f) lines.push(buildCopyLine(f));
-    } else if (el.dataset.missed) {
-      const strong = el.querySelector('strong');
-      const span   = el.querySelector('span');
-      const name   = strong ? strong.textContent.trim() : '';
-      const rest   = span  ? span.textContent.trim()   : '';
-      const boldPart = name ? `<b>${name}</b>` : '';
-      const html = `<span style="font-family:Arial,sans-serif;font-size:11pt;">${boldPart}<span style="font-weight:normal;">${rest.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;')}</span></span>`;
-      lines.push({ html, plain: name + rest });
-    }
-  });
-  if (!lines.length) return;
-  e.clipboardData.setData('text/html',  buildNarrHtml(lines));
-  e.clipboardData.setData('text/plain', lines.map(l => l.plain).join('\n\n'));
-});
+// Copy event listener removed — highlight + Ctrl+C now works natively.
+// Use the Copy buttons for Word-formatted output with bold fire names.
 
 function clearAll() {
   allIncidents = [];
