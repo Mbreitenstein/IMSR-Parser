@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>IMSR Proofer v5.1</title>
+<title>IMSR Proofer v5.2</title>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/mammoth/1.6.0/mammoth.browser.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
 <style>
@@ -78,7 +78,7 @@ body { font-family: 'Segoe UI', system-ui, sans-serif; background: var(--bg); co
 </style>
 </head>
 <body>
-<div class="header"><h1>IMSR PROOFER</h1><span class="tag">LAYER 1</span><span class="tag" style="background:rgba(22,131,158,0.4);">LAYER 2</span><span class="ver">v5.1</span></div>
+<div class="header"><h1>IMSR PROOFER</h1><span class="tag">LAYER 1</span><span class="tag" style="background:rgba(22,131,158,0.4);">LAYER 2</span><span class="ver">v5.2</span></div>
 <div class="container">
 
   <!-- STEP 1: Yesterday's IMSR (file only — for personnel math) -->
@@ -1124,14 +1124,14 @@ function analyze(text, html) {
         const cm = tbl.cm;
         const nm = inc.name;
 
-        // Unit: must be XX-XXX format (2-letter state, hyphen, 2-4 char code)
+        // Unit: must be XX-XXX format (2-letter state, hyphen, 2-5 alphanumeric code)
         if (cm.unit !== undefined) {
           const u = (r[cm.unit]||'').trim();
-          if (u && !/^[A-Z]{2}-[A-Z]{2,4}\d{0,2}$/.test(u)) {
+          if (u && !/^[A-Z]{2}-[A-Z0-9]{2,5}$/.test(u)) {
             let fix = u.toUpperCase().replace(/[_\/\s]+/, '-');
             if (/^[A-Z]{4,}$/.test(fix) && fix.length >= 4) fix = fix.substring(0,2) + '-' + fix.substring(2);
             // Specific message based on problem type
-            const isCaseOnly = fix === u.toUpperCase().replace(/[_\/\s]+/,'-') && fix !== u;
+            const isCaseOnly = /^[A-Z]{2}-[A-Z0-9]{2,5}$/.test(fix) && fix !== u;
             const msg = isCaseOnly
               ? `"${nm}": Unit code "${u}" — capitalize to "${fix}".`
               : `"${nm}": Unit code wrong format.`;
@@ -1507,7 +1507,7 @@ function checkNarrFmt(text, f) {
     // -- NARR-48: invalid behavior terms --
     const VALID_BEHAVIOR_TERMS = ['torching','wind-driven runs','flanking','backing','spotting',
       'creeping','smoldering','running','uphill runs','long-range spotting','short-range spotting',
-      'group torching','isolated torching','single tree torching'];
+      'group torching','isolated torching','single tree torching','crowning','short crown runs'];
     const behaviorSection = line.match(/fire behavior with ([^.]+)\./i);
     if (behaviorSection) {
       const terms = behaviorSection[1].split(/,\s*|\s+and\s+/).map(t => t.trim().toLowerCase()).filter(Boolean);
@@ -1651,7 +1651,7 @@ function checkTextQuality(text, f) {
     const stray=/[{}\[\]<>@#^~|\\]/g;while((m=stray.exec(line))!==null)f.push(F('warning','PROOF',who+'Unexpected character "'+m[0]+'".', ctx(line,m.index,1)));
     // Tab character — only flag in narrative lines, not table data rows
     // Table rows contain unit codes (case-insensitive match for hand-entered codes like Ok-OKS)
-    const looksLikeTableRow = /\t/.test(line) && /[A-Za-z]{2}-[A-Za-z]{2,4}/i.test(line);
+    const looksLikeTableRow = /\t/.test(line) && /[A-Za-z]{2}-[A-Za-z0-9]{2,5}/i.test(line);
     if(/\t/.test(line) && !looksLikeTableRow) f.push(F('warning','PROOF',`${who}Tab character.`,line.substring(0,80)));
   }
 
