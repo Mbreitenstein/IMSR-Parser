@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>IMSR Proofer v5</title>
+<title>IMSR Proofer v5.1</title>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/mammoth/1.6.0/mammoth.browser.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
 <style>
@@ -47,7 +47,7 @@ body { font-family: 'Segoe UI', system-ui, sans-serif; background: var(--bg); co
 .finding .context { display: block; margin-top: 6px; padding: 6px 10px; background: rgba(0,0,0,0.04); border-radius: 4px; font-family: Consolas, monospace; font-size: 12px; white-space: pre-wrap; word-break: break-word; color: var(--text-dim); }
 .finding .fix { display: block; margin-top: 4px; font-size: 12px; color: var(--ok); font-style: italic; }
 .finding .diff-row { display: flex; gap: 8px; margin-top: 8px; flex-wrap: wrap; align-items: flex-start; }
-.finding .diff-before { font-family: Consolas, monospace; font-size: 12px; padding: 4px 10px; border-radius: 4px; background: #fde8e8; border: 1px solid #e8b4b4; color: #8b0000; text-decoration: line-through; word-break: break-word; flex: 1; min-width: 180px; }
+.finding .diff-before { font-family: Consolas, monospace; font-size: 12px; padding: 4px 10px; border-radius: 4px; background: #fde8e8; border: 1px solid #e8b4b4; color: #8b0000; word-break: break-word; flex: 1; min-width: 180px; }
 .finding .diff-after  { font-family: Consolas, monospace; font-size: 12px; padding: 4px 10px; border-radius: 4px; background: #e8f5e8; border: 1px solid #9cca9c; color: #1a5c1a; word-break: break-word; flex: 1; min-width: 180px; }
 .finding .diff-arrow  { font-size: 16px; color: var(--text-dim); align-self: center; flex-shrink: 0; }
 .finding .diff-ctx    { font-family: Consolas, monospace; font-size: 11px; color: var(--text-dim); margin-top: 4px; display: block; word-break: break-word; }
@@ -78,7 +78,7 @@ body { font-family: 'Segoe UI', system-ui, sans-serif; background: var(--bg); co
 </style>
 </head>
 <body>
-<div class="header"><h1>IMSR PROOFER</h1><span class="tag">LAYER 1</span><span class="tag" style="background:rgba(22,131,158,0.4);">LAYER 2</span><span class="ver">v5.0</span></div>
+<div class="header"><h1>IMSR PROOFER</h1><span class="tag">LAYER 1</span><span class="tag" style="background:rgba(22,131,158,0.4);">LAYER 2</span><span class="ver">v5.1</span></div>
 <div class="container">
 
   <!-- STEP 1: Yesterday's IMSR (file only — for personnel math) -->
@@ -95,22 +95,22 @@ body { font-family: 'Segoe UI', system-ui, sans-serif; background: var(--bg); co
   <div id="step2Area" style="display:none;">
     <div style="margin-bottom:6px;font-size:13px;font-weight:600;color:var(--text-dim);">Step 2: Today's IMSR</div>
     <div class="tab-bar">
-      <button id="tabFile" class="active" onclick="switchTab('file')">📄 Drop File</button>
-      <button id="tabPaste" onclick="switchTab('paste')">📋 Paste Text</button>
+      <button id="tabPaste" class="active" onclick="switchTab('paste')">📋 Paste Text</button>
+      <button id="tabFile" onclick="switchTab('file')">📄 Drop File</button>
     </div>
-    <div class="tab-panel" id="panelFile">
-      <div class="drop-zone" id="dropZone2" style="margin-bottom:0;">
-        <h2>Drop <em>today's</em> IMSR here</h2>
-        <p>Accepts <strong>.docx</strong> or <strong>.pdf</strong></p>
-        <input type="file" id="fileInput2" accept=".docx,.pdf">
-      </div>
-    </div>
-    <div class="tab-panel" id="panelPaste" style="display:none;">
+    <div class="tab-panel" id="panelPaste">
       <p style="font-size:13px;color:var(--text-dim);margin-bottom:10px;">Copy the full IMSR text from Word and paste below. No file save needed.</p>
       <textarea class="paste-box" id="pasteBox" placeholder="Paste IMSR text here…"></textarea>
       <div style="margin-top:10px;display:flex;gap:8px;align-items:center;">
         <button onclick="runFromPaste()" style="background:var(--accent);color:#fff;border:none;padding:8px 20px;border-radius:6px;cursor:pointer;font-size:13px;font-weight:600;">Run Checks</button>
         <span style="font-size:12px;color:var(--text-dim);">Personnel math will be skipped in paste mode</span>
+      </div>
+    </div>
+    <div class="tab-panel" id="panelFile" style="display:none;">
+      <div class="drop-zone" id="dropZone2" style="margin-bottom:0;">
+        <h2>Drop <em>today's</em> IMSR here</h2>
+        <p>Accepts <strong>.docx</strong> or <strong>.pdf</strong></p>
+        <input type="file" id="fileInput2" accept=".docx,.pdf">
       </div>
     </div>
   </div>
@@ -640,9 +640,20 @@ function parseStats(lines) {
     ['nimosCommitted', /nimos?\s+committed[:\s]+(\d+|[xX]+)/i],
   ];
   for (const [k,r] of p) { const m=t.match(r); if(m) s[k]=/^\d+$/.test(m[1].replace(/,/g,''))?parseInt(m[1].replace(/,/g,'')):m[1]; }
-  // initial attack
+  // initial attack — try multiple formats
+  // Format 1: "Initial attack activity: Light (179 fires)"
   const ia=t.match(/initial\s+attack\s+activity[:\s]*\n?\s*(\w+)\s*\((\d[\d,]*)\s*fires?\)/i);
   if(ia){s.iaAdj=ia[1];s.iaCount=parseInt(ia[2].replace(/,/g,''));}
+  else {
+    // Format 2: "Initial attack activity was Light" or ": Light" or just whitespace before adjective
+    const ia2=t.match(/initial\s+attack\s+activity(?:\s+was\s+|\s*[:–—-]\s*|\s+)(light|moderate|heavy)\b/i);
+    if(ia2){s.iaAdj=ia2[1];}
+    else {
+      // Format 3: adjective on next line after "Initial attack activity"
+      const ia3=t.match(/initial\s+attack\s+activity\s*\n\s*(light|moderate|heavy)/i);
+      if(ia3){s.iaAdj=ia3[1];}
+    }
+  }
   return s;
 }
 
@@ -768,23 +779,28 @@ function analyze(text, html) {
     tNewLarge+=c.newLarge; tUncontained+=c.uncontained; tContained+=c.contained100; tCIMTs+=c.cimts; tNIMOs+=c.nimos;
   }
   const natDec = parseStats(natBlock.split('\n'));
-  const iaLabel = natDec.iaAdj ? `${natDec.iaAdj} (${natDec.iaCount} fires)` : '?';
+  // Initial attack activity = new fires total from F&A Yesterday table
+  // The IA label combines the count with Light/Moderate/Heavy descriptor from the header
+  const iaCount = faNewFires ? tNewFires : (natDec.iaCount ?? '?');
+  const iaAdj = natDec.iaAdj ? natDec.iaAdj[0].toUpperCase() + natDec.iaAdj.slice(1).toLowerCase() : '';
+  const iaLabel = iaAdj ? `${iaAdj} (${iaCount} fires)` : (faNewFires ? `${tNewFires} fires` : '?');
   natFindings.push(F('info','NAT-02','Calculated national totals:',
-    `Initial attack activity: ${iaLabel}\nNew fires: ${faNewFires ? tNewFires : '?'}\nNew large incidents: ${tNewLarge}\nUncontained large fires: ${tUncontained}\nLarge fires contained: ${tContained}\nCIMTs committed: ${tCIMTs}\nNIMOs committed: ${tNIMOs}`,
+    `Initial attack activity: ${iaLabel}\nNew large incidents: ${tNewLarge}\nLarge fires contained: ${tContained}\nUncontained large fires: ${tUncontained}\nCIMTs committed: ${tCIMTs}\nNIMOs committed: ${tNIMOs}`,
     '__table__'));
-  compareStats(natDec, {newFires:faNewFires?tNewFires:undefined,newLargeIncidents:tNewLarge,uncontainedLargeFires:tUncontained,largeFiresContained:tContained,cimtsCommitted:tCIMTs,nimosCommitted:tNIMOs}, 'National', natFindings);
+  compareStats(natDec, {newLargeIncidents:tNewLarge,uncontainedLargeFires:tUncontained,largeFiresContained:tContained,cimtsCommitted:tCIMTs,nimosCommitted:tNIMOs}, 'National', natFindings);
   // Initial attack adjective check
-  if (natDec.iaAdj && natDec.iaCount !== undefined) {
+  const iaCheckCount = natDec.iaCount ?? (faNewFires ? tNewFires : undefined);
+  if (natDec.iaAdj && iaCheckCount !== undefined) {
     let days=1;
     const dr=text.match(/fires and acres from\s+(\w+ \d+, \d{4})\s*[-–—]\s*(\w+ \d+, \d{4})/i);
     if(dr){const s=new Date(dr[1]),e=new Date(dr[2]); if(!isNaN(s)&&!isNaN(e)) days=Math.max(1,Math.round((e-s)/864e5)+1);}
     else if(/PL\s*1/i.test(natBlock)) days=7;
-    const avg=natDec.iaCount/days;
+    const avg=iaCheckCount/days;
     let exp; if(avg<200) exp='Light'; else if(avg<300) exp='Moderate'; else exp='Heavy';
     if(natDec.iaAdj.toLowerCase()!==exp.toLowerCase())
-      natFindings.push(F('error','NAT-02',`Initial attack "${natDec.iaAdj}" with ${natDec.iaCount} fires / ${days} days = ${Math.round(avg)}/day avg. Expected "${exp}".`));
+      natFindings.push(F('error','NAT-02',`Initial attack "${natDec.iaAdj}" with ${iaCheckCount} fires / ${days} days = ${Math.round(avg)}/day avg. Expected "${exp}".`));
     else
-      natFindings.push(F('info','NAT-02',`Initial attack "${natDec.iaAdj}" (${natDec.iaCount} fires / ${days} days = ${Math.round(avg)}/day) ✓`));
+      natFindings.push(F('info','NAT-02',`Initial attack "${natDec.iaAdj}" (${iaCheckCount} fires / ${days} days = ${Math.round(avg)}/day) ✓`));
   }
   // Comp boilerplate
   if(!/fires\s+not\s+managed\s+under\s+a\s+full\s+suppression/i.test(text)&&!/zero\s+fires\s+being\s+managed/i.test(text))
@@ -844,7 +860,7 @@ function analyze(text, html) {
       resFindings.push(F('info','RES-05','Change in Personnel not checked — no previous IMSR loaded. Use Step 1 or re-run with yesterday\'s IMSR.'));
     }
   }
-  sections.push({ title: 'Active Incident Resource Summary', findings: resFindings });
+  // (deferred — pushed after GACC sections to match IMSR document order)
 
   // 2b. RESOURCE SUMMARY — RES-01 GACC order and numeric validation
   const resOrderFindings = [];
@@ -875,7 +891,7 @@ function analyze(text, html) {
       }
     }
   }
-  if (resOrderFindings.length) sections.push({ title: 'Resource Summary — Order & Format', findings: resOrderFindings });
+  // (deferred — pushed after GACC sections)
 
   // 2c. FIRES AND ACRES + TEN-YEAR AVERAGE — numeric validation
   const faaFindings = [];
@@ -926,10 +942,15 @@ function analyze(text, html) {
   }
   // FAA-03: area row order in F&A tables
   const FAA_ORDER = ['alaska','northwest','northern california','southern california','northern rockies','great basin','southwest','rocky mountain','eastern','southern'];
+  let faaTableNum = 0;
+  let faa03Fired = false;
   for (const rows of allTbl) {
     if (rows.length < 5) continue;
     const hdr = rows[0].join(' ').toLowerCase();
     if (!/bia|blm|usfs/i.test(hdr) || !/total/i.test(hdr)) continue;
+    faaTableNum++;
+    if (faa03Fired) continue; // only report order issue once
+    const tblLabel = faaTableNum === 1 ? 'Yesterday' : faaTableNum === 2 ? 'Year-to-Date' : `Table ${faaTableNum}`;
     // Deduplicate: each geographic area has two rows (fires + acres) — only keep first occurrence
     const seenAreas = new Set();
     const uniqueAreas = [];
@@ -939,12 +960,23 @@ function analyze(text, html) {
       if (!seenAreas.has(area)) { seenAreas.add(area); uniqueAreas.push(area); }
     }
     const orderedIdxs = uniqueAreas
-      .map(a => ({ name: a, idx: FAA_ORDER.findIndex(o => a.includes(o.split(' ')[0])) }))
+      .map(a => {
+        // Find the best (longest) matching FAA_ORDER entry
+        let bestIdx = -1, bestLen = 0;
+        for (let j = 0; j < FAA_ORDER.length; j++) {
+          if (a.includes(FAA_ORDER[j]) && FAA_ORDER[j].length > bestLen) {
+            bestIdx = j;
+            bestLen = FAA_ORDER[j].length;
+          }
+        }
+        return { name: a, idx: bestIdx };
+      })
       .filter(x => x.idx >= 0);
     for (let i = 1; i < orderedIdxs.length; i++) {
       if (orderedIdxs[i].idx < orderedIdxs[i-1].idx) {
         faaFindings.push(F('warning','FAA-03',
-          `F&A table area order wrong: "${orderedIdxs[i-1].name}" before "${orderedIdxs[i].name}". Expected: AK, NW, N.CA, S.CA, N.Rockies, Gt.Basin, SW, Rocky Mtn, Eastern, Southern.`));
+          `F&A ${tblLabel}: "${orderedIdxs[i-1].name}" is listed before "${orderedIdxs[i].name}" — geographic areas must follow standard GACC order: AK, NW, N.CA, S.CA, N.Rockies, Gt.Basin, SW, Rocky Mtn, Eastern, Southern.`));
+        faa03Fired = true;
         break;
       }
     }
@@ -954,7 +986,7 @@ function analyze(text, html) {
   if (!/cumulative acres shown in the active incident resource summary/i.test(text))
     faaFindings.push(F('warning','FAA-06','Cumulative acres disclaimer not found after Ten-Year Average. Required standard text.'));
 
-  if (faaFindings.length) sections.push({ title: 'Fires & Acres Tables', findings: faaFindings });
+  // (deferred — pushed after GACC sections)
 
 
   // Build global index of all table incidents for lookup
@@ -991,11 +1023,36 @@ function analyze(text, html) {
     const gaccAbbr = GACC_NAME_TO_ABBR[gn] || '';
     const newFiresCount = (faNewFires && gaccAbbr) ? (faNewFires[gaccAbbr] ?? '?') : '?';
     gf.push(F('info','NAT-03','Calculated GACC totals:',
-      `New fires: ${newFiresCount}\nNew large incidents: ${calc.newLarge}\nUncontained large fires: ${calc.uncontained}\nLarge fires contained: ${calc.contained100}` +
+      `New fires: ${newFiresCount}\nNew large incidents: ${calc.newLarge}\nUncontained large fires: ${calc.uncontained}` +
       (calc.cimts?`\nCIMTs committed: ${calc.cimts}`:'') + (calc.nimos?`\nNIMOs committed: ${calc.nimos}`:''),
       '__table__'));
     const dec = parseStats(sec.lines);
-    compareStats(dec, {newFires:typeof newFiresCount==='number'?newFiresCount:undefined,newLargeIncidents:calc.newLarge,uncontainedLargeFires:calc.uncontained,largeFiresContained:calc.contained100,cimtsCommitted:calc.cimts,nimosCommitted:calc.nimos}, gn, gf);
+    compareStats(dec, {newFires:typeof newFiresCount==='number'?newFiresCount:undefined,newLargeIncidents:calc.newLarge,uncontainedLargeFires:calc.uncontained,cimtsCommitted:calc.cimts,nimosCommitted:calc.nimos}, gn, gf);
+
+    // --- Narrative format checks (before table checks to match IMSR flow) ---
+    // Collect separately and sort by text position so findings follow document order
+    const narrFindings = [];
+    checkNarrFmt(gText, narrFindings);
+    // Sort by where each finding's incident appears in the GACC text
+    narrFindings.sort((a, b) => {
+      // Extract incident name from message pattern: "IncName": ...
+      const getPos = (f) => {
+        const m = f.message.match(/^"([^"]+)":/);
+        if (m) {
+          const idx = gText.indexOf(m[1]);
+          if (idx >= 0) return idx;
+        }
+        // Fallback: find context snippet in text
+        if (f.context) {
+          const snip = f.context.substring(0, 40).replace(/^\*\s+/, '');
+          const idx = gText.indexOf(snip);
+          if (idx >= 0) return idx;
+        }
+        return 99999;
+      };
+      return getPos(a) - getPos(b);
+    });
+    gf.push(...narrFindings);
 
     // --- Narrative ↔ table match ---
     const narrNames = sec.narrs.map(n=>n.name.toLowerCase().trim());
@@ -1213,19 +1270,31 @@ function analyze(text, html) {
       }
     }
 
-    // --- Narrative format checks ---
-    checkNarrFmt(gText, gf);
-
     // --- TBL-21/22/23: Unit legend validation ---
     if (tbl && tbl.incs.length) {
-      // TBL-21: A unit code needs a legend entry only if it does NOT appear in any
-      // narrative in this GACC section. If the unit is spelled out in a narrative,
-      // the reader already knows the org. If not (table-only fire), legend is required.
-      const narrText = sec.narrs.map(n => n.line || '').join('\n').toUpperCase();
+      // TBL-21: A unit code needs a legend entry only if the fire does NOT appear in any
+      // narrative in this GACC section. Check parsed narrs first, then fall back to
+      // scanning the full section text for the fire name (catches narrs the parser misses).
+      const narrNamesLC = sec.narrs.map(n => n.name.toLowerCase().trim());
+      // Build searchable text from non-table lines (exclude table rows, stats lines, headers)
+      const narrSearchText = sec.lines.filter(l =>
+        !/^\*?\s*[\w\s'-]+\s+[A-Z]{2}-[A-Z]{2,4}\s+\d/.test(l) && // table rows
+        !/^(New fires|New large|Uncontained|Large fires|CIMTs|NIMOs|Incident|Unit|Total)/i.test(l.trim()) &&
+        l.trim().length > 15
+      ).join('\n').toLowerCase();
+
       const unitCodesNeedingLegend = new Set(tbl.incs
+        .filter(i => {
+          const nameLC = i.name.toLowerCase().trim();
+          // Fire has a parsed narrative — no legend needed
+          if (narrNamesLC.includes(nameLC)) return false;
+          // Fire name appears in section text (narrative parser missed it) — no legend needed
+          if (narrSearchText.includes(nameLC)) return false;
+          return true; // truly table-only, needs legend
+        })
+        .filter(i => (i.pct ?? 0) < 100)  // 100% contained = Bucket 6, no narrative/legend needed
         .map(i => (i.rawRow[tbl.cm.unit] || '').trim().toUpperCase())
         .filter(u => u && u.includes('-'))
-        .filter(u => !narrText.includes(u)) // unit code not mentioned in any narrative
         .map(u => u.split('-')[1])           // strip state prefix for legend check
         .filter(Boolean));
 
@@ -1257,7 +1326,25 @@ function analyze(text, html) {
     sections.push({ title: gn, isGacc: true, findings: gf });
   }
 
-  // 4. GLOBAL
+  // 4. DEFERRED SECTIONS (pushed after GACCs to match IMSR document order)
+  if (resFindings.length) sections.push({ title: 'Active Incident Resource Summary', findings: resFindings });
+  if (resOrderFindings.length) sections.push({ title: 'Resource Summary — Order & Format', findings: resOrderFindings });
+  if (faaFindings.length) sections.push({ title: 'Fires & Acres Tables', findings: faaFindings });
+
+  // 5. PREDICTIVE SERVICES / WEATHER — extract and check text quality
+  const psFindings = [];
+  const psStart = text.search(/Predictive Services/i);
+  if (psStart >= 0) {
+    // Extract Predictive Services text — goes from header to end of doc (or "6 Minutes")
+    const psEnd = text.indexOf('6 Minutes', psStart);
+    const psText = psEnd > psStart ? text.substring(psStart, psEnd) : text.substring(psStart);
+    if (psText.length > 50) {
+      checkTextQuality(psText, psFindings);
+    }
+  }
+  if (psFindings.length) sections.push({ title: 'Predictive Services', findings: psFindings });
+
+  // 6. GLOBAL
   const glf = [];
   const allNarr = gaccs.map(s=>s.lines.join('\n')).join('\n');
   // Duplicate words
@@ -1442,14 +1529,88 @@ function checkNarrFmt(text, f) {
         f.push(F('warning','NARR-49',`"${incName}": "National Forest" should be abbreviated "NF" as suffix.`, before, before.replace('National Forest', 'NF')));
       }
     }
+    // -- NARR-50: Missing location for new fires --
+    // New narratives (asterisk) should have a location: "X miles [dir] of [Town]" or similar
+    const isNew = /^\*/.test(line);
+    const hasLocation = /\d+\s+miles?\s+\w+\s+of\s+/i.test(line)
+      || /\b(near|outside|adjacent|within|along|north|south|east|west|northeast|northwest|southeast|southwest)\s+(of\s+)?\w/i.test(line)
+      || /\bstarted\s+on\b/i.test(line)
+      || /\b(private|federal|state|tribal|BLM|BIA|USFS|NPS)\s+(land|property|ownership)/i.test(line)
+      || /\bon\s+the\s+\w+\s+(National|Ranger|District|Reservation|Forest|Park)/i.test(line);
+    const isNoNewInfo = /no new information/i.test(line) || /last (?:narrative )?report/i.test(line);
+    if (isNew && !hasLocation && !isNoNewInfo && line.length > 60) {
+      f.push(F('warning','NARR-50',`"${incName}": New fire narrative may be missing a location (e.g., "X miles [dir] of [Town], [State]").`, line.substring(0,100)));
+    }
+
+    // -- PROOF-CAP: Lowercase letter after period (mid-narrative sentence start) --
+    const capPat = /\.\s+([a-z])/g;
+    let capM;
+    while ((capM = capPat.exec(line)) !== null) {
+      // Skip known lowercase patterns: abbreviations, units, acronyms context
+      const before = line.substring(Math.max(0, capM.index - 10), capM.index + 1);
+      if (/(?:vs|approx|est|etc|[A-Z])\.$/.test(before)) continue;
+      if (/\b\d+\.\s/.test(line.substring(capM.index - 3, capM.index + 3))) continue; // decimal/number
+      const snip = line.substring(Math.max(0, capM.index - 15), Math.min(line.length, capM.index + 20)).trim();
+      const fixed = snip.replace(/\.\s+([a-z])/, (m, c) => '. ' + c.toUpperCase());
+      f.push(F('error','PROOF-CAP',`"${incName}": Sentence should start with a capital letter.`, snip, fixed));
+    }
+
+    // -- NARR-15b: Numerals 1-9 that should be spelled out in narrative text --
+    // Broader than just "miles" — catches "2 structures", "3 engines", etc.
+    // Exclude: dates, percentages, unit codes, table-like data, acre counts, coordinates
+    const numPat = /(?<=\s|^)([1-9])\s+(structure|home|residence|building|cabin|engine|crew|helicopter|division|branch|group|day|week|hour|outbuilding|barn|shed|mile)s?\b/gi;
+    let numM;
+    while ((numM = numPat.exec(line)) !== null) {
+      const w = ['one','two','three','four','five','six','seven','eight','nine'];
+      const spelled = w[parseInt(numM[1]) - 1];
+      const snip = line.substring(Math.max(0, numM.index - 10), Math.min(line.length, numM.index + numM[0].length + 10)).trim();
+      f.push(F('warning','NARR-15',`"${incName}": Spell out single digits in narrative.`, numM[0], numM[0].replace(numM[1], spelled)));
+    }
+
+    // -- PROOF-CITY: Lowercase city/town name in location pattern --
+    // "of tahlequah, OK" → should be "Tahlequah"
+    const cityPat = /\bof\s+([a-z][a-z]+(?:\s+[a-z][a-z]+)?),\s+([A-Z]{2})\b/g;
+    let cityM;
+    while ((cityM = cityPat.exec(line)) !== null) {
+      const town = cityM[1];
+      // Skip known lowercase words that aren't city names
+      if (/^(the|and|or|but|in|on|at|to|for|by|an|a|its)$/i.test(town)) continue;
+      const fixedTown = town.replace(/\b\w/g, c => c.toUpperCase());
+      const snip = line.substring(Math.max(0, cityM.index), Math.min(line.length, cityM.index + cityM[0].length + 5)).trim();
+      f.push(F('error','PROOF-CAP',`"${incName}": City/town name should be capitalized.`, snip, snip.replace(town, fixedTown)));
+    }
+
+    // -- SPELL-FUEL: Validate fuel type words --
+    // If a word appears before known fuel suffixes and isn't recognized, flag it
+    // Skip capitalized words (likely proper nouns / fire names)
+    const fuelSuffixes = /\b(\w+)\s+(litter|brush|timber|slash|grass|chaparral|tundra|rough)\b/gi;
+    const knownFuelPrefixes = ['hardwood','softwood','dormant','green','short','tall','southern','northern',
+      'compact','closed','open','heavy','light','medium','mixed','dead','live','dry','wet','dense',
+      'sparse','cured','standing','timber','grass','annual','perennial','tropical','alpine','no','the',
+      'and','or','with','in','on','of','into','through','some','any','all','native','western','eastern',
+      'from','burned','unburned','adjacent','nearby','surrounding','fine','coarse','decayed','fresh',
+      'old','new','thick','thin','scattered','continuous','deep','surface','ground','aerial','sub',
+      'understory','overstory','canopy','crown','total','partial','urban','rural','natural','wild'];
+    let fuelM;
+    while ((fuelM = fuelSuffixes.exec(line)) !== null) {
+      const prefix = fuelM[1].toLowerCase();
+      if (knownFuelPrefixes.includes(prefix)) continue;
+      if (prefix.length < 3) continue;
+      if (/^\d+$/.test(prefix)) continue;
+      // Skip capitalized words — likely proper nouns or fire names
+      if (/^[A-Z]/.test(fuelM[1])) continue;
+      const snip = line.substring(Math.max(0, fuelM.index), Math.min(line.length, fuelM.index + fuelM[0].length + 5)).trim();
+      f.push(F('warning','SPELL',`"${incName}": "${fuelM[1]}" before "${fuelM[2]}" — possible misspelling? Verify fuel type.`, snip));
+    }
+
+    // -- NARR-21: Oxford comma --
+    const oxLine=/(?:running|spotting|torching|backing|flanking|creeping|smoldering|closures|evacuations)[^.]*,\s+and\s+/gi;
+    let oxm;
+    while((oxm=oxLine.exec(line))!==null) f.push(F('warning','NARR-21',`"${incName}": Possible Oxford comma.`,oxm[0].substring(0,80)));
   }
 
   // === TEXT QUALITY — catch everything ===
   checkTextQuality(text, f);
-
-  // Oxford comma
-  const ox=/(?:running|spotting|torching|backing|flanking|creeping|smoldering|closures|evacuations)[^.]*,\s+and\s+/gi;
-  while((m=ox.exec(text))!==null) f.push(F('warning','NARR-21','Possible Oxford comma.',m[0].substring(0,80)));
 
   // Extra blank paragraphs between GACC stats table and first narrative (NARR-BLANK)
   // Look for 3+ consecutive newlines after "Uncontained large fires" and before first * narrative
@@ -1499,40 +1660,100 @@ function checkTextQuality(text, f) {
   // Common IMSR term misspellings (check full text block)
   const misspellings = [
     [/\brecieved\b/gi, 'received'],
+    [/\brecived\b/gi, 'received'],
+    [/\breceved\b/gi, 'received'],
     [/\boccured\b/gi, 'occurred'],
+    [/\boccuring\b/gi, 'occurring'],
+    [/\boccurance\b/gi, 'occurrence'],
     [/\bcontainement\b/gi, 'containment'],
     [/\bcontaned\b/gi, 'contained'],
+    [/\bcontaied\b/gi, 'contained'],
     [/\bthreated\b/gi, 'threatened'],
     [/\bthretened\b/gi, 'threatened'],
     [/\bthreatned\b/gi, 'threatened'],
+    [/\bthreattened\b/gi, 'threatened'],
     [/\bevacation\b/gi, 'evacuation'],
     [/\bevacuaiton\b/gi, 'evacuation'],
+    [/\bevacaution\b/gi, 'evacuation'],
     [/\bprecipiation\b/gi, 'precipitation'],
     [/\bpreciptation\b/gi, 'precipitation'],
+    [/\bprecipitaion\b/gi, 'precipitation'],
     [/\bsuppresion\b/gi, 'suppression'],
+    [/\bsupression\b/gi, 'suppression'],
     [/\binfrastucture\b/gi, 'infrastructure'],
     [/\binfrasturcture\b/gi, 'infrastructure'],
+    [/\binfrastrucutre\b/gi, 'infrastructure'],
     [/\bresidneces\b/gi, 'residences'],
     [/\bresidensces\b/gi, 'residences'],
+    [/\bresidances\b/gi, 'residences'],
+    [/\bresidense\b/gi, 'residence'],
     [/\bstrucutures\b/gi, 'structures'],
     [/\bsturctures\b/gi, 'structures'],
+    [/\bstructres\b/gi, 'structures'],
+    [/\bstuctures\b/gi, 'structures'],
     [/\bsmolding\b/gi, 'smoldering'],
     [/\bsmouldering\b/gi, 'smoldering'],
     [/\btorchng\b/gi, 'torching'],
     [/\bflankng\b/gi, 'flanking'],
     [/\bhabiitat\b/gi, 'habitat'],
+    [/\bhabiat\b/gi, 'habitat'],
     [/\bnorthest\b/gi, 'northeast'],
     [/\bsouthest\b/gi, 'southeast'],
     [/\bnorthwes\b/gi, 'northwest'],
     [/\bsouthwes\b/gi, 'southwest'],
     [/\bpersonel\b/gi, 'personnel'],
     [/\bpersonell\b/gi, 'personnel'],
+    [/\bpersonal\b(?=\s+(?:committed|assigned|on\s+scene|deployed))/gi, 'personnel'],
     [/\bhelicoptors\b/gi, 'helicopters'],
+    [/\bhelicopers\b/gi, 'helicopters'],
     [/\bacerage\b/gi, 'acreage'],
+    [/\bacregage\b/gi, 'acreage'],
     [/\baccurate\s+mappng\b/gi, 'accurate mapping'],
     [/\bmanagment\b/gi, 'management'],
+    [/\bmangement\b/gi, 'management'],
     [/\bcommited\b/gi, 'committed'],
     [/\bcommitted\s+commited\b/gi, 'committed'],
+    [/\bcomunity\b/gi, 'community'],
+    [/\bcommunty\b/gi, 'community'],
+    [/\bcommuntiy\b/gi, 'community'],
+    [/\bvegatation\b/gi, 'vegetation'],
+    [/\bvegetaion\b/gi, 'vegetation'],
+    [/\bvegtation\b/gi, 'vegetation'],
+    [/\bacessible\b/gi, 'accessible'],
+    [/\baccessable\b/gi, 'accessible'],
+    [/\bseperate\b/gi, 'separate'],
+    [/\bseprated\b/gi, 'separated'],
+    [/\boccasionaly\b/gi, 'occasionally'],
+    [/\bneccessary\b/gi, 'necessary'],
+    [/\bneccesary\b/gi, 'necessary'],
+    [/\bimmediatly\b/gi, 'immediately'],
+    [/\bsignifcant\b/gi, 'significant'],
+    [/\bsignificent\b/gi, 'significant'],
+    [/\bsignifigant\b/gi, 'significant'],
+    [/\btempertures\b/gi, 'temperatures'],
+    [/\btempreatures\b/gi, 'temperatures'],
+    [/\bhumidty\b/gi, 'humidity'],
+    [/\bhumiditiy\b/gi, 'humidity'],
+    [/\bforecasted\b/gi, 'forecast'],
+    [/\bperimiter\b/gi, 'perimeter'],
+    [/\bperemeter\b/gi, 'perimeter'],
+    [/\bperimieter\b/gi, 'perimeter'],
+    [/\bcontainmnet\b/gi, 'containment'],
+    [/\bcontainmant\b/gi, 'containment'],
+    [/\bextinguised\b/gi, 'extinguished'],
+    [/\bmontioring\b/gi, 'monitoring'],
+    [/\bmonitiring\b/gi, 'monitoring'],
+    [/\btransfered\b/gi, 'transferred'],
+    [/\bdevistating\b/gi, 'devastating'],
+    [/\bdestroied\b/gi, 'destroyed'],
+    [/\bdestoyed\b/gi, 'destroyed'],
+    [/\bdestoryed\b/gi, 'destroyed'],
+    [/\bclosuers\b/gi, 'closures'],
+    [/\bclosurs\b/gi, 'closures'],
+    [/\bthousnad\b/gi, 'thousand'],
+    [/\blightnig\b/gi, 'lightning'],
+    [/\blightining\b/gi, 'lightning'],
+    [/\bligtning\b/gi, 'lightning'],
     // Fuel type misspellings
     [/\bhardwood\s+littler\b/gi, 'hardwood litter'],
     [/\bhardwood\s+ltter\b/gi, 'hardwood litter'],
@@ -1546,6 +1767,55 @@ function checkTextQuality(text, f) {
     [/\bsmolering\b/gi, 'smoldering'],
     [/\bcreepng\b/gi, 'creeping'],
     [/\bbackng\b/gi, 'backing'],
+    [/\bhardwaood\b/gi, 'hardwood'],
+    [/\bhardwod\b/gi, 'hardwood'],
+    [/\bhardwwood\b/gi, 'hardwood'],
+    [/\bhardwoo\b(?!\w)/gi, 'hardwood'],
+    [/\bsoftwod\b/gi, 'softwood'],
+    [/\bsoftwwood\b/gi, 'softwood'],
+    [/\bdomrant\b/gi, 'dormant'],
+    [/\bdormatn\b/gi, 'dormant'],
+    // Common general misspellings
+    [/\bbelive\b/gi, 'believe'],
+    [/\bbeleive\b/gi, 'believe'],
+    [/\bdefinate\b/gi, 'definite'],
+    [/\bdefinately\b/gi, 'definitely'],
+    [/\benviroment\b/gi, 'environment'],
+    [/\benvirnoment\b/gi, 'environment'],
+    [/\bgovernement\b/gi, 'government'],
+    [/\bgovrnment\b/gi, 'government'],
+    [/\bliason\b/gi, 'liaison'],
+    [/\bliaison\b/gi, 'liaison'],
+    [/\bmaintainance\b/gi, 'maintenance'],
+    [/\bmaintenence\b/gi, 'maintenance'],
+    [/\bneighborood\b/gi, 'neighborhood'],
+    [/\bneighorhood\b/gi, 'neighborhood'],
+    [/\bprescirbed\b/gi, 'prescribed'],
+    [/\bprescrbied\b/gi, 'prescribed'],
+    [/\bresoruces\b/gi, 'resources'],
+    [/\bresouces\b/gi, 'resources'],
+    [/\bresourses\b/gi, 'resources'],
+    [/\bveichle\b/gi, 'vehicle'],
+    [/\bvehilce\b/gi, 'vehicle'],
+    [/\bvechicle\b/gi, 'vehicle'],
+    [/\bwheter\b/gi, 'whether'],
+    [/\bwehther\b/gi, 'whether'],
+    [/\bbeacuse\b/gi, 'because'],
+    [/\bbecuase\b/gi, 'because'],
+    [/\bremaning\b/gi, 'remaining'],
+    [/\bremianing\b/gi, 'remaining'],
+    [/\bcompelted\b/gi, 'completed'],
+    [/\bcomplted\b/gi, 'completed'],
+    [/\baddiitonal\b/gi, 'additional'],
+    [/\baddtional\b/gi, 'additional'],
+    [/\bapproxiamtely\b/gi, 'approximately'],
+    [/\bapproximatley\b/gi, 'approximately'],
+    [/\bapproxiamately\b/gi, 'approximately'],
+    [/\bbenifit\b/gi, 'benefit'],
+    [/\bbenificial\b/gi, 'beneficial'],
+    [/\bcondtions\b/gi, 'conditions'],
+    [/\bconditons\b/gi, 'conditions'],
+    [/\bcondiitons\b/gi, 'conditions'],
   ];
   for (const [pat, correct] of misspellings) {
     while ((m = pat.exec(text)) !== null) {
@@ -1554,7 +1824,12 @@ function checkTextQuality(text, f) {
       const corrected = (m[0][0] === m[0][0].toUpperCase() && m[0][0] !== m[0][0].toLowerCase())
         ? correct[0].toUpperCase() + correct.slice(1)
         : correct;
-      f.push(F('error','SPELL',`Misspelling.`,
+      // Find incident name by scanning backward for nearest narrative header
+      const before = text.substring(Math.max(0, m.index - 500), m.index);
+      const incMatch = before.match(/(?:\*\s+)?([A-Z][\w\s&'-]+?),\s+(?:[A-Z][a-z])/g);
+      const incName = incMatch ? incMatch[incMatch.length - 1].replace(/^\*\s+/, '').split(',')[0].trim() : '';
+      const who = incName ? `"${incName}": ` : '';
+      f.push(F('error','SPELL',`${who}"${m[0]}" → "${corrected}"`,
         snippet,
         snippet.replace(new RegExp(m[0].replace(/[.*+?^${}()|[\]\\]/g,'\\$&'), 'i'), corrected)
       ));
@@ -1574,7 +1849,11 @@ function checkTextQuality(text, f) {
     let wm;
     const p = new RegExp(pat.source, pat.flags);
     while ((wm = p.exec(text)) !== null) {
-      const msg = correct ? `"${wm[0]}" looks like a word merge → "${correct}". ${note||''}` : `"${wm[0]}" — ${note||'possible word merge or duplication'}.`;
+      const before = text.substring(Math.max(0, wm.index - 500), wm.index);
+      const incMatch = before.match(/(?:\*\s+)?([A-Z][\w\s&'-]+?),\s+(?:[A-Z][a-z])/g);
+      const incName = incMatch ? incMatch[incMatch.length - 1].replace(/^\*\s+/, '').split(',')[0].trim() : '';
+      const who = incName ? `"${incName}": ` : '';
+      const msg = correct ? `${who}"${wm[0]}" → "${correct}". ${note||''}` : `${who}"${wm[0]}" — ${note||'possible word merge or duplication'}.`;
       f.push(F('error','PROOF-WM', msg, text.substring(Math.max(0,wm.index-30), Math.min(text.length,wm.index+wm[0].length+30)).trim()));
     }
   }
@@ -1611,6 +1890,11 @@ function checkTextQuality(text, f) {
     const before = text.substring(Math.max(0, m.index-5), m.index);
     if (/[A-Z]-?$/.test(before)) continue;
     if (/PL|Level/i.test(before)) continue;
+    // Skip weather number ranges: "15-35 mph", "5-18%", "10-18 mph", humidity/wind context
+    const after = text.substring(m.index + m[0].length, Math.min(text.length, m.index + m[0].length + 15));
+    const around = text.substring(Math.max(0, m.index - 30), Math.min(text.length, m.index + m[0].length + 30)).toLowerCase();
+    if (/^\s*(%|mph|knots|degrees|°)/.test(after)) continue;
+    if (/wind|gust|humidity|rh\b|temperature|temp\b|dewpoint|pressure|mph|percent/.test(around)) continue;
     f.push(F('warning','PROOF',`Date-like pattern "${m[0]}" — IMSR dates use M/DD format (slash, no leading zeros).`,
       text.substring(Math.max(0,m.index-15), Math.min(text.length,m.index+m[0].length+15)).trim()));
   }
@@ -1658,7 +1942,9 @@ function render(sections) {
     const cls = sec.isGacc ? 'sec-hdr gacc' : 'sec-hdr';
     html += `<div class="${cls}">${esc(sec.title)}</div>`;
     for (const f of sec.findings) {
-      html += `<div class="finding ${f.severity}"><span class="rule-id">${esc(f.ruleId)}</span> ${esc(f.message)}`;
+      // Bold quoted text in message to make errors pop: "word" → <b>"word"</b>
+      const msgHtml = esc(f.message).replace(/"([^"]+?)"/g, '<b>"$1"</b>');
+      html += `<div class="finding ${f.severity}"><span class="rule-id">${esc(f.ruleId)}</span> ${msgHtml}`;
       if (f.fix === '__table__' && f.context) {
         // Render as IMSR-style two-column table
         html += renderInfoTable(f.context);
@@ -1877,7 +2163,7 @@ function renderL2(findings, usage) {
       html += `<div class="finding layer2" style="border-left-color:${sev==='error'?'var(--err)':'var(--warn)'};">`;
       html += `<span class="rule-id" style="background:var(--l2);">L2</span> `;
       if (f.location) html += `<strong>${esc(f.location)}:</strong> `;
-      html += esc(f.message);
+      html += esc(f.message).replace(/"([^"]+?)"/g, '<b>"$1"</b>');
       if (f.context && f.fix) {
         html += `<div class="diff-row">
           <span class="diff-before">${esc(f.context)}</span>
