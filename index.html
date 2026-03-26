@@ -860,7 +860,7 @@ function analyze(text, html) {
       resFindings.push(F('info','RES-05','Change in Personnel not checked — no previous IMSR loaded. Use Step 1 or re-run with yesterday\'s IMSR.'));
     }
   }
-  // (deferred — pushed after GACC sections to match IMSR document order)
+  if (resFindings.length) sections.push({ title: 'Active Incident Resource Summary', findings: resFindings });
 
   // 2b. RESOURCE SUMMARY — RES-01 GACC order and numeric validation
   const resOrderFindings = [];
@@ -891,7 +891,7 @@ function analyze(text, html) {
       }
     }
   }
-  // (deferred — pushed after GACC sections)
+  if (resOrderFindings.length) sections.push({ title: 'Resource Summary — Order & Format', findings: resOrderFindings });
 
   // 2c. FIRES AND ACRES + TEN-YEAR AVERAGE — numeric validation
   const faaFindings = [];
@@ -1327,8 +1327,6 @@ function analyze(text, html) {
   }
 
   // 4. DEFERRED SECTIONS (pushed after GACCs to match IMSR document order)
-  if (resFindings.length) sections.push({ title: 'Active Incident Resource Summary', findings: resFindings });
-  if (resOrderFindings.length) sections.push({ title: 'Resource Summary — Order & Format', findings: resOrderFindings });
   if (faaFindings.length) sections.push({ title: 'Fires & Acres Tables', findings: faaFindings });
 
   // 5. PREDICTIVE SERVICES / WEATHER — extract and check text quality
