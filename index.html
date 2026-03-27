@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>IMSR Proofer v5.2</title>
+<title>IMSR Proofer v5.1</title>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/mammoth/1.6.0/mammoth.browser.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
 <style>
@@ -56,12 +56,7 @@ body { font-family: 'Segoe UI', system-ui, sans-serif; background: var(--bg); co
 .tab-bar button.active { background: var(--accent); color: #fff; border-color: var(--accent); font-weight: 600; }
 .tab-panel { border: 1px solid var(--border); border-top: none; border-radius: 0 0 8px 8px; padding: 20px; background: var(--surface); margin-bottom: 16px; }
 .paste-box { width: 100%; min-height: 180px; font-family: Consolas, monospace; font-size: 12px; border: 1px solid var(--border); border-radius: 6px; padding: 12px; resize: vertical; color: var(--text); background: var(--bg); line-height: 1.5; }
-.info-table { border-collapse: collapse; margin-top: 8px; min-width: 280px; font-size: 12px; }
-.info-table td { padding: 3px 12px 3px 0; vertical-align: top; }
-.info-table td:first-child { color: var(--text-dim); white-space: nowrap; padding-right: 20px; }
-.info-table td:last-child { font-weight: 600; color: var(--text); text-align: right; min-width: 60px; }
-.info-table tr.total-row td { border-top: 1px solid var(--border); padding-top: 5px; font-weight: 700; }
-.info-table tr.section-gap td { padding-top: 8px; }
+.info-table { margin-top: 8px; min-width: 280px; font-size: 12px; }
 .hidden { display: none !important; }
 .api-bar { background: #f0f4f8; border: 1px solid var(--border); border-radius: 6px; padding: 10px 16px; margin-bottom: 16px; display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
 .api-bar label { font-size: 12px; font-weight: 600; color: var(--text-dim); white-space: nowrap; }
@@ -718,9 +713,19 @@ function analyze(text, html) {
   const plMatch = text.match(/National Preparedness Level\s*(\d)/i);
   if (plMatch) {
     const pl = parseInt(plMatch[1]);
-    if (pl < 1 || pl > 5) hdrFindings.push(F('error','SCHED',`PL ${pl} out of range — must be 1–5.`));
+    if (pl < 1 || pl > 5) hdrFindings.push(F('error','SCHED',`National PL ${pl} out of range — must be 1–5.`));
   } else {
-    hdrFindings.push(F('warning','SCHED','National Preparedness Level not found in header.'));
+    hdrFindings.push(F('error','SCHED','National Preparedness Level not found in header.'));
+  }
+  // Check GACC-level PL values: "(PL N)" must be 1–5
+  const gaccPlRe = /\(PL\s*(\d+)\)/gi;
+  let gaccPlM;
+  while ((gaccPlM = gaccPlRe.exec(text)) !== null) {
+    const gpl = parseInt(gaccPlM[1]);
+    if (gpl < 1 || gpl > 5) {
+      const ctx = text.substring(Math.max(0, gaccPlM.index - 30), gaccPlM.index + gaccPlM[0].length).trim();
+      hdrFindings.push(F('error','SCHED',`"(PL ${gpl})" out of range — Preparedness Level must be 1–5.`, ctx));
+    }
   }
   // HDR-01: X/XX/XXX placeholder detection — any x-string where a number is expected
   const hdrBlock = text.substring(0, 800);
@@ -770,11 +775,23 @@ function analyze(text, html) {
   const natFindings = [];
   const firstGaccIdx = text.search(new RegExp(GA.join('|'),'i'));
   const natBlock = firstGaccIdx>0 ? text.substring(0,firstGaccIdx) : text.substring(0,3000);
-  // Calculate national totals
+  // Pre-assign tables to GACCs (each table used at most once) — needed for both
+  // national totals and per-GACC stats so the same table can't be counted twice.
+  const usedTables = new Set();
+  const gaccTableMap = new Map();
+  for (const sec of gaccs) {
+    const tbl = matchTable(sec, gaccTbls.filter((_,i) => !usedTables.has(i)));
+    if (tbl) {
+      const idx = gaccTbls.indexOf(tbl);
+      usedTables.add(idx);
+      gaccTableMap.set(sec.name, tbl);
+    }
+  }
+  // Calculate national totals using deduplicated table assignments
   let tNewFires=0,tNewLarge=0,tUncontained=0,tContained=0,tCIMTs=0,tNIMOs=0;
   if (faNewFires) { for (const g of Object.values(faNewFires)) tNewFires += g; }
   for (const sec of gaccs) {
-    const tbl=matchTable(sec,gaccTbls);
+    const tbl = gaccTableMap.get(sec.name) || null;
     const c=calcStats(tbl,sec.lines.join('\n'));
     tNewLarge+=c.newLarge; tUncontained+=c.uncontained; tContained+=c.contained100; tCIMTs+=c.cimts; tNIMOs+=c.nimos;
   }
@@ -850,11 +867,11 @@ function analyze(text, html) {
               `${gacc} Change in Personnel: declared ${declaredChg}, calculated ${calcChg} (today ${todayPpl} − yesterday ${yestPpl}).`,
               '', `Should be ${calcChg}.`));
           }
-          calcLines.push(`${gacc}: ${yestPpl} → ${todayPpl} = ${calcChg >= 0 ? '+' : ''}${calcChg}${declaredChg !== calcChg ? ' ✗' : ''}`);
+          calcLines.push(`${gacc}: ${yestPpl} → ${todayPpl} = ${calcChg}${declaredChg !== calcChg ? ' ✗' : ''}`);
         }
         resFindings.push(F('info','RES-05','Change in Personnel calculated (today − yesterday):',
-          calcLines.join('\n') + `\n\nTotal: ${totalCalcChg >= 0 ? '+' : ''}${totalCalcChg}`,
-          '__table__'));
+          calcLines.join('\n') + `\n\nTotal: ${totalCalcChg}`,
+          '__personnel__'));
       }
     } else {
       resFindings.push(F('info','RES-05','Change in Personnel not checked — no previous IMSR loaded. Use Step 1 or re-run with yesterday\'s IMSR.'));
@@ -994,17 +1011,7 @@ function analyze(text, html) {
   for (const t of gaccTbls) for (const inc of t.incs) allTableIncs.push(inc);
   const globalTblNames = allTableIncs.map(i => i.name.toLowerCase().trim());
 
-  // Pre-assign tables to GACCs (each table used at most once)
-  const usedTables = new Set();
-  const gaccTableMap = new Map();
-  for (const sec of gaccs) {
-    const tbl = matchTable(sec, gaccTbls.filter((_,i) => !usedTables.has(i)));
-    if (tbl) {
-      const idx = gaccTbls.indexOf(tbl);
-      usedTables.add(idx);
-      gaccTableMap.set(sec.name, tbl);
-    }
-  }
+  // gaccTableMap already built above (before national totals)
 
   for (const sec of gaccs) {
     const gf = [];
@@ -1127,11 +1134,11 @@ function analyze(text, html) {
         // Unit: must be XX-XXX format (2-letter state, hyphen, 2-5 alphanumeric code)
         if (cm.unit !== undefined) {
           const u = (r[cm.unit]||'').trim();
-          if (u && !/^[A-Z]{2}-[A-Z0-9]{2,5}$/.test(u)) {
+          if (u && !/^[A-Z]{2}-[A-Z][A-Z0-9]{1,4}$/.test(u)) {
             let fix = u.toUpperCase().replace(/[_\/\s]+/, '-');
             if (/^[A-Z]{4,}$/.test(fix) && fix.length >= 4) fix = fix.substring(0,2) + '-' + fix.substring(2);
             // Specific message based on problem type
-            const isCaseOnly = /^[A-Z]{2}-[A-Z0-9]{2,5}$/.test(fix) && fix !== u;
+            const isCaseOnly = fix === u.toUpperCase().replace(/[_\/\s]+/,'-') && fix !== u;
             const msg = isCaseOnly
               ? `"${nm}": Unit code "${u}" — capitalize to "${fix}".`
               : `"${nm}": Unit code wrong format.`;
@@ -1162,10 +1169,12 @@ function analyze(text, html) {
             gf.push(F('error','TBL-03',`"${nm}" Total Acres "${v}" — must be integer with comma thousands (e.g., 14,374).`));
         }
 
-        // Chge in Acres: integer (pos/neg), "0", or "---"
+        // Chge in Acres: must not be blank — integer (pos/neg), "0", or "---"
         if (cm.chgeAcres !== undefined) {
           const v = (r[cm.chgeAcres]||'').trim();
-          if (v && v !== '---' && !/^-?\d{1,3}(,\d{3})*$/.test(v) && !/^-?\d+$/.test(v))
+          if (!v)
+            gf.push(F('error','TBL-04',`"${nm}" Chge in Acres is blank — must be integer, 0, or "---".`));
+          else if (v !== '---' && !/^-?\d{1,3}(,\d{3})*$/.test(v) && !/^-?\d+$/.test(v))
             gf.push(F('error','TBL-04',`"${nm}" Chge in Acres "${v}" — must be integer, negative, or "---".`));
         }
 
@@ -1197,10 +1206,12 @@ function analyze(text, html) {
             gf.push(F('error','TBL-08',`"${nm}" Total PPL "${v}" — must be non-negative integer.`));
         }
 
-        // Chge in PPL: integer (pos/neg), "0", or "---"
+        // Chge in PPL: must not be blank — integer (pos/neg), "0", or "---"
         if (cm.chgePpl !== undefined) {
           const v = (r[cm.chgePpl]||'').trim();
-          if (v && v !== '---' && !/^-?\d{1,3}(,\d{3})*$/.test(v) && !/^-?\d+$/.test(v))
+          if (!v)
+            gf.push(F('error','TBL-09',`"${nm}" Chge in PPL is blank — must be integer, 0, or "---".`));
+          else if (v !== '---' && !/^-?\d{1,3}(,\d{3})*$/.test(v) && !/^-?\d+$/.test(v))
             gf.push(F('error','TBL-09',`"${nm}" Chge in PPL "${v}" — must be integer, negative, or "---".`));
         }
 
@@ -1432,9 +1443,32 @@ function checkNarrFmt(text, f) {
   // === PER-NARRATIVE-LINE VALIDATION ===
   // Extract narrative lines (start with * or look like "Name, Org.")
   const narrLines = text.split('\n').filter(l =>
-    ((/^\*\s+\w/.test(l) && /,\s+[A-Z][a-z]/.test(l)) ||
+    ((/^\*\s*\w/.test(l) && /,\s+[A-Z][a-z]/.test(l)) ||
      /^[A-Z][\w\s'-]+,\s+[A-Z][a-z][\w\s&'-]+[.]/.test(l)) && l.length > 30
   );
+
+  // NARR-02b: asterisk without space — "*Big Toe" instead of "* Big Toe"
+  for (const line of text.split('\n')) {
+    const noSpace = line.match(/^\*([A-Z][\w])/);
+    if (noSpace) {
+      const snippet = line.substring(0, 60);
+      f.push(F('error','NARR-02',`Missing space after asterisk.`, snippet, snippet.replace(/^\*/, '* ')));
+    }
+  }
+
+  // PROOF-NAME: lowercase fire name in narrative
+  for (const line of text.split('\n')) {
+    // Match "word, OrgWord." pattern at start of line where fire name is lowercase
+    const lcName = line.match(/^(\*\s*)?([a-z][\w\s'-]{1,40}?),\s+[A-Z][a-z]/);
+    if (lcName && line.length > 30) {
+      const name = lcName[2].trim();
+      // Skip known lowercase patterns
+      if (/^(the|and|or|but|for|in|on|at|to|by|an|a)$/i.test(name)) continue;
+      const fixed = name.replace(/\b\w/g, c => c.toUpperCase());
+      f.push(F('error','PROOF-CAP',`Fire name "${name}" should be title case.`,
+        line.substring(0, 80), line.substring(0, 80).replace(name, fixed)));
+    }
+  }
 
   for (const line of narrLines) {
     const incName = line.replace(/^\*\s+/,'').split(',')[0].trim();
@@ -1507,7 +1541,7 @@ function checkNarrFmt(text, f) {
     // -- NARR-48: invalid behavior terms --
     const VALID_BEHAVIOR_TERMS = ['torching','wind-driven runs','flanking','backing','spotting',
       'creeping','smoldering','running','uphill runs','long-range spotting','short-range spotting',
-      'group torching','isolated torching','single tree torching','crowning','short crown runs'];
+      'group torching','isolated torching','single tree torching'];
     const behaviorSection = line.match(/fire behavior with ([^.]+)\./i);
     if (behaviorSection) {
       const terms = behaviorSection[1].split(/,\s*|\s+and\s+/).map(t => t.trim().toLowerCase()).filter(Boolean);
@@ -1607,6 +1641,27 @@ function checkNarrFmt(text, f) {
     while((oxm=oxLine.exec(line))!==null) f.push(F('warning','NARR-21',`"${incName}": Possible Oxford comma.`,oxm[0].substring(0,80)));
   }
 
+  // === PROOF-BREAK: Missing paragraph break between narratives ===
+  // Check 1: Two "Name, Org." patterns on the same line.
+  for (const line of text.split('\n')) {
+    if (line.length < 60) continue;
+    const narrAnchors = [];
+    const anchorRe = /(?:^|\.\s*)(\*\s+)?([A-Z0-9][\w\s''-]{1,40}?),\s+([A-Z][a-z][\w\s&''-]+?)\./g;
+    let am;
+    while ((am = anchorRe.exec(line)) !== null) {
+      const name = am[2].trim();
+      if (/^(Incident|Fire Activity|New fires|Uncontained|Large fires|CIMTs|NIMOs|GACC|Fires and)/i.test(name)) continue;
+      if (/^\d+\s+(miles?|acres?|fires?)\b/i.test(name)) continue;
+      narrAnchors.push({ name, pos: am.index });
+    }
+    if (narrAnchors.length >= 2) {
+      const names = narrAnchors.map(a => a.name);
+      f.push(F('error', 'PROOF-BREAK',
+        `Missing paragraph break — "${names[0]}" and "${names[1]}" are on the same line. Each narrative must be its own paragraph.`,
+        line.length > 120 ? line.substring(0, 120) + '…' : line));
+    }
+  }
+
   // === TEXT QUALITY — catch everything ===
   checkTextQuality(text, f);
 
@@ -1651,7 +1706,7 @@ function checkTextQuality(text, f) {
     const stray=/[{}\[\]<>@#^~|\\]/g;while((m=stray.exec(line))!==null)f.push(F('warning','PROOF',who+'Unexpected character "'+m[0]+'".', ctx(line,m.index,1)));
     // Tab character — only flag in narrative lines, not table data rows
     // Table rows contain unit codes (case-insensitive match for hand-entered codes like Ok-OKS)
-    const looksLikeTableRow = /\t/.test(line) && /[A-Za-z]{2}-[A-Za-z0-9]{2,5}/i.test(line);
+    const looksLikeTableRow = /\t/.test(line) && /[A-Za-z]{2}-[A-Za-z]{2,4}/i.test(line);
     if(/\t/.test(line) && !looksLikeTableRow) f.push(F('warning','PROOF',`${who}Tab character.`,line.substring(0,80)));
   }
 
@@ -1900,28 +1955,70 @@ function checkTextQuality(text, f) {
 
 // --- RENDER: IMSR-ordered output ---
 function renderInfoTable(context) {
-  // Parse "Label: Value\n" lines into a two-column IMSR-style table
+  // NAT-02/NAT-03: column-based for independent value selection.
+  // Values in Arial 11 non-bold. Highlight just the right column to copy.
   const lines = context.split('\n').map(l => l.trim()).filter(Boolean);
-  let html = '<table class="info-table">';
-  for (let i = 0; i < lines.length; i++) {
-    const line = lines[i];
-    // Blank line = section gap
-    if (!line) { continue; }
-    // Total row (starts with "Total")
+  let labels = '', values = '';
+  for (const line of lines) {
     const isTotal = /^Total:/i.test(line);
-    const rowClass = isTotal ? ' class="total-row"' : '';
+    const bdr = isTotal ? 'border-top:1px solid var(--border);padding-top:4px;margin-top:3px;' : '';
+    const bold = isTotal ? 'font-weight:700;' : '';
     const colon = line.indexOf(':');
     if (colon > 0) {
       const label = line.substring(0, colon).trim();
       const value = line.substring(colon + 1).trim();
-      html += `<tr${rowClass}><td>${esc(label)}</td><td>${esc(value)}</td></tr>`;
+      labels += `<div style="line-height:20px;white-space:nowrap;${bdr}${bold}">${esc(label)}</div>`;
+      values += `<div style="line-height:20px;text-align:center;font-family:Arial,sans-serif;font-size:11pt;font-weight:normal;${bdr}">${esc(value)}</div>`;
     } else {
-      // GACC rows like "RMCC: 882 → 902 = +20"
-      html += `<tr${rowClass}><td colspan="2" style="font-family:Consolas,monospace;">${esc(line)}</td></tr>`;
+      labels += `<div style="line-height:20px;font-family:Consolas,monospace;${bdr}${bold}">${esc(line)}</div>`;
+      values += `<div style="line-height:20px;${bdr}">&nbsp;</div>`;
     }
   }
-  html += '</table>';
-  return html;
+  return `<div style="display:flex;gap:12px;margin-top:6px;font-size:12px;max-width:400px;">
+    <div style="color:var(--text-dim);flex:1;">${labels}</div>
+    <div style="color:var(--text);min-width:40px;">${values}</div>
+  </div>`;
+}
+
+function renderPersonnelTable(context) {
+  // RES-05: column-based for independent value selection.
+  // Result column in Arial 9 bold, center aligned.
+  const lines = context.split('\n').map(l => l.trim()).filter(Boolean);
+  let leftCol = '', midCol = '', rightCol = '';
+  for (const line of lines) {
+    const isTotal = /^Total:/i.test(line);
+    const bdr = isTotal ? 'border-top:1px solid var(--border);padding-top:4px;margin-top:3px;' : '';
+    if (isTotal) {
+      const colon = line.indexOf(':');
+      const value = colon > 0 ? line.substring(colon + 1).trim() : '';
+      leftCol  += `<div style="line-height:20px;${bdr}font-weight:700;">Total</div>`;
+      midCol   += `<div style="line-height:20px;${bdr}">&nbsp;</div>`;
+      rightCol += `<div style="line-height:20px;text-align:center;font-family:Arial,sans-serif;font-size:9pt;font-weight:700;${bdr}">${esc(value)}</div>`;
+    } else {
+      const eqIdx = line.lastIndexOf('=');
+      if (eqIdx > 0) {
+        const left = line.substring(0, eqIdx).trim();
+        let right = line.substring(eqIdx + 1).trim();
+        const hasErr = right.includes('✗');
+        right = right.replace(/\s*✗\s*$/, '').trim();
+        const colon = left.indexOf(':');
+        const gacc = colon > 0 ? left.substring(0, colon).trim() : left;
+        const math = colon > 0 ? left.substring(colon + 1).trim() : '';
+        leftCol  += `<div style="line-height:20px;white-space:nowrap;${bdr}">${esc(gacc)}</div>`;
+        midCol   += `<div style="line-height:20px;white-space:nowrap;color:var(--text-dim);font-family:Consolas,monospace;${bdr}">${esc(math)} =</div>`;
+        rightCol += `<div style="line-height:20px;text-align:center;font-family:Arial,sans-serif;font-size:9pt;font-weight:700;${bdr}">${esc(right)}${hasErr ? ' <span style="color:#c0392b;">✗</span>' : ''}</div>`;
+      } else {
+        leftCol  += `<div style="line-height:20px;${bdr}">${esc(line)}</div>`;
+        midCol   += `<div style="line-height:20px;${bdr}">&nbsp;</div>`;
+        rightCol += `<div style="line-height:20px;${bdr}">&nbsp;</div>`;
+      }
+    }
+  }
+  return `<div style="display:flex;gap:8px;margin-top:6px;font-size:12px;max-width:500px;">
+    <div style="color:var(--text-dim);">${leftCol}</div>
+    <div style="flex:1;">${midCol}</div>
+    <div style="color:var(--text);min-width:30px;">${rightCol}</div>
+  </div>`;
 }
 
 function render(sections) {
@@ -1944,8 +2041,11 @@ function render(sections) {
       const msgHtml = esc(f.message).replace(/"([^"]+?)"/g, '<b>"$1"</b>');
       html += `<div class="finding ${f.severity}"><span class="rule-id">${esc(f.ruleId)}</span> ${msgHtml}`;
       if (f.fix === '__table__' && f.context) {
-        // Render as IMSR-style two-column table
+        // Render as two-column layout (NAT-02/NAT-03)
         html += renderInfoTable(f.context);
+      } else if (f.fix === '__personnel__' && f.context) {
+        // Render as three-column personnel math (RES-05)
+        html += renderPersonnelTable(f.context);
       } else if (f.context && f.fix) {
         html += `<div class="diff-row">
           <span class="diff-before">${esc(f.context)}</span>
