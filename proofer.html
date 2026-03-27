@@ -1,0 +1,2295 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>IMSR Proofer v5.2</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/mammoth/1.6.0/mammoth.browser.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
+<style>
+:root {
+  --bg: #f5f5f0; --surface: #ffffff; --border: #d4d4c8;
+  --text: #2c2c2c; --text-dim: #6b6b60; --accent: #2e75b6;
+  --err: #c0392b; --warn: #e67e22; --info: #2980b9; --ok: #27ae60;
+  --struct: #8e44ad; --struct-bg: #f5eef8;
+  --l2: #16839e; --l2-bg: #edf7fa;
+  --err-bg: #fdf0ef; --warn-bg: #fef9f0; --info-bg: #eef6fc;
+}
+* { box-sizing: border-box; margin: 0; padding: 0; }
+body { font-family: 'Segoe UI', system-ui, sans-serif; background: var(--bg); color: var(--text); line-height: 1.5; }
+.header { background: #1a3a5c; color: #fff; padding: 16px 24px; display: flex; align-items: center; gap: 16px; }
+.header h1 { font-size: 18px; font-weight: 600; } .header .tag { font-size: 11px; background: rgba(255,255,255,0.15); padding: 2px 8px; border-radius: 3px; }
+.header .ver { margin-left: auto; font-size: 12px; opacity: 0.7; }
+.container { max-width: 1200px; margin: 0 auto; padding: 20px; }
+.drop-zone { border: 2px dashed var(--border); border-radius: 8px; padding: 48px 24px; text-align: center; cursor: pointer; transition: all 0.2s; background: var(--surface); margin-bottom: 20px; position: relative; }
+.drop-zone:hover,.drop-zone.dragover { border-color: var(--accent); background: var(--info-bg); }
+.drop-zone h2 { font-size: 16px; color: var(--text-dim); font-weight: 500; margin-bottom: 4px; pointer-events: none; }
+.drop-zone p { font-size: 13px; color: var(--text-dim); pointer-events: none; }
+.drop-zone input { display: none; }
+.drop-zone button { pointer-events: auto; position: relative; z-index: 2; }
+.summary { display: flex; gap: 12px; margin-bottom: 16px; flex-wrap: wrap; }
+.stat { background: var(--surface); border: 1px solid var(--border); border-radius: 6px; padding: 10px 16px; font-size: 13px; display: flex; align-items: center; gap: 8px; }
+.stat .dot { width: 10px; height: 10px; border-radius: 50%; }
+.stat .dot.err { background: var(--err); } .stat .dot.warn { background: var(--warn); } .stat .dot.info { background: var(--info); }
+.stat .count { font-weight: 700; font-size: 18px; }
+.sec-hdr { font-size: 15px; font-weight: 700; color: #1a3a5c; margin: 24px 0 10px; padding: 8px 14px; background: #e4ecf4; border-radius: 6px; border-left: 4px solid #2e75b6; }
+.sec-hdr.gacc { background: #eef3e8; border-left-color: #4a8c3f; }
+.finding { background: var(--surface); border: 1px solid var(--border); border-radius: 6px; padding: 12px 16px; border-left: 4px solid var(--border); font-size: 13px; margin-bottom: 6px; }
+.finding.error { border-left-color: var(--err); background: var(--err-bg); }
+.finding.warning { border-left-color: var(--warn); background: var(--warn-bg); }
+.finding.info { border-left-color: var(--info); background: var(--info-bg); }
+.finding.structure { border-left-color: var(--struct); background: var(--struct-bg); }
+.finding.layer2 { border-left-color: var(--l2); background: var(--l2-bg); }
+.finding .rule-id { display: inline-block; font-family: Consolas, monospace; font-size: 11px; font-weight: 600; color: #fff; padding: 1px 6px; border-radius: 3px; margin-right: 6px; }
+.finding.error .rule-id { background: var(--err); } .finding.warning .rule-id { background: var(--warn); }
+.finding.info .rule-id { background: var(--info); } .finding.structure .rule-id { background: var(--struct); }
+.finding.layer2 .rule-id { background: var(--l2); }
+.finding .context { display: block; margin-top: 6px; padding: 6px 10px; background: rgba(0,0,0,0.04); border-radius: 4px; font-family: Consolas, monospace; font-size: 12px; white-space: pre-wrap; word-break: break-word; color: var(--text-dim); }
+.finding .fix { display: block; margin-top: 4px; font-size: 12px; color: var(--ok); font-style: italic; }
+.finding .diff-row { display: flex; gap: 8px; margin-top: 8px; flex-wrap: wrap; align-items: flex-start; }
+.finding .diff-before { font-family: Consolas, monospace; font-size: 12px; padding: 4px 10px; border-radius: 4px; background: #fde8e8; border: 1px solid #e8b4b4; color: #8b0000; word-break: break-word; flex: 1; min-width: 180px; }
+.finding .diff-after  { font-family: Consolas, monospace; font-size: 12px; padding: 4px 10px; border-radius: 4px; background: #e8f5e8; border: 1px solid #9cca9c; color: #1a5c1a; word-break: break-word; flex: 1; min-width: 180px; }
+.finding .diff-arrow  { font-size: 16px; color: var(--text-dim); align-self: center; flex-shrink: 0; }
+.finding .diff-ctx    { font-family: Consolas, monospace; font-size: 11px; color: var(--text-dim); margin-top: 4px; display: block; word-break: break-word; }
+.tab-bar { display: flex; gap: 0; margin-bottom: 0; border-bottom: 2px solid var(--border); }
+.tab-bar button { background: var(--surface); border: 1px solid var(--border); border-bottom: none; padding: 8px 20px; cursor: pointer; font-size: 13px; color: var(--text-dim); border-radius: 6px 6px 0 0; margin-right: 4px; transition: all 0.15s; }
+.tab-bar button.active { background: var(--accent); color: #fff; border-color: var(--accent); font-weight: 600; }
+.tab-panel { border: 1px solid var(--border); border-top: none; border-radius: 0 0 8px 8px; padding: 20px; background: var(--surface); margin-bottom: 16px; }
+.paste-box { width: 100%; min-height: 180px; font-family: Consolas, monospace; font-size: 12px; border: 1px solid var(--border); border-radius: 6px; padding: 12px; resize: vertical; color: var(--text); background: var(--bg); line-height: 1.5; }
+.info-table { margin-top: 8px; min-width: 280px; font-size: 12px; }
+.hidden { display: none !important; }
+.api-bar { background: #f0f4f8; border: 1px solid var(--border); border-radius: 6px; padding: 10px 16px; margin-bottom: 16px; display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+.api-bar label { font-size: 12px; font-weight: 600; color: var(--text-dim); white-space: nowrap; }
+.api-bar input { font-family: Consolas, monospace; font-size: 12px; padding: 4px 8px; border: 1px solid var(--border); border-radius: 4px; width: 320px; }
+.api-bar .status { font-size: 12px; color: var(--text-dim); margin-left: auto; }
+.l2-btn { background: #16839e; color: #fff; border: none; padding: 8px 20px; border-radius: 6px; cursor: pointer; font-size: 13px; font-weight: 600; transition: background 0.2s; }
+.l2-btn:hover { background: #126d84; }
+.l2-btn:disabled { background: #a0c4cf; cursor: not-allowed; }
+.l2-section { margin-top: 20px; padding-top: 16px; border-top: 2px solid var(--l2); }
+.l2-section .sec-hdr { background: var(--l2-bg); border-left-color: var(--l2); }
+.doc-text-toggle { margin-bottom: 16px; }
+.doc-text-toggle button { background: var(--surface); border: 1px solid var(--border); padding: 6px 14px; border-radius: 5px; cursor: pointer; font-size: 12px; color: var(--text-dim); }
+#rawText { background: var(--surface); border: 1px solid var(--border); border-radius: 6px; padding: 16px; font-family: Consolas, monospace; font-size: 11px; white-space: pre-wrap; max-height: 400px; overflow-y: auto; color: var(--text-dim); margin-bottom: 16px; }
+</style>
+</head>
+<body>
+<div class="header"><h1>IMSR PROOFER</h1><span class="tag">LAYER 1</span><span class="tag" style="background:rgba(22,131,158,0.4);">LAYER 2</span><span class="ver">v5.2</span></div>
+<div class="container">
+
+  <!-- STEP 1: Yesterday's IMSR (file only — for personnel math) -->
+  <div id="step1Area">
+    <div class="drop-zone" id="dropZone">
+      <h2>Step 1: Drop <em>yesterday's</em> IMSR</h2>
+      <p>Accepts <strong>.docx</strong> or <strong>.pdf</strong> — used to calculate Change in Personnel</p>
+      <input type="file" id="fileInput" accept=".docx,.pdf">
+      <div style="margin-top:12px;"><button onclick="skipYesterday()" style="background:var(--surface);border:1px solid var(--border);padding:6px 16px;border-radius:5px;cursor:pointer;font-size:12px;color:var(--text-dim);">Skip — check today's IMSR without personnel math</button></div>
+    </div>
+  </div>
+
+  <!-- STEP 2: Today's IMSR — file drop OR paste text -->
+  <div id="step2Area" style="display:none;">
+    <div style="margin-bottom:6px;font-size:13px;font-weight:600;color:var(--text-dim);">Step 2: Today's IMSR</div>
+    <div class="tab-bar">
+      <button id="tabPaste" class="active" onclick="switchTab('paste')">📋 Paste Text</button>
+      <button id="tabFile" onclick="switchTab('file')">📄 Drop File</button>
+    </div>
+    <div class="tab-panel" id="panelPaste">
+      <p style="font-size:13px;color:var(--text-dim);margin-bottom:10px;">Copy the full IMSR text from Word and paste below. No file save needed.</p>
+      <textarea class="paste-box" id="pasteBox" placeholder="Paste IMSR text here…"></textarea>
+      <div style="margin-top:10px;display:flex;gap:8px;align-items:center;">
+        <button onclick="runFromPaste()" style="background:var(--accent);color:#fff;border:none;padding:8px 20px;border-radius:6px;cursor:pointer;font-size:13px;font-weight:600;">Run Checks</button>
+        <span style="font-size:12px;color:var(--text-dim);">Personnel math will be skipped in paste mode</span>
+      </div>
+    </div>
+    <div class="tab-panel" id="panelFile" style="display:none;">
+      <div class="drop-zone" id="dropZone2" style="margin-bottom:0;">
+        <h2>Drop <em>today's</em> IMSR here</h2>
+        <p>Accepts <strong>.docx</strong> or <strong>.pdf</strong></p>
+        <input type="file" id="fileInput2" accept=".docx,.pdf">
+      </div>
+    </div>
+  </div>
+  <div id="prevInfo" class="hidden" style="background:#e8f5e8;border:1px solid #4a9a4a;border-radius:6px;padding:10px 16px;margin-bottom:12px;font-size:13px;color:#1a5c1a;"></div>
+  <div class="api-bar">
+    <label>API Key:</label>
+    <input type="password" id="apiKey" placeholder="sk-ant-... (enter once per session)" autocomplete="off">
+    <span class="status" id="apiStatus">Layer 2 ready when key provided</span>
+  </div>
+  <div id="output" class="hidden">
+    <div class="summary" id="summary"></div>
+    <div class="doc-text-toggle">
+      <button onclick="document.getElementById('rawText').classList.toggle('hidden')">Toggle extracted text</button>
+      <button onclick="clearAll()" style="margin-left:8px;color:var(--err);">Clear &amp; Reset</button>
+    </div>
+    <div id="rawText" class="hidden"></div>
+    <div id="results"></div>
+    <div id="l2Container" class="hidden l2-section">
+      <div style="display:flex;align-items:center;gap:12px;margin-bottom:12px;">
+        <button class="l2-btn" id="l2Btn" onclick="runLayer2()">Run Layer 2 (Claude API)</button>
+        <span id="l2Status" style="font-size:12px;color:var(--text-dim);"></span>
+      </div>
+      <div id="l2Summary" style="margin-bottom:12px;"></div>
+      <div id="l2Results"></div>
+    </div>
+  </div>
+</div>
+<script>
+const GA = ['Alaska Area','Northwest Area','Northern California Area','Southern California Area','Northern Rockies Area','Great Basin Area','Southwest Area','Rocky Mountain Area','Eastern Area','Southern Area'];
+const SKIP = /understanding the imsr|imsr map|predictive services|6 minutes for safety|fires and acres|year-to-date|ten year average|active incident resource summary/i;
+const esc = s => (s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+const UNIT_GACC={"AK-ADD":"AICC","AK-AFON":"AICC","AK-AHN":"AICC","AK-AJVN":"AICC","AK-AKA":"AICC","AK-AKHM":"AICC","AK-AKHN":"AICC","AK-AKIN":"AICC","AK-AKPN":"AICC","AK-ALEN":"AICC","AK-ALEX":"AICC","AK-ALGN":"AICC","AK-ALKN":"AICC","AK-ALN":"AICC","AK-AMMX":"AICC","AK-AMR":"AICC","AK-AND":"AICC","AK-ANDM":"AICC","AK-ANGM":"AICC","AK-ANP":"AICC","AK-APR":"AICC","AK-ARD":"AICC","AK-ARR":"AICC","AK-ARVN":"AICC","AK-ASKN":"AICC","AK-ASN":"AICC","AK-ASO":"AICC","AK-ATMN":"AICC","AK-ATXN":"AICC","AK-AWP":"AICC","AK-AYAN":"AICC","AK-AZAN":"AICC","AK-BAAN":"AICC","AK-BAYN":"AICC","AK-BBN":"AICC","AK-BCR":"AICC","AK-BEAN":"AICC","AK-BECN":"AICC","AK-BELN":"AICC","AK-BETM":"AICC","AK-BLP":"AICC","AK-BNCN":"AICC","AK-BREN":"AICC","AK-BRIX":"AICC","AK-BRWM":"AICC","AK-BSN":"AICC","AK-BVRN":"AICC","AK-CAN":"AICC","AK-CAPN":"AICC","AK-CASN":"AICC","AK-CFQ":"AICC","AK-CGF":"AICC","AK-CGKX":"AICC","AK-CGLN":"AICC","AK-CGRN":"AICC","AK-CHEN":"AICC","AK-CHFN":"AICC","AK-CHIM":"AICC","AK-CHIN":"AICC","AK-CHKN":"AICC","AK-CHLN":"AICC","AK-CHMN":"AICC","AK-CHN":"AICC","AK-CHON":"AICC","AK-CHTN":"AICC","AK-CHUN":"AICC","AK-CHVN":"AICC","AK-CIN":"AICC","AK-COFM":"AICC","AK-CORM":"AICC","AK-COUN":"AICC","AK-CRAM":"AICC","AK-CRS":"AICC","AK-CULN":"AICC","AK-CYD":"AICC","AK-DAS":"AICC","AK-DBFX":"AICC","AK-DELM":"AICC","AK-DELN":"AICC","AK-DEP":"AICC","AK-DHCN":"AICC","AK-DILM":"AICC","AK-DNGN":"AICC","AK-DNS":"AICC","AK-DNYN":"AICC","AK-DOTN":"AICC","AK-DTS":"AICC","AK-DYN":"AICC","AK-EAGM":"AICC","AK-EDNM":"AICC","AK-EID":"AICC","AK-EIQ":"AICC","AK-EKLN":"AICC","AK-EKWN":"AICC","AK-ELIN":"AICC","AK-ELQ":"AICC","AK-EMMN":"AICC","AK-ENGN":"AICC","AK-EVAN":"AICC","AK-EYAN":"AICC","AK-FAIM":"AICC","AK-FARN":"AICC","AK-FAS":"AICC","AK-FBD":"AICC","AK-FGQ":"AICC","AK-FGS":"AICC","AK-FNFX":"AICC","AK-FWQ":"AICC","AK-GAD":"AICC","AK-GANN":"AICC","AK-GAP":"AICC","AK-GBP":"AICC","AK-GLD":"AICC","AK-GLDN":"AICC","AK-GLVN":"AICC","AK-GOLM":"AICC","AK-GUSM":"AICC","AK-GWIN":"AICC","AK-HAIN":"AICC","AK-HAIX":"AICC","AK-HEEN":"AICC","AK-HNGN":"AICC","AK-HNS":"AICC","AK-HOMM":"AICC","AK-HOOM":"AICC","AK-HOUM":"AICC","AK-HUGM":"AICC","AK-HUNN":"AICC","AK-HYBM":"AICC","AK-IGIN":"AICC","AK-ILIN":"AICC","AK-INGN":"AICC","AK-INR":"AICC","AK-IQFN":"AICC","AK-ISAN":"AICC","AK-IZR":"AICC","AK-JUNX":"AICC","AK-KACM":"AICC","AK-KAKM":"AICC","AK-KAKN":"AICC","AK-KAP":"AICC","AK-KAR":"AICC","AK-KASM":"AICC","AK-KASN":"AICC","AK-KAVN":"AICC","AK-KDR":"AICC","AK-KENM":"AICC","AK-KENN":"AICC","AK-KEP":"AICC","AK-KETM":"AICC","AK-KETX":"AICC","AK-KGCN":"AICC","AK-KGN":"AICC","AK-KIJN":"AICC","AK-KIKN":"AICC","AK-KINM":"AICC","AK-KINN":"AICC","AK-KKS":"AICC","AK-KLAM":"AICC","AK-KLAN":"AICC","AK-KLP":"AICC","AK-KNIN":"AICC","AK-KNR":"AICC","AK-KNZT":"AICC","AK-KODM":"AICC","AK-KODN":"AICC","AK-KODX":"AICC","AK-KOKN":"AICC","AK-KOLN":"AICC","AK-KONN":"AICC","AK-KOP":"AICC","AK-KOTM":"AICC","AK-KOTN":"AICC","AK-KOYN":"AICC","AK-KPKX":"AICC","AK-KRP":"AICC","AK-KTS":"AICC","AK-KTVN":"AICC","AK-KTZN":"AICC","AK-KUGN":"AICC","AK-KUIN":"AICC","AK-KUKN":"AICC","AK-KUPM":"AICC","AK-KUR":"AICC","AK-KUUN":"AICC","AK-KWEN":"AICC","AK-KWIN":"AICC","AK-KYLN":"AICC","AK-LAKX":"AICC","AK-LARM":"AICC","AK-LCP":"AICC","AK-LEIN":"AICC","AK-LEVN":"AICC","AK-LIMN":"AICC","AK-MANN":"AICC","AK-MARN":"AICC","AK-MASN":"AICC","AK-MBMX":"AICC","AK-MCGM":"AICC","AK-MEA":"AICC","AK-MENN":"AICC","AK-MID":"AICC","AK-MONN":"AICC","AK-MSS":"AICC","AK-MTNN":"AICC","AK-MVS":"AICC","AK-NAN":"AICC","AK-NELN":"AICC","AK-NENM":"AICC","AK-NERN":"AICC","AK-NIMN":"AICC","AK-NINN":"AICC","AK-NKYN":"AICC","AK-NMTN":"AICC","AK-NOMM":"AICC","AK-NOP":"AICC","AK-NOR":"AICC","AK-NORM":"AICC","AK-NORN":"AICC","AK-NPCN":"AICC","AK-NPKN":"AICC","AK-NPSN":"AICC","AK-NSLX":"AICC","AK-NWAX":"AICC","AK-NWKT":"AICC","AK-NWTN":"AICC","AK-OCEN":"AICC","AK-OHON":"AICC","AK-OLDM":"AICC","AK-OLDN":"AICC","AK-OLGN":"AICC","AK-OLSN":"AICC","AK-ONCN":"AICC","AK-OUNN":"AICC","AK-OUZM":"AICC","AK-OUZN":"AICC","AK-PAIN":"AICC","AK-PALM":"AICC","AK-PAUN":"AICC","AK-PAXM":"AICC","AK-PEDN":"AICC","AK-PELM":"AICC","AK-PETX":"AICC","AK-PGHN":"AICC","AK-PGMT":"AICC","AK-PITN":"AICC","AK-PLPN":"AICC","AK-PLSN":"AICC","AK-POIM":"AICC","AK-POIN":"AICC","AK-PORM":"AICC","AK-PRS":"AICC","AK-QANN":"AICC","AK-QEMN":"AICC","AK-QINN":"AICC","AK-RUBM":"AICC","AK-RUSN":"AICC","AK-SAGN":"AICC","AK-SALN":"AICC","AK-SAN":"AICC","AK-SANN":"AICC","AK-SAXM":"AICC","AK-SEAN":"AICC","AK-SELM":"AICC","AK-SELN":"AICC","AK-SETN":"AICC","AK-SEWM":"AICC","AK-SGTN":"AICC","AK-SHEN":"AICC","AK-SHIN":"AICC","AK-SHKN":"AICC","AK-SHSN":"AICC","AK-SHUM":"AICC","AK-SHUN":"AICC","AK-SIP":"AICC","AK-SITN":"AICC","AK-SITX":"AICC","AK-SIVN":"AICC","AK-SKA":"AICC","AK-SMLN":"AICC","AK-SMYN":"AICC","AK-SOLM":"AICC","AK-SOLN":"AICC","AK-STEN":"AICC","AK-STUN":"AICC","AK-SWAN":"AICC","AK-SWR":"AICC","AK-SWS":"AICC","AK-TAD":"AICC","AK-TANN":"AICC","AK-TAS":"AICC","AK-TATN":"AICC","AK-TDXN":"AICC","AK-TELN":"AICC","AK-TENM":"AICC","AK-TER":"AICC","AK-TGHN":"AICC","AK-TGR":"AICC","AK-THEN":"AICC","AK-THOM":"AICC","AK-TIHN":"AICC","AK-TIKN":"AICC","AK-TIN":"AICC","AK-TKCN":"AICC","AK-TNCN":"AICC","AK-TNF":"AICC","AK-TNLN":"AICC","AK-TNRN":"AICC","AK-TOZN":"AICC","AK-TULN":"AICC","AK-TVCN":"AICC","AK-TWIN":"AICC","AK-UAS":"AICC","AK-UGKN":"AICC","AK-UKPN":"AICC","AK-UNAM":"AICC","AK-UNCN":"AICC","AK-UNGN":"AICC","AK-UNKM":"AICC","AK-UYAN":"AICC","AK-UYD":"AICC","AK-VALM":"AICC","AK-VENN":"AICC","AK-WALN":"AICC","AK-WASM":"AICC","AK-WHIM":"AICC","AK-WHIN":"AICC","AK-WRAX":"AICC","AK-WSP":"AICC","AK-YAKN":"AICC","AK-YAKX":"AICC","AK-YCP":"AICC","AK-YDR":"AICC","AK-YFR":"AICC","AK-ZHON":"AICC","AL-ALF":"SACC","AL-ALS":"SACC","AL-ANYQ":"SACC","AL-BOR":"SACC","AL-BWR":"SACC","AL-CHR":"SACC","AL-CRR":"SACC","AL-DESR":"SACC","AL-EFR":"SACC","AL-FE4":"SACC","AL-FER":"SACC","AL-HBP":"SACC","AL-KCR":"SACC","AL-LRP":"SACC","AL-MAAQ":"SACC","AL-MLR":"SACC","AL-MYNG":"SACC","AL-PCT":"SACC","AL-RSYQ":"SACC","AL-RUP":"SACC","AL-SMP":"SACC","AL-SRS":"SACC","AL-TAP":"SACC","AL-TUP":"SACC","AL-WAR":"SACC","AL-WLR":"SACC","AR-ARP":"SACC","AR-ARS":"SACC","AR-BGR":"SACC","AR-BKR":"SACC","AR-BUP":"SACC","AR-CER":"SACC","AR-CESR":"SACC","AR-CHSP":"SACC","AR-CRR":"SACC","AR-CYNG":"SACC","AR-FE6":"SACC","AR-FSP":"SACC","AR-FSR":"SACC","AR-GFFH":"SACC","AR-HLR":"SACC","AR-HOP":"SACC","AR-JCP":"SACC","AR-LMBR":"SACC","AR-LOR":"SACC","AR-LRAQ":"SACC","AR-LRW":"SACC","AR-MSFH":"SACC","AR-NFFH":"SACC","AR-OUF":"SACC","AR-OVR":"SACC","AR-OZF":"SACC","AR-PBYQ":"SACC","AR-PCR":"SACC","AR-PEP":"SACC","AR-RYNG":"SACC","AR-WHR":"SACC","AR-WPR":"SACC","AS-ASP":"ONCC","AS-PPOW":"ONCC","AZ-A1S":"SWCC","AZ-A2S":"SWCC","AZ-A3S":"SWCC","AZ-A4S":"SWCC","AZ-A5S":"SWCC","AZ-ASD":"GBCC","AZ-ASF":"SWCC","AZ-ASP":"SWCC","AZ-BAR":"SWCC","AZ-BWR":"SWCC","AZ-CAP":"SWCC","AZ-CBR":"SWCC","AZ-CGP":"SWCC","AZ-CHP":"SWCC","AZ-CNF":"SWCC","AZ-COF":"SWCC","AZ-COP":"SWCC","AZ-CPR":"SWCC","AZ-CRA":"SWCC","AZ-CRD":"SWCC","AZ-CRT":"SWCC","AZ-DMQ":"SWCC","AZ-FBP":"SWCC","AZ-FHQ":"SWCC","AZ-FSNQ":"SWCC","AZ-FTA":"SWCC","AZ-FYA":"SWCC","AZ-FYNG":"SWCC","AZ-GCP":"SWCC","AZ-GID":"SWCC","AZ-GLP":"GBCC","AZ-HAFD":"SWCC","AZ-HOA":"SWCC","AZ-HUP":"SWCC","AZ-HUT":"SWCC","AZ-HVR":"SWCC","AZ-IMR":"SWCC","AZ-KGR":"SWCC","AZ-KMFD":"SWCC","AZ-KNF":"SWCC","AZ-LHFD":"SWCC","AZ-LSFD":"SWCC","AZ-LUAQ":"SWCC","AZ-MCP":"SWCC","AZ-NAA":"SWCC","AZ-NAP":"SWCC","AZ-NYNG":"SWCC","AZ-ORP":"SWCC","AZ-PAL":"SWCC","AZ-PFP":"SWCC","AZ-PHD":"SWCC","AZ-PIP":"GBCC","AZ-PMA":"SWCC","AZ-PNF":"SWCC","AZ-RAP":"GBCC","AZ-SAFD":"SWCC","AZ-SAP":"SWCC","AZ-SBR":"SWCC","AZ-SCA":"SWCC","AZ-SCT":"SWCC","AZ-SRA":"SWCC","AZ-SRT":"SWCC","AZ-SUP":"SWCC","AZ-TCA":"SWCC","AZ-TNF":"SWCC","AZ-TNT":"SWCC","AZ-TOA":"SWCC","AZ-TOP":"SWCC","AZ-TUFD":"SWCC","AZ-TUP":"SWCC","AZ-TZP":"SWCC","AZ-WAP":"SWCC","AZ-WUP":"SWCC","AZ-YAL":"SWCC","AZ-YMQ":"SWCC","AZ-YPYQ":"SWCC","AZ-YUFD":"SWCC","CA-1NAS":"ONCC","CA-ABL":"OSCC","CA-ABR":"ONCC","CA-ACF":"ONCC","CA-ACY":"ONCC","CA-ADI":"ONCC","CA-ADP":"ONCC","CA-ADR":"ONCC","CA-AEU":"ONCC","CA-AFD":"ONCC","CA-AFP":"ONCC","CA-AGD":"ONCC","CA-AGL":"OSCC","CA-AIP":"ONCC","CA-ALA":"ONCC","CA-ALB":"ONCC","CA-ALF":"ONCC","CA-ALP":"ONCC","CA-ALR":"ONCC","CA-ALV":"ONCC","CA-AMC":"ONCC","CA-AMQ":"OSCC","CA-AND":"OSCC","CA-ANF":"OSCC","CA-ANG":"OSCC","CA-APP":"OSCC","CA-APT":"ONCC","CA-ARB":"ONCC","CA-ARC":"OSCC","CA-ARD":"ONCC","CA-ARF":"ONCC","CA-ART":"ONCC","CA-ASP":"OSCC","CA-ATW":"OSCC","CA-AUB":"OSCC","CA-AVA":"OSCC","CA-AVI":"OSCC","CA-AVP":"OSCC","CA-AVY":"ONCC","CA-BAD":"OSCC","CA-BAK":"OSCC","CA-BAN":"OSCC","CA-BAR":"OSCC","CA-BAY":"ONCC","CA-BBB":"OSCC","CA-BCL":"ONCC","CA-BCR":"OSCC","CA-BCS":"ONCC","CA-BDC":"OSCC","CA-BDF":"OSCC","CA-BDO":"OSCC","CA-BDU":"OSCC","CA-BDY":"OSCC","CA-BEN":"ONCC","CA-BEQ":"ONCC","CA-BER":"ONCC","CA-BEU":"OSCC","CA-BFA":"OSCC","CA-BFC":"ONCC","CA-BGO":"OSCC","CA-BGP":"OSCC","CA-BGV":"ONCC","CA-BHL":"OSCC","CA-BID":"OSCC","CA-BIG":"ONCC","CA-BIV":"ONCC","CA-BKD":"OSCC","CA-BKF":"OSCC","CA-BKL":"ONCC","CA-BKX":"ONCC","CA-BLD":"OSCC","CA-BLF":"OSCC","CA-BLR":"OSCC","CA-BLU":"ONCC","CA-BLY":"OSCC","CA-BMQ":"OSCC","CA-BMT":"OSCC","CA-BNC":"ONCC","CA-BNP":"ONCC","CA-BOD":"ONCC","CA-BOL":"ONCC","CA-BON":"OSCC","CA-BOU":"ONCC","CA-BRB":"ONCC","CA-BRD":"ONCC","CA-BRE":"OSCC","CA-BRG":"ONCC","CA-BRI":"OSCC","CA-BRK":"OSCC","CA-BRN":"ONCC","CA-BRR":"OSCC","CA-BRV":"ONCC","CA-BRW":"OSCC","CA-BSB":"ONCC","CA-BSH":"OSCC","CA-BSR":"ONCC","CA-BTC":"ONCC","CA-BTE":"ONCC","CA-BTU":"ONCC","CA-BUF":"ONCC","CA-CAL":"ONCC","CA-CAM":"ONCC","CA-CAN":"ONCC","CA-CAP":"OSCC","CA-CAR":"ONCC","CA-CASN":"ONCC","CA-CAZ":"ONCC","CA-CBD":"OSCC","CA-CBF":"ONCC","CA-CBS":"ONCC","CA-CCA":"ONCC","CA-CCAL":"ONCC","CA-CCE":"ONCC","CA-CCH":"ONCC","CA-CCL":"ONCC","CA-CCO":"ONCC","CA-CCV":"ONCC","CA-CDD":"OSCC","CA-CDR":"OSCC","CA-CDV":"ONCC","CA-CED":"OSCC","CA-CEN":"ONCC","CA-CES":"ONCC","CA-CFD":"ONCC","CA-CFR":"ONCC","CA-CFS":"ONCC","CA-CFX":"ONCC","CA-CGV":"ONCC","CA-CHE":"ONCC","CA-CHF":"ONCC","CA-CHI":"ONCC","CA-CHO":"OSCC","CA-CHV":"OSCC","CA-CLB":"ONCC","CA-CLC":"ONCC","CA-CLD":"ONCC","CA-CLE":"ONCC","CA-CLF":"ONCC","CA-CLM":"ONCC","CA-CLNQ":"OSCC","CA-CLP":"OSCC","CA-CLR":"ONCC","CA-CLS":"ONCC","CA-CLV":"OSCC","CA-CLX":"OSCC","CA-CMB":"OSCC","CA-CMC":"OSCC","CA-CMD":"ONCC","CA-CMK":"ONCC","CA-CMNQ":"OSCC","CA-CMP":"OSCC","CA-CMR":"ONCC","CA-CMT":"ONCC","CA-CMV":"ONCC","CA-CND":"OSCC","CA-CNF":"OSCC","CA-CNG":"ONCC","CA-CNP":"OSCC","CA-CNT":"ONCC","CA-COC":"ONCC","CA-CON":"ONCC","CA-CONQ":"OSCC","CA-COP":"OSCC","CA-COR":"OSCC","CA-COS":"OSCC","CA-COT":"ONCC","CA-CPD":"ONCC","CA-CPK":"OSCC","CA-CPT":"OSCC","CA-CPV":"ONCC","CA-CPY":"ONCC","CA-CPYQ":"ONCC","CA-CRC":"OSCC","CA-CRD":"OSCC","CA-CRF":"OSCC","CA-CRK":"ONCC","CA-CRP":"OSCC","CA-CRR":"ONCC","CA-CRS":"ONCC","CA-CRT":"ONCC","CA-CRZ":"ONCC","CA-CSC":"ONCC","CA-CSD":"ONCC","CA-CSM":"ONCC","CA-CSP":"ONCC","CA-CTF":"ONCC","CA-CTL":"ONCC","CA-CTN":"ONCC","CA-CTP":"OSCC","CA-CUL":"OSCC","CA-CUR":"ONCC","CA-CVL":"ONCC","CA-CVR":"OSCC","CA-CVV":"OSCC","CA-CYN":"OSCC","CA-CYP":"ONCC","CA-CZP":"OSCC","CA-CZU":"ONCC","CA-DAG":"OSCC","CA-DAV":"ONCC","CA-DBR":"OSCC","CA-DCB":"ONCC","CA-DCR":"ONCC","CA-DEN":"ONCC","CA-DIN":"OSCC","CA-DIX":"ONCC","CA-DLR":"ONCC","CA-DLT":"ONCC","CA-DMR":"OSCC","CA-DNN":"ONCC","CA-DNY":"OSCC","CA-DOF":"ONCC","CA-DOR":"ONCC","CA-DOU":"ONCC","CA-DOY":"ONCC","CA-DPP":"OSCC","CA-DRV":"ONCC","CA-DSF":"OSCC","CA-DSH":"OSCC","CA-DSP":"ONCC","CA-DUN":"ONCC","CA-DUT":"ONCC","CA-DVF":"OSCC","CA-DVI":"OSCC","CA-DVP":"OSCC","CA-DVS":"ONCC","CA-DWN":"ONCC","CA-EAG":"ONCC","CA-EBB":"OSCC","CA-EBY":"ONCC","CA-ECD":"OSCC","CA-ECF":"ONCC","CA-ECN":"OSCC","CA-ECNQ":"OSCC","CA-ECR":"ONCC","CA-EDAQ":"OSCC","CA-EDF":"ONCC","CA-EDH":"ONCC","CA-EFD":"ONCC","CA-EFF":"OSCC","CA-EGL":"ONCC","CA-EHF":"ONCC","CA-EKR":"ONCC","CA-EKV":"ONCC","CA-ELC":"OSCC","CA-ELD":"ONCC","CA-ELK":"ONCC","CA-ELS":"OSCC","CA-ENF":"ONCC","CA-EOP":"ONCC","CA-EPR":"ONCC","CA-ESC":"OSCC","CA-ESL":"ONCC","CA-ESP":"ONCC","CA-ESR":"ONCC","CA-ETN":"ONCC","CA-EVL":"OSCC","CA-EXE":"OSCC","CA-FAL":"ONCC","CA-FAR":"ONCC","CA-FBA":"ONCC","CA-FBR":"ONCC","CA-FCO":"OSCC","CA-FDA":"OSCC","CA-FDK":"ONCC","CA-FE9":"ONCC","CA-FEL":"ONCC","CA-FEN":"ONCC","CA-FFT":"ONCC","CA-FHF":"ONCC","CA-FIV":"OSCC","CA-FKU":"OSCC","CA-FLL":"ONCC","CA-FLM":"OSCC","CA-FLR":"ONCC","CA-FLV":"ONCC","CA-FMV":"OSCC","CA-FOL":"ONCC","CA-FOW":"OSCC","CA-FPP":"ONCC","CA-FRB":"OSCC","CA-FRC":"ONCC","CA-FRE":"ONCC","CA-FRF":"ONCC","CA-FRN":"OSCC","CA-FRT":"ONCC","CA-FSP":"ONCC","CA-FTJ":"ONCC","CA-FTL":"ONCC","CA-FTR":"ONCC","CA-FUL":"OSCC","CA-FVY":"OSCC","CA-FWR":"ONCC","CA-GAR":"ONCC","CA-GAS":"ONCC","CA-GAZ":"ONCC","CA-GCF":"ONCC","CA-GCS":"OSCC","CA-GEO":"ONCC","CA-GFD":"ONCC","CA-GGV":"OSCC","CA-GHC":"ONCC","CA-GIL":"ONCC","CA-GLC":"ONCC","CA-GLE":"ONCC","CA-GLN":"OSCC","CA-GND":"ONCC","CA-GNP":"ONCC","CA-GNR":"OSCC","CA-GNZ":"OSCC","CA-GRA":"ONCC","CA-GRD":"ONCC","CA-GRN":"OSCC","CA-GRR":"OSCC","CA-GRS":"ONCC","CA-GRV":"ONCC","CA-GTN":"ONCC","CA-GUA":"OSCC","CA-GUS":"OSCC","CA-GVF":"ONCC","CA-GWR":"ONCC","CA-HAM":"ONCC","CA-HAN":"OSCC","CA-HAP":"ONCC","CA-HAY":"ONCC","CA-HBF":"ONCC","CA-HBR":"ONCC","CA-HBV":"ONCC","CA-HCF":"OSCC","CA-HCS":"ONCC","CA-HEA":"ONCC","CA-HER":"ONCC","CA-HES":"OSCC","CA-HFR":"OSCC","CA-HGF":"ONCC","CA-HGS":"OSCC","CA-HIA":"ONCC","CA-HIG":"OSCC","CA-HLT":"OSCC","CA-HLV":"OSCC","CA-HLYQ":"OSCC","CA-HMB":"OSCC","CA-HMM":"ONCC","CA-HMT":"OSCC","CA-HOL":"OSCC","CA-HOP":"ONCC","CA-HOR":"ONCC","CA-HPR":"OSCC","CA-HRL":"ONCC","CA-HRT":"OSCC","CA-HTB":"OSCC","CA-HUM":"ONCC","CA-HUU":"ONCC","CA-HVF":"ONCC","CA-HYF":"ONCC","CA-HYM":"ONCC","CA-IBNQ":"OSCC","CA-IDL":"OSCC","CA-IDP":"OSCC","CA-IMB":"OSCC","CA-IMP":"OSCC","CA-IMR":"OSCC","CA-IND":"OSCC","CA-INF":"OSCC","CA-INV":"ONCC","CA-INW":"OSCC","CA-ION":"ONCC","CA-IRYQ":"OSCC","CA-ISL":"ONCC","CA-JBP":"ONCC","CA-JCF":"ONCC","CA-JCK":"ONCC","CA-JKS":"ONCC","CA-JMP":"ONCC","CA-JNR":"ONCC","CA-JNV":"ONCC","CA-JST":"OSCC","CA-JTP":"OSCC","CA-JUN":"OSCC","CA-JVF":"OSCC","CA-KAN":"ONCC","CA-KCF":"OSCC","CA-KEE":"OSCC","CA-KEY":"OSCC","CA-KFD":"ONCC","CA-KIN":"OSCC","CA-KLA":"ONCC","CA-KLR":"ONCC","CA-KLS":"ONCC","CA-KNF":"ONCC","CA-KNG":"OSCC","CA-KNI":"ONCC","CA-KNP":"OSCC","CA-KNT":"ONCC","CA-KNV":"ONCC","CA-KRK":"ONCC","CA-KRN":"OSCC","CA-KRR":"OSCC","CA-KWD":"ONCC","CA-LAAQ":"OSCC","CA-LAB":"OSCC","CA-LAC":"OSCC","CA-LAK":"ONCC","CA-LAP":"ONCC","CA-LAQ":"OSCC","CA-LAT":"OSCC","CA-LAV":"ONCC","CA-LBL":"ONCC","CA-LBN":"OSCC","CA-LEE":"OSCC","CA-LEG":"ONCC","CA-LEM":"OSCC","CA-LEW":"ONCC","CA-LFD":"OSCC","CA-LFP":"ONCC","CA-LFV":"ONCC","CA-LGV":"OSCC","CA-LHH":"OSCC","CA-LIB":"OSCC","CA-LIK":"ONCC","CA-LKC":"ONCC","CA-LKP":"ONCC","CA-LKR":"ONCC","CA-LKS":"OSCC","CA-LKV":"ONCC","CA-LLL":"ONCC","CA-LMD":"OSCC","CA-LMF":"ONCC","CA-LMP":"OSCC","CA-LMS":"OSCC","CA-LMU":"ONCC","CA-LNA":"ONCC","CA-LNC":"ONCC","CA-LNF":"ONCC","CA-LNG":"OSCC","CA-LNP":"ONCC","CA-LNQ":"OSCC","CA-LNS":"OSCC","CA-LNU":"ONCC","CA-LOB":"OSCC","CA-LOD":"OSCC","CA-LOL":"ONCC","CA-LOM":"OSCC","CA-LOO":"ONCC","CA-LOY":"ONCC","CA-LPE":"OSCC","CA-LPF":"OSCC","CA-LPN":"OSCC","CA-LPR":"OSCC","CA-LRB":"ONCC","CA-LSH":"ONCC","CA-LSN":"OSCC","CA-LST":"ONCC","CA-LTB":"ONCC","CA-LTL":"ONCC","CA-LUR":"OSCC","CA-LVF":"ONCC","CA-LVG":"OSCC","CA-LVL":"ONCC","CA-LVN":"OSCC","CA-LVR":"ONCC","CA-LVV":"ONCC","CA-LYNG":"OSCC","CA-MAD":"ONCC","CA-MAF":"ONCC","CA-MAM":"OSCC","CA-MAN":"OSCC","CA-MAQ":"OSCC","CA-MAR":"OSCC","CA-MAX":"ONCC","CA-MAY":"ONCC","CA-MCA":"ONCC","CA-MCC":"OSCC","CA-MCF":"OSCC","CA-MCR":"OSCC","CA-MCU":"ONCC","CA-MDA":"OSCC","CA-MDC":"OSCC","CA-MDF":"ONCC","CA-MDN":"ONCC","CA-MDR":"ONCC","CA-MDS":"ONCC","CA-MDT":"ONCC","CA-MEK":"ONCC","CA-MEN":"OSCC","CA-MER":"OSCC","CA-MEU":"ONCC","CA-MFC":"ONCC","CA-MFE":"OSCC","CA-MFR":"OSCC","CA-MGO":"OSCC","CA-MHB":"OSCC","CA-MIR":"ONCC","CA-MKE":"OSCC","CA-MLD":"ONCC","CA-MLF":"ONCC","CA-MLP":"ONCC","CA-MLV":"ONCC","CA-MMNQ":"OSCC","CA-MMQ":"OSCC","CA-MMU":"OSCC","CA-MND":"ONCC","CA-MNF":"ONCC","CA-MNL":"ONCC","CA-MNP":"OSCC","CA-MNQ":"OSCC","CA-MNT":"OSCC","CA-MOE":"ONCC","CA-MOF":"ONCC","CA-MOK":"OSCC","CA-MON":"OSCC","CA-MOR":"ONCC","CA-MOS":"ONCC","CA-MPA":"OSCC","CA-MPK":"OSCC","CA-MQT":"ONCC","CA-MRA":"OSCC","CA-MRB":"OSCC","CA-MRD":"OSCC","CA-MRG":"ONCC","CA-MRK":"OSCC","CA-MRN":"ONCC","CA-MRO":"ONCC","CA-MRP":"OSCC","CA-MRV":"OSCC","CA-MRW":"ONCC","CA-MSH":"ONCC","CA-MST":"ONCC","CA-MSV":"ONCC","CA-MTB":"OSCC","CA-MTC":"OSCC","CA-MTF":"ONCC","CA-MTN":"ONCC","CA-MTO":"OSCC","CA-MTS":"ONCC","CA-MTV":"ONCC","CA-MTZ":"ONCC","CA-MUI":"ONCC","CA-MUR":"OSCC","CA-MVF":"ONCC","CA-MVL":"ONCC","CA-MVU":"OSCC","CA-MVW":"OSCC","CA-MVY":"ONCC","CA-MWD":"ONCC","CA-MWP":"ONCC","CA-MYC":"ONCC","CA-MYR":"ONCC","CA-MZP":"OSCC","CA-NAG":"OSCC","CA-NAP":"ONCC","CA-NAT":"OSCC","CA-NBY":"OSCC","CA-NCA":"ONCC","CA-NCAL":"ONCC","CA-NCC":"ONCC","CA-NCD":"OSCC","CA-NCF":"OSCC","CA-NCL":"ONCC","CA-NCN":"OSCC","CA-NCS":"ONCC","CA-NED":"OSCC","CA-NEU":"ONCC","CA-NEV":"ONCC","CA-NEW":"ONCC","CA-NIL":"OSCC","CA-NLD":"OSCC","CA-NOD":"ONCC","CA-NOR":"OSCC","CA-NOV":"ONCC","CA-NPA":"ONCC","CA-NPB":"OSCC","CA-NPP":"ONCC","CA-NRS":"ONCC","CA-NSC":"ONCC","CA-NSD":"ONCC","CA-NSH":"ONCC","CA-NSJ":"ONCC","CA-NSP":"ONCC","CA-NTF":"ONCC","CA-NVR":"ONCC","CA-NWL":"ONCC","CA-NWM":"ONCC","CA-OAP":"OSCC","CA-OCD":"ONCC","CA-OCF":"OSCC","CA-OCS":"OSCC","CA-OCYQ":"ONCC","CA-ODF":"OSCC","CA-ODL":"OSCC","CA-OES":"ONCC","CA-OKL":"ONCC","CA-OLC":"OSCC","CA-OLI":"ONCC","CA-OLN":"ONCC","CA-OLV":"ONCC","CA-OPH":"ONCC","CA-ORC":"OSCC","CA-ORD":"ONCC","CA-ORG":"OSCC","CA-ORK":"ONCC","CA-ORL":"ONCC","CA-ORN":"ONCC","CA-ORO":"ONCC","CA-OTO":"OSCC","CA-OXD":"OSCC","CA-OYNG":"OSCC","CA-PAF":"ONCC","CA-PAJ":"ONCC","CA-PAR":"OSCC","CA-PAS":"OSCC","CA-PAT":"ONCC","CA-PBF":"ONCC","CA-PCF":"ONCC","CA-PCP":"ONCC","CA-PDF":"OSCC","CA-PDS":"OSCC","CA-PEB":"OSCC","CA-PEF":"ONCC","CA-PER":"OSCC","CA-PET":"ONCC","CA-PHF":"ONCC","CA-PHL":"ONCC","CA-PIE":"ONCC","CA-PIO":"ONCC","CA-PIP":"OSCC","CA-PLG":"ONCC","CA-PLNQ":"OSCC","CA-PLR":"OSCC","CA-PLW":"ONCC","CA-PLY":"ONCC","CA-PMQ":"OSCC","CA-PMT":"ONCC","CA-PMYQ":"OSCC","CA-PNF":"ONCC","CA-PNP":"ONCC","CA-PNS":"ONCC","CA-PNV":"ONCC","CA-POT":"ONCC","CA-POW":"OSCC","CA-PRA":"ONCC","CA-PRC":"ONCC","CA-PRD":"OSCC","CA-PRF":"OSCC","CA-PRG":"OSCC","CA-PRN":"ONCC","CA-PRP":"ONCC","CA-PRS":"ONCC","CA-PRT":"ONCC","CA-PSD":"OSCC","CA-PSM":"OSCC","CA-PSP":"OSCC","CA-PTA":"ONCC","CA-PTL":"ONCC","CA-PVF":"ONCC","CA-PVL":"OSCC","CA-QUI":"ONCC","CA-RAD":"ONCC","CA-RAR":"ONCC","CA-RBR":"ONCC","CA-RBU":"ONCC","CA-RCD":"OSCC","CA-RCF":"OSCC","CA-RCV":"ONCC","CA-RDB":"OSCC","CA-RDD":"ONCC","CA-RDN":"ONCC","CA-RDO":"ONCC","CA-RDW":"ONCC","CA-RED":"OSCC","CA-REE":"OSCC","CA-RES":"ONCC","CA-RIA":"OSCC","CA-RID":"ONCC","CA-RIO":"ONCC","CA-RIP":"ONCC","CA-RIV":"OSCC","CA-RMD":"ONCC","CA-RMG":"OSCC","CA-RMQ":"GBCC","CA-RNP":"ONCC","CA-ROH":"ONCC","CA-ROK":"ONCC","CA-ROS":"ONCC","CA-RRF":"ONCC","CA-RRP":"ONCC","CA-RRU":"OSCC","CA-RSF":"OSCC","CA-RSP":"OSCC","CA-RSV":"ONCC","CA-RVC":"OSCC","CA-RVD":"OSCC","CA-RVF":"ONCC","CA-RVS":"ONCC","CA-RVY":"ONCC","CA-RWNQ":"OSCC","CA-RWO":"ONCC","CA-RWP":"ONCC","CA-RYN":"ONCC","CA-RYNG":"OSCC","CA-SAC":"ONCC","CA-SAF":"ONCC","CA-SAL":"OSCC","CA-SAM":"ONCC","CA-SAN":"OSCC","CA-SAP":"ONCC","CA-SAR":"ONCC","CA-SAV":"OSCC","CA-SAYQ":"ONCC","CA-SBC":"OSCC","CA-SBF":"ONCC","CA-SBG":"ONCC","CA-SBN":"OSCC","CA-SBNQ":"OSCC","CA-SBR":"ONCC","CA-SBY":"OSCC","CA-SCA":"OSCC","CA-SCC":"ONCC","CA-SCCL":"OSCC","CA-SCF":"ONCC","CA-SCH":"ONCC","CA-SCN":"ONCC","CA-SCNQ":"OSCC","CA-SCO":"ONCC","CA-SCR":"ONCC","CA-SCS":"ONCC","CA-SCT":"ONCC","CA-SCU":"ONCC","CA-SCV":"ONCC","CA-SCZ":"ONCC","CA-SDC":"ONCC","CA-SDF":"OSCC","CA-SDYQ":"OSCC","CA-SEA":"OSCC","CA-SEB":"ONCC","CA-SEI":"ONCC","CA-SER":"ONCC","CA-SFP":"ONCC","CA-SFR":"ONCC","CA-SFS":"OSCC","CA-SGB":"OSCC","CA-SGR":"OSCC","CA-SHA":"ONCC","CA-SHC":"ONCC","CA-SHE":"ONCC","CA-SHF":"ONCC","CA-SHL":"OSCC","CA-SHS":"ONCC","CA-SHU":"ONCC","CA-SIR":"OSCC","CA-SIS":"ONCC","CA-SJB":"OSCC","CA-SJC":"ONCC","CA-SJR":"OSCC","CA-SJS":"ONCC","CA-SJT":"OSCC","CA-SKR":"ONCC","CA-SKU":"ONCC","CA-SLA":"ONCC","CA-SLC":"OSCC","CA-SLD":"OSCC","CA-SLF":"ONCC","CA-SLL":"ONCC","CA-SLM":"OSCC","CA-SLO":"OSCC","CA-SLS":"OSCC","CA-SLT":"ONCC","CA-SLU":"OSCC","CA-SLV":"ONCC","CA-SMA":"OSCC","CA-SMC":"OSCC","CA-SMD":"OSCC","CA-SMF":"OSCC","CA-SMG":"OSCC","CA-SMI":"OSCC","CA-SMM":"OSCC","CA-SMP":"OSCC","CA-SMQ":"OSCC","CA-SMR":"OSCC","CA-SMT":"ONCC","CA-SMV":"OSCC","CA-SMY":"OSCC","CA-SNB":"ONCC","CA-SNC":"ONCC","CA-SND":"OSCC","CA-SNF":"OSCC","CA-SNM":"OSCC","CA-SNO":"OSCC","CA-SNQ":"OSCC","CA-SNR":"ONCC","CA-SNT":"OSCC","CA-SNY":"ONCC","CA-SOF":"OSCC","CA-SOL":"OSCC","CA-SOM":"ONCC","CA-SON":"ONCC","CA-SOR":"OSCC","CA-SOT":"ONCC","CA-SPA":"OSCC","CA-SPK":"OSCC","CA-SPL":"ONCC","CA-SPR":"ONCC","CA-SPS":"OSCC","CA-SPV":"ONCC","CA-SQF":"OSCC","CA-SRA":"ONCC","CA-SRF":"ONCC","CA-SRM":"ONCC","CA-SRPC":"OSCC","CA-SRR":"ONCC","CA-SRS":"ONCC","CA-SRV":"ONCC","CA-SSB":"OSCC","CA-SSF":"ONCC","CA-SSL":"OSCC","CA-SSN":"ONCC","CA-SSR":"ONCC","CA-STA":"OSCC","CA-STB":"OSCC","CA-STC":"ONCC","CA-STF":"OSCC","CA-STH":"ONCC","CA-STL":"ONCC","CA-STO":"OSCC","CA-STR":"ONCC","CA-SUC":"ONCC","CA-SUF":"ONCC","CA-SUI":"ONCC","CA-SUS":"ONCC","CA-SUT":"ONCC","CA-SVF":"ONCC","CA-SWF":"OSCC","CA-SWR":"ONCC","CA-SWV":"OSCC","CA-SYR":"ONCC","CA-TAY":"ONCC","CA-TBR":"OSCC","CA-TCC":"ONCC","CA-TCR":"ONCC","CA-TCU":"OSCC","CA-TEL":"ONCC","CA-TEM":"OSCC","CA-TEN":"ONCC","CA-TFT":"OSCC","CA-TGU":"ONCC","CA-THC":"OSCC","CA-THO":"OSCC","CA-TIB":"ONCC","CA-TIM":"ONCC","CA-TJR":"OSCC","CA-TKR":"ONCC","CA-TLC":"OSCC","CA-TLR":"OSCC","CA-TLU":"OSCC","CA-TMC":"OSCC","CA-TMP":"ONCC","CA-TMQ":"OSCC","CA-TMU":"ONCC","CA-TNF":"ONCC","CA-TNR":"OSCC","CA-TOM":"ONCC","CA-TOR":"OSCC","CA-TRK":"ONCC","CA-TRL":"OSCC","CA-TRN":"ONCC","CA-TRQ":"ONCC","CA-TSH":"OSCC","CA-TUL":"ONCC","CA-TUO":"OSCC","CA-TUR":"OSCC","CA-TUU":"OSCC","CA-TWA":"OSCC","CA-TWO":"ONCC","CA-TWP":"OSCC","CA-UKD":"OSCC","CA-UKH":"ONCC","CA-UKV":"ONCC","CA-UNU":"ONCC","CA-UPL":"OSCC","CA-VAC":"ONCC","CA-VAN":"ONCC","CA-VAQ":"OSCC","CA-VCF":"OSCC","CA-VCV":"OSCC","CA-VEN":"OSCC","CA-VER":"OSCC","CA-VFC":"ONCC","CA-VFV":"ONCC","CA-VJS":"OSCC","CA-VLJ":"ONCC","CA-VNC":"OSCC","CA-VNQ":"OSCC","CA-VSA":"OSCC","CA-VTA":"OSCC","CA-VVF":"ONCC","CA-WAC":"ONCC","CA-WAF":"ONCC","CA-WCR":"ONCC","CA-WCV":"OSCC","CA-WDL":"ONCC","CA-WDR":"OSCC","CA-WEA":"ONCC","CA-WED":"ONCC","CA-WEO":"ONCC","CA-WFA":"ONCC","CA-WFD":"ONCC","CA-WFNQ":"OSCC","CA-WHT":"ONCC","CA-WIL":"ONCC","CA-WLA":"OSCC","CA-WLF":"OSCC","CA-WLL":"ONCC","CA-WLM":"ONCC","CA-WLO":"ONCC","CA-WLR":"ONCC","CA-WLT":"ONCC","CA-WMG":"ONCC","CA-WML":"OSCC","CA-WMR":"OSCC","CA-WMT":"OSCC","CA-WNP":"ONCC","CA-WOD":"ONCC","CA-WOF":"ONCC","CA-WPL":"ONCC","CA-WPT":"OSCC","CA-WPV":"ONCC","CA-WSC":"ONCC","CA-WSF":"OSCC","CA-WSNQ":"OSCC","CA-WTS":"ONCC","CA-WUK":"OSCC","CA-WWO":"ONCC","CA-WWR":"ONCC","CA-XBE":"OSCC","CA-XBU":"ONCC","CA-XSM":"ONCC","CA-YDF":"ONCC","CA-YER":"OSCC","CA-YNP":"OSCC","CA-YOL":"ONCC","CA-YRE":"ONCC","CA-YUB":"ONCC","CA-YUC":"OSCC","CA-ZAM":"ONCC","CA-ZAY":"ONCC","CA-ZEN":"ONCC","CA-ZUM":"OSCC","CO-AFQ":"RMCC","CO-ALR":"RMCC","CO-ARF":"RMCC","CO-ARR":"RMCC","CO-BAR":"RMCC","CO-BCP":"RMCC","CO-BFP":"RMCC","CO-BPR":"RMCC","CO-BUAQ":"RMCC","CO-CCP":"RMCC","CO-CFX":"RMCC","CO-CMQ":"RMCC","CO-CNP":"RMCC","CO-CRD":"RMCC","CO-CTX":"RMCC","CO-CUX":"RMCC","CO-CWX":"RMCC","CO-CYX":"RMCC","CO-DEX":"RMCC","CO-DGX":"RMCC","CO-DSP":"RMCC","CO-EAX":"RMCC","CO-ELX":"RMCC","CO-EPX":"RMCC","CO-FCQ":"RMCC","CO-FFP":"RMCC","CO-FRX":"RMCC","CO-GFX":"RMCC","CO-GJD":"RMCC","CO-GLX":"RMCC","CO-GMF":"RMCC","CO-GND":"RMCC","CO-GRD":"RMCC","CO-GRX":"RMCC","CO-GSP":"RMCC","CO-GUX":"RMCC","CO-GWD":"RMCC","CO-HIX":"RMCC","CO-HUX":"RMCC","CO-ISPZ":"RMCC","CO-JCX":"RMCC","CO-JEX":"RMCC","CO-KCX":"RMCC","CO-KRD":"RMCC","CO-KWX":"RMCC","CO-LCX":"RMCC","CO-LKX":"RMCC","CO-LOX":"RMCC","CO-LPX":"RMCC","CO-LRX":"RMCC","CO-LSD":"RMCC","CO-LSX":"RMCC","CO-MEX":"RMCC","CO-MFX":"RMCC","CO-MGX":"RMCC","CO-MLX":"RMCC","CO-MNX":"RMCC","CO-MRX":"RMCC","CO-MVP":"RMCC","CO-MVR":"RMCC","CO-OTX":"RMCC","CO-OUX":"RMCC","CO-PAQ":"RMCC","CO-PAX":"RMCC","CO-PCYQ":"RMCC","CO-PDYQ":"RMCC","CO-PLTZ":"RMCC","CO-PLX":"RMCC","CO-PSF":"RMCC","CO-PTX":"RMCC","CO-PUX":"RMCC","CO-PWX":"RMCC","CO-RBX":"RMCC","CO-RFR":"RMCC","CO-RGD":"RMCC","CO-RGF":"RMCC","CO-RGX":"RMCC","CO-RMD":"RMCC","CO-RMKX":"RMCC","CO-RMP":"RMCC","CO-RMR":"RMCC","CO-RTX":"RMCC","CO-SAQ":"RMCC","CO-SCP":"RMCC","CO-SGX":"RMCC","CO-SHX":"RMCC","CO-SJF":"RMCC","CO-SJX":"RMCC","CO-SLD":"RMCC","CO-SLX":"RMCC","CO-STX":"RMCC","CO-SUA":"RMCC","CO-SUTZ":"RMCC","CO-SWD":"RMCC","CO-TLX":"RMCC","CO-TOWZ":"RMCC","CO-TSD":"RMCC","CO-TTCX":"RMCC","CO-UMA":"RMCC","CO-UPD":"RMCC","CO-WAX":"RMCC","CO-WCAL":"RMCC","CO-WEX":"RMCC","CO-WRD":"RMCC","CO-WRF":"RMCC","CO-YHP":"RMCC","CO-YMX":"RMCC","CT-CTFN":"EACC","CT-CTS":"EACC","CT-HYNG":"EACC","CT-MOT":"EACC","CT-NLNQ":"EACC","CT-PET":"EACC","CT-QSP":"EACC","CT-SMR":"EACC","CT-SWR":"EACC","CT-SYNG":"EACC","CT-WFP":"EACC","DC-AAP":"SACC","DC-ACP":"SACC","DC-CDP":"SACC","DC-CGP":"SACC","DC-CHP":"SACC","DC-CWP":"SACC","DC-ESO":"SACC","DC-FDP":"SACC","DC-FE3":"SACC","DC-FEMA":"SACC","DC-FOP":"SACC","DC-FRP":"SACC","DC-FTP":"SACC","DC-FWP":"SACC","DC-GMP":"SACC","DC-JEP":"SACC","DC-KGP":"SACC","DC-KWP":"SACC","DC-LIP":"SACC","DC-MMP":"SACC","DC-NAP":"SACC","DC-NEP":"SACC","DC-NOJC":"SACC","DC-NPP":"SACC","DC-OPP":"SACC","DC-OSP":"SACC","DC-PAP":"SACC","DC-PIP":"SACC","DC-PMP":"SACC","DC-RCP":"SACC","DC-SBP":"SACC","DC-SUP":"SACC","DC-TJP":"SACC","DC-USFA":"SACC","DC-VVP":"SACC","DC-WHP":"SACC","DC-WNQ":"SACC","DC-WOA":"SACC","DC-WOD":"SACC","DC-WOF":"SACC","DC-WOI":"SACC","DC-WOO":"SACC","DC-WOP":"SACC","DC-WOR":"SACC","DE-BHR":"EACC","DE-CPON":"EACC","DE-DES":"EACC","DE-DOAQ":"EACC","DE-FSP":"EACC","DE-PHR":"EACC","FL-ACR":"SACC","FL-APQ":"SACC","FL-ARCP":"SACC","FL-BCP":"SACC","FL-BIP":"SACC","FL-BMQ":"SACC","FL-BYNG":"SACC","FL-CAP":"SACC","FL-CAR":"SACC","FL-CCAQ":"SACC","FL-CDP":"SACC","FL-CHR":"SACC","FL-CKR":"SACC","FL-CLR":"SACC","FL-CRR":"SACC","FL-DNP":"SACC","FL-DTP":"SACC","FL-EAQ":"SACC","FL-EGR":"SACC","FL-EHR":"SACC","FL-EVP":"SACC","FL-FCP":"SACC","FL-FE4":"SACC","FL-FLFN":"SACC","FL-FLS":"SACC","FL-FMP":"SACC","FL-FNF":"SACC","FL-FPR":"SACC","FL-GIP":"SACC","FL-GWR":"SACC","FL-HARQ":"SACC","FL-HBR":"SACC","FL-HUAQ":"SACC","FL-ISR":"SACC","FL-JAXW":"SACC","FL-JNQ":"SACC","FL-JNR":"SACC","FL-KER":"SACC","FL-KEYW":"SACC","FL-KWNQ":"SACC","FL-LRR":"SACC","FL-LSR":"SACC","FL-LWR":"SACC","FL-LXR":"SACC","FL-MAR":"SACC","FL-MBPR":"SACC","FL-MDAQ":"SACC","FL-MIR":"SACC","FL-MIT":"SACC","FL-MIYQ":"SACC","FL-MLBW":"SACC","FL-MNQ":"SACC","FL-MSFW":"SACC","FL-NFCR":"SACC","FL-NFER":"SACC","FL-NKR":"SACC","FL-ONQ":"SACC","FL-PAAQ":"SACC","FL-PAR":"SACC","FL-PCER":"SACC","FL-PCNQ":"SACC","FL-PFCR":"SACC","FL-PIR":"SACC","FL-PLR":"SACC","FL-PNQ":"SACC","FL-PNR":"SACC","FL-SEA":"SACC","FL-SEM":"SACC","FL-SET":"SACC","FL-SJR":"SACC","FL-SMR":"SACC","FL-SVR":"SACC","FL-TALW":"SACC","FL-TBAW":"SACC","FL-TBR":"SACC","FL-TIP":"SACC","FL-TTR":"SACC","FL-TYQ":"SACC","FL-VBER":"SACC","FL-WLFH":"SACC","GA-AESR":"SACC","GA-AMD":"SACC","GA-AMQ":"SACC","GA-ANP":"SACC","GA-BGR":"SACC","GA-BLR":"SACC","GA-BNR":"SACC","GA-BNYQ":"SACC","GA-BSR":"SACC","GA-CHF":"SACC","GA-CHFR":"SACC","GA-CHP":"SACC","GA-CIP":"SACC","GA-CRP":"SACC","GA-DOAQ":"SACC","GA-FE4":"SACC","GA-FFP":"SACC","GA-FLE":"SACC","GA-FPP":"SACC","GA-FSQ":"SACC","GA-GAS":"SACC","GA-HSR":"SACC","GA-JCP":"SACC","GA-KBNQ":"SACC","GA-KEP":"SACC","GA-MLP":"SACC","GA-MOAQ":"SACC","GA-NRC":"SACC","GA-OCP":"SACC","GA-OKR":"SACC","GA-PDR":"SACC","GA-R08":"SACC","GA-R4R":"SACC","GA-ROAQ":"SACC","GA-SRS":"SACC","GA-TYR":"SACC","GA-WLR":"SACC","GA-WSFH":"SACC","GA-WSR":"SACC","GU-BMQ":"ONCC","GU-GFOW":"ONCC","GU-GNQ":"ONCC","GU-WPP":"ONCC","HI-AKP":"ONCC","HI-HAR":"ONCC","HI-HAWX":"ONCC","HI-HFO":"ONCC","HI-HFOW":"ONCC","HI-HIR":"ONCC","HI-HIS":"ONCC","HI-HKP":"ONCC","HI-HLR":"ONCC","HI-HMQ":"ONCC","HI-HNLX":"ONCC","HI-HNR":"ONCC","HI-HOP":"ONCC","HI-HVP":"ONCC","HI-JCR":"ONCC","HI-KAP":"ONCC","HI-KAUX":"ONCC","HI-KHP":"ONCC","HI-KIR":"ONCC","HI-KIS":"ONCC","HI-KKR":"ONCC","HI-KMQ":"ONCC","HI-KRNG":"ONCC","HI-KWNG":"ONCC","HI-KYNG":"ONCC","HI-MAS":"ONCC","HI-MAUX":"ONCC","HI-OAS":"ONCC","HI-PCR":"ONCC","HI-PHNQ":"ONCC","HI-PHP":"ONCC","HI-PHR":"ONCC","HI-PMNQ":"ONCC","HI-PRHW":"ONCC","HI-PTYQ":"ONCC","HI-PUP":"ONCC","HI-PYNG":"ONCC","HI-RYNG":"ONCC","HI-SFYQ":"ONCC","HI-TYNG":"ONCC","HI-USP":"ONCC","HI-UYNG":"ONCC","HI-WYNG":"ONCC","IA-BKGN":"EACC","IA-DAR":"EACC","IA-DSR":"EACC","IA-DYNG":"EACC","IA-EMP":"EACC","IA-HHP":"EACC","IA-IAS":"EACC","IA-MGR":"EACC","IA-NSR":"EACC","IA-PLR":"EACC","IA-PVR":"EACC","IA-SEM":"EACC","IA-SFA":"EACC","IA-USR":"EACC","IA-WTR":"EACC","ID-10BN":"GBCC","ID-1AX":"GBCC","ID-1BN":"GBCC","ID-1FN":"GBCC","ID-1GX":"GBCC","ID-1JN":"GBCC","ID-1MN":"GBCC","ID-1ON":"GBCC","ID-1PX":"GBCC","ID-1TN":"GBCC","ID-1VX":"GBCC","ID-1WX":"GBCC","ID-2BN":"GBCC","ID-2CX":"GBCC","ID-2FN":"GBCC","ID-2PN":"GBCC","ID-3CN":"GBCC","ID-4BN":"GBCC","ID-5CN":"GBCC","ID-6BX":"GBCC","ID-8BIN":"GBCC","ID-8BN":"GBCC","ID-ADX":"GBCC","ID-BLR":"GBCC","ID-BLX":"GBCC","ID-BOD":"GBCC","ID-BOF":"GBCC","ID-BRD":"GBCC","ID-BUD":"GBCC","ID-CAS":"NRCC","ID-CAX":"GBCC","ID-CDD":"NRCC","ID-CDS":"NRCC","ID-CHD":"GBCC","ID-CMP":"GBCC","ID-CMS":"NRCC","ID-CMX":"GBCC","ID-COD":"NRCC","ID-CRP":"GBCC","ID-CSR":"GBCC","ID-CTF":"GBCC","ID-CTS":"NRCC","ID-CUX":"GBCC","ID-CWD":"NRCC","ID-CWS":"NRCC","ID-DFR":"GBCC","ID-EIS":"GBCC","ID-ELX":"GBCC","ID-FHA":"GBCC","ID-FRD":"GBCC","ID-GJX":"GBCC","ID-GLR":"GBCC","ID-GOX":"GBCC","ID-HFP":"GBCC","ID-HFR":"GBCC","ID-IDS":"GBCC","ID-IFD":"GBCC","ID-INE":"GBCC","ID-IOEM":"GBCC","ID-IPF":"NRCC","ID-JAD":"GBCC","ID-JMX":"GBCC","ID-JULX":"NRCC","ID-KAMX":"NRCC","ID-KENX":"NRCC","ID-KER":"GBCC","ID-KFH":"NRCC","ID-KOR":"NRCC","ID-KSKX":"NRCC","ID-KTNX":"NRCC","ID-KTVX":"NRCC","ID-KVS":"NRCC","ID-LAPX":"NRCC","ID-LENX":"NRCC","ID-LEWX":"NRCC","ID-LEX":"GBCC","ID-LG09":"NRCC","ID-LG17":"NRCC","ID-LG21":"NRCC","ID-LG35":"NRCC","ID-LG49":"NRCC","ID-LG55":"NRCC","ID-LG57":"NRCC","ID-LG61":"NRCC","ID-LG69":"NRCC","ID-LG79":"NRCC","ID-LNX":"GBCC","ID-LPE":"GBCC","ID-MCS":"NRCC","ID-MHQ":"GBCC","ID-MIS":"NRCC","ID-MKIX":"NRCC","ID-MLLX":"NRCC","ID-MNR":"GBCC","ID-MNX":"GBCC","ID-MOSX":"NRCC","ID-MOYX":"NRCC","ID-MRYX":"NRCC","ID-MVH":"GBCC","ID-MVX":"GBCC","ID-NBCX":"NRCC","ID-NCF":"NRCC","ID-NEZX":"NRCC","ID-NIA":"NRCC","ID-NLRX":"NRCC","ID-NNRX":"NRCC","ID-NPP":"NRCC","ID-OROX":"NRCC","ID-OSBX":"NRCC","ID-OWD":"GBCC","ID-OWX":"GBCC","ID-OYNG":"GBCC","ID-PAF":"GBCC","ID-PAS":"GBCC","ID-PAVX":"NRCC","ID-PDS":"NRCC","ID-PDYX":"NRCC","ID-PFN":"GBCC","ID-PGRX":"NRCC","ID-PLS":"NRCC","ID-PLX":"GBCC","ID-PMRX":"NRCC","ID-POD":"GBCC","ID-POS":"NRCC","ID-PRCX":"NRCC","ID-PTLX":"NRCC","ID-RDGX":"NRCC","ID-RGGX":"NRCC","ID-SAGX":"NRCC","ID-SBRX":"NRCC","ID-SC3X":"NRCC","ID-SCF":"GBCC","ID-SCHX":"NRCC","ID-SFD":"GBCC","ID-SFH":"GBCC","ID-SHD":"GBCC","ID-SHSX":"NRCC","ID-SIS":"GBCC","ID-SJOX":"NRCC","ID-SJS":"NRCC","ID-SLMX":"NRCC","ID-SMMX":"NRCC","ID-SORX":"NRCC","ID-SPLX":"NRCC","ID-SPTX":"NRCC","ID-SRL":"GBCC","ID-SRRX":"NRCC","ID-STF":"GBCC","ID-STTX":"NRCC","ID-SWS":"GBCC","ID-TFD":"GBCC","ID-TMLX":"NRCC","ID-TNRX":"NRCC","ID-TRYX":"NRCC","ID-TSDX":"NRCC","ID-TWX":"GBCC","ID-UFRX":"NRCC","ID-UPD":"GBCC","ID-WINX":"NRCC","ID-WORX":"NRCC","ID-WPDX":"NRCC","ID-WPPX":"NRCC","ID-WPRX":"NRCC","ID-WSRX":"NRCC","ID-WTBX":"NRCC","IL-AYNG":"EACC","IL-COR":"EACC","IL-CTR":"EACC","IL-CYR":"EACC","IL-ELR":"EACC","IL-ENR":"EACC","IL-GLNQ":"EACC","IL-HMR":"EACC","IL-ILFN":"EACC","IL-ILR":"EACC","IL-ILS":"EACC","IL-KNR":"EACC","IL-KWR":"EACC","IL-LHP":"EACC","IL-MDR":"EACC","IL-MMR":"EACC","IL-MPF":"EACC","IL-MTR":"EACC","IL-MYNG":"EACC","IL-PVR":"EACC","IL-SCAQ":"EACC","IL-SHF":"EACC","IL-SVR":"EACC","IL-SYNG":"EACC","IL-TWR":"EACC","IN-BOR":"EACC","IN-CNQ":"EACC","IN-GRAQ":"EACC","IN-GRP":"EACC","IN-HOF":"EACC","IN-IDP":"EACC","IN-INFN":"EACC","IN-INS":"EACC","IN-LBP":"EACC","IN-MSR":"EACC","IN-PKR":"EACC","IN-PVR":"EACC","IN-SEM":"EACC","KS-ALX":"RMCC","KS-ANX":"RMCC","KS-ATX":"RMCC","KS-BAX":"RMCC","KS-BBP":"RMCC","KS-BBX":"RMCC","KS-BRX":"RMCC","KS-BTX":"RMCC","KS-BUX":"RMCC","KS-CAX":"RMCC","KS-CDX":"RMCC","KS-CFX":"RMCC","KS-CKX":"RMCC","KS-CLX":"RMCC","KS-CMX":"RMCC","KS-CNX":"RMCC","KS-CQX":"RMCC","KS-CRX":"RMCC","KS-CSX":"RMCC","KS-CYX":"RMCC","KS-DCX":"RMCC","KS-DGX":"RMCC","KS-DKX":"RMCC","KS-DPX":"RMCC","KS-EDX":"RMCC","KS-EKX":"RMCC","KS-ELX":"RMCC","KS-EWX":"RMCC","KS-FHI":"RMCC","KS-FIX":"RMCC","KS-FLP":"RMCC","KS-FLR":"RMCC","KS-FOX":"RMCC","KS-FRQ":"RMCC","KS-FRX":"RMCC","KS-FSP":"RMCC","KS-GEX":"RMCC","KS-GHX":"RMCC","KS-GLX":"RMCC","KS-GOX":"RMCC","KS-GTX":"RMCC","KS-GWX":"RMCC","KS-GYX":"RMCC","KS-HGX":"RMCC","KS-HMX":"RMCC","KS-HOA":"RMCC","KS-HPX":"RMCC","KS-HSX":"RMCC","KS-HVX":"RMCC","KS-JAX":"RMCC","KS-JFX":"RMCC","KS-JOX":"RMCC","KS-JWX":"RMCC","KS-KEX":"RMCC","KS-KIR":"RMCC","KS-KMX":"RMCC","KS-KSS":"RMCC","KS-KWX":"RMCC","KS-LBX":"RMCC","KS-LCX":"RMCC","KS-LEX":"RMCC","KS-LGX":"RMCC","KS-LNX":"RMCC","KS-LVX":"RMCC","KS-LVYQ":"RMCC","KS-LYX":"RMCC","KS-MCAQ":"RMCC","KS-MCR":"RMCC","KS-MCX":"RMCC","KS-MEX":"RMCC","KS-MGX":"RMCC","KS-MIX":"RMCC","KS-MNX":"RMCC","KS-MPX":"RMCC","KS-MRX":"RMCC","KS-MSX":"RMCC","KS-MTX":"RMCC","KS-NIP":"RMCC","KS-NMX":"RMCC","KS-NOX":"RMCC","KS-NSX":"RMCC","KS-NTX":"RMCC","KS-OBX":"RMCC","KS-OSX":"RMCC","KS-OTX":"RMCC","KS-PLX":"RMCC","KS-PNX":"RMCC","KS-PRX":"RMCC","KS-PTX":"RMCC","KS-QUR":"RMCC","KS-RAX":"RMCC","KS-RCX":"RMCC","KS-RHX":"RMCC","KS-RLX":"RMCC","KS-RNX":"RMCC","KS-ROX":"RMCC","KS-RPX":"RMCC","KS-RSX":"RMCC","KS-SAX":"RMCC","KS-SCX":"RMCC","KS-SDX":"RMCC","KS-SFX":"RMCC","KS-SGX":"RMCC","KS-SHX":"RMCC","KS-SMX":"RMCC","KS-SNX":"RMCC","KS-STX":"RMCC","KS-SUX":"RMCC","KS-SVX":"RMCC","KS-SWX":"RMCC","KS-SYNG":"RMCC","KS-TGP":"RMCC","KS-THX":"RMCC","KS-TRX":"RMCC","KS-WAX":"RMCC","KS-WBX":"RMCC","KS-WHX":"RMCC","KS-WLX":"RMCC","KS-WOX":"RMCC","KS-WSX":"RMCC","KS-WYX":"RMCC","KY-ALP":"SACC","KY-BGYQ":"SACC","KY-CGP":"SACC","KY-CLR":"SACC","KY-CNMP":"SACC","KY-DBF":"SACC","KY-DFWS":"SACC","KY-DYNG":"SACC","KY-EYNG":"SACC","KY-FCQ":"SACC","KY-FE4":"SACC","KY-FESR":"SACC","KY-FKQ":"SACC","KY-GRR":"SACC","KY-KYS":"SACC","KY-LBF":"SACC","KY-LSVW":"SACC","KY-MCP":"SACC","KY-MSBP":"SACC","KY-SEM":"SACC","KY-WCFH":"SACC","KY-WXW":"SACC","KY-WYNG":"SACC","LA-ATR":"SACC","LA-BAAQ":"SACC","LA-BAR":"SACC","LA-BBR":"SACC","LA-BCR":"SACC","LA-BKR":"SACC","LA-BSR":"SACC","LA-BTR":"SACC","LA-BYNG":"SACC","LA-BYTR":"SACC","LA-CAP":"SACC","LA-CIR":"SACC","LA-COT":"SACC","LA-CPR":"SACC","LA-CTR":"SACC","LA-DLR":"SACC","LA-DRR":"SACC","LA-FE6":"SACC","LA-GCR":"SACC","LA-HAR":"SACC","LA-JEP":"SACC","LA-KIF":"SACC","LA-LAS":"SACC","LA-LCR":"SACC","LA-LESR":"SACC","LA-LMBR":"SACC","LA-LOR":"SACC","LA-LWR":"SACC","LA-MYNG":"SACC","LA-MYR":"SACC","LA-NCFH":"SACC","LA-NER":"SACC","LA-NONQ":"SACC","LA-NOP":"SACC","LA-POP":"SACC","LA-PYNG":"SACC","LA-RRR":"SACC","LA-SBR":"SACC","LA-SEM":"SACC","LA-SER":"SACC","LA-SHR":"SACC","LA-SHV":"SACC","LA-SWR":"SACC","LA-TBT":"SACC","LA-TNR":"SACC","LA-UOR":"SACC","LA-VYNG":"SACC","MA-ABR":"EACC","MA-ADP":"EACC","MA-BAP":"EACC","MA-BHP":"EACC","MA-BKR":"EACC","MA-BOP":"EACC","MA-BOXW":"EACC","MA-BSP":"EACC","MA-CCP":"EACC","MA-DVYQ":"EACC","MA-EMR":"EACC","MA-ESP":"EACC","MA-EYNG":"EACC","MA-FRP":"EACC","MA-GMR":"EACC","MA-GYNG":"EACC","MA-JFP":"EACC","MA-LOP":"EACC","MA-LWP":"EACC","MA-MAON":"EACC","MA-MAS":"EACC","MA-MIP":"EACC","MA-MMR":"EACC","MA-MSR":"EACC","MA-NAR":"EACC","MA-NIR":"EACC","MA-NNP":"EACC","MA-NTR":"EACC","MA-NWP":"EACC","MA-OBR":"EACC","MA-PRR":"EACC","MA-RCR":"EACC","MA-SAP":"EACC","MA-SCR":"EACC","MA-SEM":"EACC","MA-SIP":"EACC","MA-SPP":"EACC","MA-TIR":"EACC","MA-WEQ":"EACC","MD-ABQ":"EACC","MD-AIP":"EACC","MD-ANAQ":"EACC","MD-ANP":"EACC","MD-ANQ":"EACC","MD-BNQ":"EACC","MD-BWP":"EACC","MD-BWR":"EACC","MD-CAP":"EACC","MD-CBP":"EACC","MD-CJP":"EACC","MD-CLP":"EACC","MD-CMR":"EACC","MD-COP":"EACC","MD-ENR":"EACC","MD-FFP":"EACC","MD-FMP":"EACC","MD-GLP":"EACC","MD-GRP":"SACC","MD-HAP":"EACC","MD-HHP":"EACC","MD-HTP":"EACC","MD-IHNQ":"EACC","MD-MDFN":"EACC","MD-MDS":"EACC","MD-MDYQ":"EACC","MD-MOP":"EACC","MD-MTR":"EACC","MD-OFP":"EACC","MD-PHP":"EACC","MD-PRNQ":"EACC","MD-PWR":"EACC","MD-SBP":"EACC","MD-SEM":"EACC","MD-SQR":"EACC","MD-TNQ":"EACC","MD-TSP":"EACC","MD-WOW":"SACC","ME-ACP":"EACC","ME-ARR":"EACC","ME-AYNG":"EACC","ME-BBNG":"EACC","ME-BENG":"EACC","ME-BWNG":"EACC","ME-BYNG":"EACC","ME-CBR":"EACC","ME-CIR":"EACC","ME-CMR":"EACC","ME-CPR":"EACC","ME-CYNG":"EACC","ME-FIR":"EACC","ME-GLR":"EACC","ME-GYNG":"EACC","ME-GYXW":"EACC","ME-HYNG":"EACC","ME-KWP":"EACC","ME-MAP":"EACC","ME-MEFN":"EACC","ME-MES":"EACC","ME-MHR":"EACC","ME-MIT":"EACC","ME-PAA":"EACC","ME-PIR":"EACC","ME-PMR":"EACC","ME-PNQ":"EACC","ME-PYNG":"EACC","ME-RCP":"EACC","ME-RCR":"EACC","ME-SCP":"EACC","ME-SEM":"EACC","ME-SHR":"EACC","ME-SIR":"EACC","ME-WYNG":"EACC","MI-AUP":"EACC","MI-CYNG":"EACC","MI-DRR":"EACC","MI-FMP":"EACC","MI-GTB":"EACC","MI-GYNG":"EACC","MI-HAR":"EACC","MI-HFR":"EACC","MI-HIF":"EACC","MI-HMF":"EACC","MI-HUR":"EACC","MI-IRP":"EACC","MI-KBT":"EACC","MI-KWP":"EACC","MI-KWR":"EACC","MI-MIA":"EACC","MI-MIR":"EACC","MI-MIS":"EACC","MI-MWR":"EACC","MI-OTF":"EACC","MI-PCR":"EACC","MI-PRP":"EACC","MI-PVR":"EACC","MI-RRP":"EACC","MI-SDP":"EACC","MI-SEM":"EACC","MI-SNR":"EACC","MI-SSR":"EACC","MI-WMIN":"EACC","MN-1BS":"EACC","MN-1DS":"EACC","MN-1ES":"EACC","MN-1FS":"EACC","MN-1GS":"EACC","MN-2JS":"EACC","MN-2KS":"EACC","MN-2LS":"EACC","MN-2NS":"EACC","MN-2PS":"EACC","MN-2QS":"EACC","MN-2RS":"EACC","MN-3SS":"EACC","MN-3VS":"EACC","MN-3XS":"EACC","MN-AGR":"EACC","MN-AYNG":"EACC","MN-BGR":"EACC","MN-BNR":"EACC","MN-BSR":"EACC","MN-CMR":"EACC","MN-CPF":"EACC","MN-DLR":"EACC","MN-FFR":"EACC","MN-GLR":"EACC","MN-GPA":"EACC","MN-GPP":"EACC","MN-HSEM":"EACC","MN-HSR":"EACC","MN-LFR":"EACC","MN-MLT":"EACC","MN-MNA":"EACC","MN-MNS":"EACC","MN-MRA":"EACC","MN-MSP":"EACC","MN-MVR":"EACC","MN-NTPN":"EACC","MN-NTR":"EACC","MN-PSP":"EACC","MN-PVR":"EACC","MN-R3R":"EACC","MN-RLA":"EACC","MN-RLR":"EACC","MN-RYNG":"EACC","MN-RYR":"EACC","MN-SBR":"EACC","MN-SUF":"EACC","MN-TMR":"EACC","MN-VOP":"EACC","MN-WHT":"EACC","MN-WNR":"EACC","MN-WWR":"EACC","MO-BCYX":"EACC","MO-BMR":"EACC","MO-CCR":"EACC","MO-CRHW":"EACC","MO-CYNG":"EACC","MO-DURN":"EACC","MO-FE7":"EACC","MO-GRR":"EACC","MO-GWP":"EACC","MO-HTP":"EACC","MO-JEP":"EACC","MO-LBR":"EACC","MO-LCYQ":"EACC","MO-LWYQ":"EACC","MO-MOR":"EACC","MO-MOS":"EACC","MO-MTF":"EACC","MO-MYNG":"EACC","MO-NYNG":"EACC","MO-OCR":"EACC","MO-OZP":"EACC","MO-PNR":"EACC","MO-PVR":"EACC","MO-SEM":"EACC","MO-SWR":"EACC","MO-TYNG":"EACC","MO-UGP":"EACC","MO-WCP":"EACC","MO-WHAQ":"EACC","MP-AMP":"ONCC","MS-BCP":"SACC","MS-CHA":"SACC","MS-COAQ":"SACC","MS-CWR":"SACC","MS-DAR":"SACC","MS-FE4":"SACC","MS-GBR":"SACC","MS-GNQ":"SACC","MS-HCR":"SACC","MS-HLR":"SACC","MS-JAD":"SACC","MS-JANW":"SACC","MS-JMBR":"SACC","MS-KEAQ":"SACC","MS-LMFR":"SACC","MS-MBR":"SACC","MS-MEMP":"SACC","MS-MESR":"SACC","MS-MKR":"SACC","MS-MMBR":"SACC","MS-MNF":"SACC","MS-MNFH":"SACC","MS-MNQ":"SACC","MS-MSR":"SACC","MS-MSS":"SACC","MS-MWR":"SACC","MS-MYNG":"SACC","MS-NAP":"SACC","MS-NHP":"SACC","MS-NSP":"SACC","MS-NXR":"SACC","MS-PJAH":"SACC","MS-PNR":"SACC","MS-SCR":"SACC","MS-SEM":"SACC","MS-SYNG":"SACC","MS-TAR":"SACC","MS-TBP":"SACC","MS-TRR":"SACC","MS-VIP":"SACC","MS-YZR":"SACC","MT-AST":"NRCC","MT-BCR":"NRCC","MT-BDF":"NRCC","MT-BDR":"NRCC","MT-BFA":"NRCC","MT-BFR":"NRCC","MT-BFT":"NRCC","MT-BHP":"NRCC","MT-BID":"NRCC","MT-BIP":"NRCC","MT-BLR":"NRCC","MT-BLW":"NRCC","MT-BMR":"NRCC","MT-BRF":"NRCC","MT-BRL":"NRCC","MT-BUD":"NRCC","MT-BWR":"NRCC","MT-CCR":"NRCC","MT-CCT":"NRCC","MT-CDR":"NRCC","MT-CES":"NRCC","MT-CFR":"NRCC","MT-CGF":"NRCC","MT-CMR":"NRCC","MT-CRA":"NRCC","MT-CRT":"NRCC","MT-DES":"NRCC","MT-DFD":"NRCC","MT-EAS":"NRCC","MT-EFR":"NRCC","MT-EMD":"NRCC","MT-ESR":"NRCC","MT-FBA":"NRCC","MT-FCR":"NRCC","MT-FHA":"NRCC","MT-FKG":"NRCC","MT-FNF":"NRCC","MT-FPA":"NRCC","MT-GFW":"NRCC","MT-GGW":"NRCC","MT-GKP":"NRCC","MT-GLD":"NRCC","MT-GLR":"NRCC","MT-GNP":"NRCC","MT-GST":"NRCC","MT-HAD":"NRCC","MT-HLF":"NRCC","MT-HLR":"NRCC","MT-HSR":"NRCC","MT-KNF":"NRCC","MT-LAR":"NRCC","MT-LBP":"NRCC","MT-LCR":"NRCC","MT-LG01":"NRCC","MT-LG02":"NRCC","MT-LG03":"NRCC","MT-LG04":"NRCC","MT-LG05":"NRCC","MT-LG06":"NRCC","MT-LG07":"NRCC","MT-LG08":"NRCC","MT-LG09":"NRCC","MT-LG10":"NRCC","MT-LG11":"NRCC","MT-LG12":"NRCC","MT-LG13":"NRCC","MT-LG14":"NRCC","MT-LG15":"NRCC","MT-LG16":"NRCC","MT-LG17":"NRCC","MT-LG18":"NRCC","MT-LG19":"NRCC","MT-LG20":"NRCC","MT-LG21":"NRCC","MT-LG22":"NRCC","MT-LG23":"NRCC","MT-LG24":"NRCC","MT-LG25":"NRCC","MT-LG26":"NRCC","MT-LG27":"NRCC","MT-LG28":"NRCC","MT-LG29":"NRCC","MT-LG30":"NRCC","MT-LG31":"NRCC","MT-LG32":"NRCC","MT-LG33":"NRCC","MT-LG34":"NRCC","MT-LG35":"NRCC","MT-LG36":"NRCC","MT-LG37":"NRCC","MT-LG38":"NRCC","MT-LG39":"NRCC","MT-LG40":"NRCC","MT-LG41":"NRCC","MT-LG42":"NRCC","MT-LG43":"NRCC","MT-LG44":"NRCC","MT-LG45":"NRCC","MT-LG46":"NRCC","MT-LG47":"NRCC","MT-LG48":"NRCC","MT-LG49":"NRCC","MT-LG50":"NRCC","MT-LG51":"NRCC","MT-LG52":"NRCC","MT-LG53":"NRCC","MT-LG54":"NRCC","MT-LG55":"NRCC","MT-LG56":"NRCC","MT-LMR":"NRCC","MT-LNF":"NRCC","MT-LTR":"NRCC","MT-LWD":"NRCC","MT-LYNG":"NRCC","MT-MAAQ":"NRCC","MT-MAD":"NRCC","MT-MAG":"NRCC","MT-MAL":"NRCC","MT-MCD":"NRCC","MT-MFD":"NRCC","MT-MLR":"NRCC","MT-MNG":"NRCC","MT-MSO":"NRCC","MT-MSW":"NRCC","MT-MTHN":"NRCC","MT-MTS":"NRCC","MT-NCA":"NRCC","MT-NCD":"NRCC","MT-NCT":"NRCC","MT-NDR":"NRCC","MT-NES":"NRCC","MT-NPR":"NRCC","MT-NWS":"NRCC","MT-PAR":"NRCC","MT-R01":"NRCC","MT-RBA":"NRCC","MT-RLR":"NRCC","MT-RMA":"NRCC","MT-SOS":"NRCC","MT-SRR":"NRCC","MT-SWS":"NRCC","MT-UMD":"NRCC","MT-WHR":"NRCC","MT-WMD":"NRCC","MT-WYNG":"NRCC","NC-AESR":"SACC","NC-ALR":"SACC","NC-BRP":"SACC","NC-BYNG":"SACC","NC-CDR":"SACC","NC-CHP":"SACC","NC-CLP":"SACC","NC-CMBR":"SACC","NC-CMQ":"SACC","NC-CRR":"SACC","NC-CSP":"SACC","NC-ECA":"SACC","NC-EDFH":"SACC","NC-FBQ":"SACC","NC-FE4":"SACC","NC-FHP":"SACC","NC-FRP":"SACC","NC-GIP":"SACC","NC-ILM":"SACC","NC-LMQ":"SACC","NC-MCR":"SACC","NC-MLFH":"SACC","NC-MOP":"SACC","NC-MTR":"SACC","NC-NCF":"SACC","NC-NCS":"SACC","NC-NMQ":"SACC","NC-OSYQ":"SACC","NC-PER":"SACC","NC-PLR":"SACC","NC-POR":"SACC","NC-RESR":"SACC","NC-RRR":"SACC","NC-RWX":"SACC","NC-SJAQ":"SACC","NC-SRS":"SACC","NC-SWR":"SACC","NC-SYNG":"SACC","NC-WRP":"SACC","ND-ADR":"NRCC","ND-AMR":"NRCC","ND-AUR":"NRCC","ND-AWR":"NRCC","ND-BMW":"NRCC","ND-CDR":"NRCC","ND-CLR":"NRCC","ND-CWR":"NRCC","ND-DAL":"NRCC","ND-DLR":"NRCC","ND-DPF":"NRCC","ND-DVR":"NRCC","ND-ESR":"NRCC","ND-FBA":"NRCC","ND-FLR":"NRCC","ND-FTA":"NRCC","ND-FUP":"NRCC","ND-GDR":"NRCC","ND-GFAQ":"NRCC","ND-GFW":"NRCC","ND-GYNG":"NRCC","ND-HLR":"NRCC","ND-JCR":"NRCC","ND-JDR":"NRCC","ND-KRP":"NRCC","ND-KSR":"NRCC","ND-KUR":"NRCC","ND-LAR":"NRCC","ND-LGR":"NRCC","ND-LIR":"NRCC","ND-LLR":"NRCC","ND-LMR":"NRCC","ND-LNR":"NRCC","ND-LWR":"NRCC","ND-LZR":"NRCC","ND-MCR":"NRCC","ND-MIAQ":"NRCC","ND-NDD":"NRCC","ND-NDS":"NRCC","ND-SDR":"NRCC","ND-SER":"NRCC","ND-SHDN":"NRCC","ND-SHR":"NRCC","ND-SRA":"RMCC","ND-STR":"NRCC","ND-TDR":"NRCC","ND-TMA":"NRCC","ND-TRP":"NRCC","ND-TWR":"NRCC","ND-USR":"NRCC","ND-VCR":"NRCC","ND-VFR":"NRCC","ND-WLR":"NRCC","NE-AFP":"RMCC","NE-AYNG":"RMCC","NE-BCR":"EACC","NE-CLR":"RMCC","NE-FNR":"RMCC","NE-GYNG":"RMCC","NE-HOP":"RMCC","NE-MRE":"RMCC","NE-MWP":"RMCC","NE-MYNG":"RMCC","NE-NBF":"RMCC","NE-NES":"RMCC","NE-NKAL":"RMCC","NE-NMP":"RMCC","NE-NMS":"RMCC","NE-NPR":"RMCC","NE-OFAQ":"RMCC","NE-RBR":"RMCC","NE-SBP":"RMCC","NE-VAR":"RMCC","NE-WIA":"RMCC","NH-CYNG":"EACC","NH-GBR":"EACC","NH-JHR":"EACC","NH-NBQ":"EACC","NH-NHFN":"EACC","NH-NHS":"EACC","NH-NUR":"EACC","NH-PYNG":"EACC","NH-SEM":"EACC","NH-SGP":"EACC","NH-SYNG":"EACC","NH-UBR":"EACC","NH-WMF":"EACC","NH-WPR":"EACC","NJ-CMR":"EACC","NJ-EDP":"EACC","NJ-ENQ":"EACC","NJ-ERR":"EACC","NJ-FE2":"EACC","NJ-GHP":"EACC","NJ-GSR":"EACC","NJ-JBQ":"EACC","NJ-LNQ":"EACC","NJ-MOP":"EACC","NJ-NESR":"EACC","NJ-NJS":"EACC","NJ-PAYQ":"EACC","NJ-PGP":"EACC","NJ-PIBN":"EACC","NJ-PIP":"EACC","NJ-SEM":"EACC","NJ-SPR":"EACC","NJ-WKR":"EACC","NM-AAL":"SWCC","NM-ADO":"SWCC","NM-AZP":"SWCC","NM-BAP":"SWCC","NM-BDR":"SWCC","NM-BTR":"SWCC","NM-CAAQ":"SWCC","NM-CAD":"SWCC","NM-CAF":"SWCC","NM-CAP":"SWCC","NM-CCP":"SWCC","NM-CHP":"SWCC","NM-CIF":"SWCC","NM-DXR":"SWCC","NM-ECP":"SWCC","NM-ELP":"SWCC","NM-EMP":"SWCC","NM-ERP":"SWCC","NM-FAD":"SWCC","NM-FDO":"SWCC","NM-FUP":"SWCC","NM-GIP":"SWCC","NM-GNF":"SWCC","NM-HOAQ":"SWCC","NM-JIA":"SWCC","NM-KLQ":"SWCC","NM-LAA":"SWCC","NM-LAE":"SWCC","NM-LCD":"SWCC","NM-LDO":"SWCC","NM-LNF":"SWCC","NM-LVR":"SWCC","NM-MEA":"SWCC","NM-MXR":"SWCC","NM-N1S":"SWCC","NM-N2S":"SWCC","NM-N3S":"SWCC","NM-N4S":"SWCC","NM-N5S":"SWCC","NM-N6S":"SWCC","NM-NPA":"SWCC","NM-OSP":"SWCC","NM-PDO":"SWCC","NM-PEP":"SWCC","NM-PGP":"SWCC","NM-RMR":"SWCC","NM-RNA":"SWCC","NM-ROD":"SWCC","NM-RPD":"SWCC","NM-SAP":"SWCC","NM-SCD":"SWCC","NM-SCT":"SWCC","NM-SER":"SWCC","NM-SFP":"SWCC","NM-SNF":"SWCC","NM-SNR":"SWCC","NM-SPA":"SWCC","NM-TAD":"SWCC","NM-TAT":"SWCC","NM-TTP":"SWCC","NM-VCP":"SWCC","NM-VOR":"SWCC","NM-WHP":"SWCC","NM-WSQ":"SWCC","NM-ZUA":"SWCC","NV-AIR":"GBCC","NV-AMR":"GBCC","NV-BCD":"GBCC","NV-BCFX":"GBCC","NV-BMD":"GBCC","NV-BRD":"GBCC","NV-CAD":"GBCC","NV-CCD":"GBCC","NV-CLRX":"GBCC","NV-CRAQ":"GBCC","NV-DEMS":"GBCC","NV-DSR":"GBCC","NV-DVT":"GBCC","NV-ECFX":"GBCC","NV-EKD":"GBCC","NV-ELD":"GBCC","NV-ENA":"GBCC","NV-ESMX":"GBCC","NV-EURX":"GBCC","NV-FLR":"GBCC","NV-FNQ":"GBCC","NV-GBP":"GBCC","NV-HADQ":"GBCC","NV-HTF":"GBCC","NV-HUD":"GBCC","NV-HUMX":"GBCC","NV-LAD":"GBCC","NV-LANX":"GBCC","NV-LAP":"GBCC","NV-LFR":"GBCC","NV-MCFX":"GBCC","NV-MLD":"GBCC","NV-MVFX":"GBCC","NV-MVR":"GBCC","NV-NAFQ":"GBCC","NV-NNS":"GBCC","NV-NSS":"GBCC","NV-NTE":"GBCC","NV-NVS":"GBCC","NV-NWS":"GBCC","NV-NYEX":"GBCC","NV-PAD":"GBCC","NV-PERX":"GBCC","NV-PRR":"GBCC","NV-RLR":"GBCC","NV-RSD":"GBCC","NV-SFD":"GBCC","NV-SND":"GBCC","NV-SWD":"GBCC","NV-SWR":"GBCC","NV-TOD":"GBCC","NV-TUD":"GBCC","NV-WASX":"GBCC","NV-WED":"GBCC","NV-WID":"GBCC","NV-WNA":"GBCC","NY-ABP":"EACC","NY-AGR":"EACC","NY-ALYW":"EACC","NY-BGMW":"EACC","NY-BOR":"EACC","NY-BUFW":"EACC","NY-CCP":"EACC","NY-CPR":"EACC","NY-EHRW":"EACC","NY-EIP":"EACC","NY-ERP":"EACC","NY-FDP":"EACC","NY-FDQ":"EACC","NY-FHP":"EACC","NY-FIP":"EACC","NY-FOP":"EACC","NY-GAP":"EACC","NY-GGP":"EACC","NY-GIP":"EACC","NY-HGP":"EACC","NY-IRR":"EACC","NY-LBR":"EACC","NY-LIR":"EACC","NY-LTP":"EACC","NY-MAP":"EACC","NY-MTR":"EACC","NY-MVP":"EACC","NY-MZR":"EACC","NY-NFP":"EACC","NY-NHP":"EACC","NY-NPP":"EACC","NY-NYS":"EACC","NY-NYX":"EACC","NY-OKXW":"EACC","NY-RVP":"EACC","NY-SEM":"EACC","NY-SHAN":"EACC","NY-SHP":"EACC","NY-SLR":"EACC","NY-SPP":"EACC","NY-SRP":"EACC","NY-SSNQ":"EACC","NY-STP":"EACC","NY-STR":"EACC","NY-TBP":"EACC","NY-TIP":"EACC","NY-TRR":"EACC","NY-WHR":"EACC","NY-WOP":"EACC","NY-WPQ":"EACC","OH-CPR":"EACC","OH-CVP":"EACC","OH-CYP":"EACC","OH-DAP":"EACC","OH-DBP":"EACC","OH-FLP":"EACC","OH-FPE":"EACC","OH-GYNG":"EACC","OH-HCP":"EACC","OH-JGP":"EACC","OH-OHFN":"EACC","OH-OHS":"EACC","OH-OTR":"EACC","OH-PVP":"EACC","OH-PVR":"EACC","OH-SEM":"EACC","OH-WAF":"EACC","OH-WHP":"EACC","OH-WSR":"EACC","OH-YOAQ":"EACC","OK-ALAQ":"SACC","OK-ANA":"SACC","OK-CAT":"SACC","OK-CFT":"SACC","OK-CHA":"SACC","OK-CHP":"SACC","OK-CNA":"SACC","OK-COA":"SACC","OK-COT":"SACC","OK-DFR":"SACC","OK-EOA":"SACC","OK-FE6":"SACC","OK-FWCO":"SACC","OK-GYNG":"SACC","OK-KWT":"SACC","OK-LRR":"SACC","OK-LSR":"SACC","OK-MCYQ":"SACC","OK-MIA":"SACC","OK-OCP":"SACC","OK-OESR":"SACC","OK-OKS":"SACC","OK-OMA":"SACC","OK-OMT":"SACC","OK-OPR":"SACC","OK-OSA":"SACC","OK-OST":"SACC","OK-OZPR":"SACC","OK-PAA":"SACC","OK-SEM":"SACC","OK-SLR":"SACC","OK-SLYQ":"SACC","OK-SPA":"SACC","OK-SQR":"SACC","OK-TIAQ":"SACC","OK-TLA":"SACC","OK-TMR":"SACC","OK-TSR":"SACC","OK-TUD":"SACC","OK-VAAQ":"SACC","OK-WBP":"SACC","OK-WEA":"SACC","OK-WMR":"SACC","OK-WSR":"SACC","OR-500S":"NWCC","OR-510S":"NWCC","OR-520S":"NWCC","OR-531S":"NWCC","OR-532S":"NWCC","OR-540S":"NWCC","OR-551S":"NWCC","OR-552S":"NWCC","OR-553S":"NWCC","OR-570S":"NWCC","OR-581S":"NWCC","OR-582S":"NWCC","OR-700S":"NWCC","OR-710S":"NWCC","OR-711S":"NWCC","OR-712S":"NWCC","OR-721S":"NWCC","OR-722S":"NWCC","OR-723S":"NWCC","OR-730S":"NWCC","OR-731S":"NWCC","OR-732S":"NWCC","OR-733S":"NWCC","OR-740S":"NWCC","OR-750S":"NWCC","OR-770S":"NWCC","OR-771S":"NWCC","OR-772S":"NWCC","OR-781S":"NWCC","OR-782S":"NWCC","OR-900S":"NWCC","OR-950S":"NWCC","OR-951S":"NWCC","OR-952S":"NWCC","OR-953S":"NWCC","OR-954S":"NWCC","OR-955S":"NWCC","OR-956S":"NWCC","OR-970S":"NWCC","OR-971S":"NWCC","OR-972S":"NWCC","OR-973S":"NWCC","OR-974S":"NWCC","OR-980S":"NWCC","OR-981S":"NWCC","OR-982S":"NWCC","OR-991S":"NWCC","OR-ADAN":"NWCC","OR-ADRN":"NWCC","OR-AFOD":"NWCC","OR-AGIN":"NWCC","OR-AKR":"NWCC","OR-ALBN":"NWCC","OR-ALSN":"NWCC","OR-AMIN":"NWCC","OR-APPN":"NWCC","OR-ARLN":"NWCC","OR-ASHN":"NWCC","OR-ASOD":"NWCC","OR-ASTN":"NWCC","OR-ATHN":"NWCC","OR-AUMN":"NWCC","OR-AURN":"NWCC","OR-AYNG":"NWCC","OR-AZAN":"NWCC","OR-BACN":"NWCC","OR-BAKN":"NWCC","OR-BANN":"NWCC","OR-BFOD":"NWCC","OR-BKR":"NWCC","OR-BKRN":"NWCC","OR-BLRN":"NWCC","OR-BLYN":"NWCC","OR-BOAN":"NWCC","OR-BONN":"NWCC","OR-BORN":"NWCC","OR-BRIN":"NWCC","OR-BRON":"NWCC","OR-BRVN":"NWCC","OR-BSRN":"NWCC","OR-BUD":"NWCC","OR-BUFN":"NWCC","OR-BUOD":"NWCC","OR-BURN":"NWCC","OR-BVR":"NWCC","OR-BYNG":"NWCC","OR-CACN":"NWCC","OR-CAFN":"NWCC","OR-CAMN":"NWCC","OR-CANN":"NWCC","OR-CARN":"NWCC","OR-CASN":"NWCC","OR-CAVN":"NWCC","OR-CBD":"NWCC","OR-CEWN":"NWCC","OR-CFOD":"NWCC","OR-CGF":"NWCC","OR-CHAN":"NWCC","OR-CHEN":"NWCC","OR-CHIN":"NWCC","OR-CLAN":"NWCC","OR-CLP":"NWCC","OR-CLTN":"NWCC","OR-CNBN":"NWCC","OR-COBN":"NWCC","OR-COCN":"NWCC","OR-COFD":"NWCC","OR-COGN":"NWCC","OR-COLN":"NWCC","OR-COMN":"NWCC","OR-COQN":"NWCC","OR-COR":"NWCC","OR-CORN":"NWCC","OR-COSN":"NWCC","OR-COTN":"NWCC","OR-COVN":"NWCC","OR-CRAN":"NWCC","OR-CRNG":"NWCC","OR-CRVN":"NWCC","OR-CYNG":"NWCC","OR-DAKN":"NWCC","OR-DALN":"NWCC","OR-DATN":"NWCC","OR-DAYN":"NWCC","OR-DEEN":"NWCC","OR-DEF":"NWCC","OR-DEPN":"NWCC","OR-DEXN":"NWCC","OR-DFOD":"NWCC","OR-DIAN":"NWCC","OR-DLS":"NWCC","OR-DOGN":"NWCC","OR-DORN":"NWCC","OR-DRAN":"NWCC","OR-DUNN":"NWCC","OR-DURN":"NWCC","OR-ECHN":"NWCC","OR-ELGN":"NWCC","OR-ELKN":"NWCC","OR-ENTN":"NWCC","OR-ESTN":"NWCC","OR-EUGN":"NWCC","OR-EUMN":"NWCC","OR-EVAN":"NWCC","OR-EVIN":"NWCC","OR-FALN":"NWCC","OR-FCP":"NWCC","OR-FIRN":"NWCC","OR-FLDN":"NWCC","OR-FOGN":"NWCC","OR-FOKN":"NWCC","OR-FWF":"NWCC","OR-GABN":"NWCC","OR-GARN":"NWCC","OR-GASN":"NWCC","OR-GATN":"NWCC","OR-GEAN":"NWCC","OR-GHMN":"NWCC","OR-GLAN":"NWCC","OR-GLEN":"NWCC","OR-GLIN":"NWCC","OR-GOLN":"NWCC","OR-GOSN":"NWCC","OR-GREN":"NWCC","OR-GRPN":"NWCC","OR-HABN":"NWCC","OR-HAIN":"NWCC","OR-HAMN":"NWCC","OR-HARN":"NWCC","OR-HASN":"NWCC","OR-HAUN":"NWCC","OR-HELN":"NWCC","OR-HEPN":"NWCC","OR-HILN":"NWCC","OR-HINN":"NWCC","OR-HMR":"NWCC","OR-HOBN":"NWCC","OR-HOLN":"NWCC","OR-HORN":"NWCC","OR-HOSN":"NWCC","OR-HRRN":"NWCC","OR-HUBN":"NWCC","OR-HUNN":"NWCC","OR-IDRN":"NWCC","OR-ILVN":"NWCC","OR-IMBN":"NWCC","OR-IONN":"NWCC","OR-IRRN":"NWCC","OR-JDP":"NWCC","OR-JEFN":"NWCC","OR-JERN":"NWCC","OR-JFVN":"NWCC","OR-JK3N":"NWCC","OR-JK4N":"NWCC","OR-JK5N":"NWCC","OR-JK6N":"NWCC","OR-JKVN":"NWCC","OR-JOHN":"NWCC","OR-JOSN":"NWCC","OR-JUNN":"NWCC","OR-JVVN":"NWCC","OR-KBAL":"NWCC","OR-KEAN":"NWCC","OR-KELN":"NWCC","OR-KENN":"NWCC","OR-KEZN":"NWCC","OR-KFOD":"NWCC","OR-KHR":"NWCC","OR-KINN":"NWCC","OR-KL3N":"NWCC","OR-KL4N":"NWCC","OR-KL5N":"NWCC","OR-KLIN":"NWCC","OR-KLR":"NWCC","OR-KNAN":"NWCC","OR-LA1N":"NWCC","OR-LACN":"NWCC","OR-LAD":"NWCC","OR-LAFN":"NWCC","OR-LAGN":"NWCC","OR-LAKN":"NWCC","OR-LANN":"NWCC","OR-LARN":"NWCC","OR-LCKN":"NWCC","OR-LEBN":"NWCC","OR-LEXN":"NWCC","OR-LFOD":"NWCC","OR-LGDN":"NWCC","OR-LKVN":"NWCC","OR-LOKN":"NWCC","OR-LONN":"NWCC","OR-LOON":"NWCC","OR-LORN":"NWCC","OR-LOSN":"NWCC","OR-LOWN":"NWCC","OR-LWGN":"NWCC","OR-LYON":"NWCC","OR-M08N":"NWCC","OR-M14N":"NWCC","OR-MAF":"NWCC","OR-MALN":"NWCC","OR-MAPN":"NWCC","OR-MAR":"NWCC","OR-MARN":"NWCC","OR-MAZN":"NWCC","OR-MCFN":"NWCC","OR-MCKN":"NWCC","OR-MEAN":"NWCC","OR-MED":"NWCC","OR-MEDN":"NWCC","OR-MERN":"NWCC","OR-MFOD":"NWCC","OR-MFRN":"NWCC","OR-MFW":"NWCC","OR-MFWN":"NWCC","OR-MHF":"NWCC","OR-MHP":"NWCC","OR-MICN":"NWCC","OR-MILN":"NWCC","OR-MISN":"NWCC","OR-MIVN":"NWCC","OR-MMVN":"NWCC","OR-MOHN":"NWCC","OR-MOLN":"NWCC","OR-MONN":"NWCC","OR-MOSN":"NWCC","OR-MPOD":"NWCC","OR-MRON":"NWCC","OR-MTAN":"NWCC","OR-MTVN":"NWCC","OR-MYCN":"NWCC","OR-MYOD":"NWCC","OR-MYPN":"NWCC","OR-NBEN":"NWCC","OR-NEHN":"NWCC","OR-NESN":"NWCC","OR-NETN":"NWCC","OR-NEWN":"NWCC","OR-NLIN":"NWCC","OR-NOAN":"NWCC","OR-NOBN":"NWCC","OR-NOD":"NWCC","OR-NPIN":"NWCC","OR-NPON":"NWCC","OR-NPTN":"NWCC","OR-NWA":"NWCC","OR-NYSN":"NWCC","OR-OAGS":"NWCC","OR-OAKN":"NWCC","OR-OARN":"NWCC","OR-OCF":"NWCC","OR-OCP":"NWCC","OR-OCR":"NWCC","OR-ODEN":"NWCC","OR-ONGS":"NWCC","OR-ONTN":"NWCC","OR-OPHN":"NWCC","OR-ORPN":"NWCC","OR-OSO":"NWCC","OR-OWAN":"NWCC","OR-PAIN":"NWCC","OR-PARN":"NWCC","OR-PDW":"NWCC","OR-PDXN":"NWCC","OR-PENN":"NWCC","OR-PFEN":"NWCC","OR-PHIN":"NWCC","OR-PIGN":"NWCC","OR-PIRN":"NWCC","OR-PIVN":"NWCC","OR-PK1N":"NWCC","OR-PLHN":"NWCC","OR-POWN":"NWCC","OR-PRAN":"NWCC","OR-PRD":"NWCC","OR-PRON":"NWCC","OR-PRRN":"NWCC","OR-PTW":"NWCC","OR-PWRN":"NWCC","OR-R06":"NWCC","OR-R1R":"NWCC","OR-RAIN":"NWCC","OR-RBVN":"NWCC","OR-REEN":"NWCC","OR-RICN":"NWCC","OR-RIDN":"NWCC","OR-RIHN":"NWCC","OR-ROCN":"NWCC","OR-ROD":"NWCC","OR-RORN":"NWCC","OR-ROSN":"NWCC","OR-ROVN":"NWCC","OR-RSF":"NWCC","OR-RUFN":"NWCC","OR-RYNG":"NWCC","OR-SACN":"NWCC","OR-SANN":"NWCC","OR-SAVN":"NWCC","OR-SCAN":"NWCC","OR-SCIN":"NWCC","OR-SCON":"NWCC","OR-SCRN":"NWCC","OR-SEAN":"NWCC","OR-SENN":"NWCC","OR-SERN":"NWCC","OR-SFOD":"NWCC","OR-SHDN":"NWCC","OR-SHR":"NWCC","OR-SHUN":"NWCC","OR-SIA":"NWCC","OR-SILN":"NWCC","OR-SIVN":"NWCC","OR-SIXN":"NWCC","OR-SIZN":"NWCC","OR-SLAN":"NWCC","OR-SLR":"NWCC","OR-SPAN":"NWCC","OR-SPIN":"NWCC","OR-SPRN":"NWCC","OR-SQWN":"NWCC","OR-SROD":"NWCC","OR-STPN":"NWCC","OR-STYN":"NWCC","OR-SUBN":"NWCC","OR-SUF":"NWCC","OR-SUIN":"NWCC","OR-SULN":"NWCC","OR-SUMN":"NWCC","OR-SUNN":"NWCC","OR-SUPN":"NWCC","OR-SUTN":"NWCC","OR-SWEN":"NWCC","OR-SWIN":"NWCC","OR-SWOD":"NWCC","OR-SWPN":"NWCC","OR-TANN":"NWCC","OR-TDCN":"NWCC","OR-TENN":"NWCC","OR-TFOD":"NWCC","OR-THCN":"NWCC","OR-TIKN":"NWCC","OR-TILN":"NWCC","OR-TOEN":"NWCC","OR-TONN":"NWCC","OR-TROD":"NWCC","OR-TUR":"NWCC","OR-TURN":"NWCC","OR-TVFN":"NWCC","OR-TWCN":"NWCC","OR-UFOD":"NWCC","OR-UKR":"NWCC","OR-UM7N":"NWCC","OR-UMA":"NWCC","OR-UMF":"NWCC","OR-UMKN":"NWCC","OR-UMR":"NWCC","OR-UNYN":"NWCC","OR-UPCN":"NWCC","OR-UPF":"NWCC","OR-UWOD":"NWCC","OR-VAD":"NWCC","OR-VALN":"NWCC","OR-VERN":"NWCC","OR-WA2N":"NWCC","OR-WALN":"NWCC","OR-WARN":"NWCC","OR-WBNQ":"NWCC","OR-WDIN":"NWCC","OR-WERN":"NWCC","OR-WEWN":"NWCC","OR-WHPN":"NWCC","OR-WICN":"NWCC","OR-WIF":"NWCC","OR-WILN":"NWCC","OR-WINN":"NWCC","OR-WLLN":"NWCC","OR-WMR":"NWCC","OR-WOLN":"NWCC","OR-WOON":"NWCC","OR-WSA":"NWCC","OR-WSR":"NWCC","OR-WVR":"NWCC","OR-WWF":"NWCC","OR-YACN":"NWCC","OR-YAMN":"NWCC","OR-YONN":"NWCC","OR-ZUMN":"NWCC","PA-01S":"EACC","PA-02S":"EACC","PA-03S":"EACC","PA-04S":"EACC","PA-05S":"EACC","PA-06S":"EACC","PA-07S":"EACC","PA-08S":"EACC","PA-09S":"EACC","PA-10S":"EACC","PA-11S":"EACC","PA-12S":"EACC","PA-13S":"EACC","PA-14S":"EACC","PA-15S":"EACC","PA-16S":"EACC","PA-17S":"EACC","PA-18S":"EACC","PA-19S":"EACC","PA-20S":"EACC","PA-ALF":"EACC","PA-ALR":"EACC","PA-APP":"EACC","PA-CVR":"EACC","PA-DLP":"EACC","PA-DWP":"EACC","PA-EIP":"EACC","PA-EPP":"EACC","PA-ERR":"EACC","PA-FHP":"EACC","PA-FLP":"EACC","PA-FNP":"EACC","PA-GCP":"EACC","PA-GEP":"EACC","PA-HEP":"EACC","PA-INP":"EACC","PA-IYNG":"EACC","PA-JFP":"EACC","PA-LKYQ":"EACC","PA-LMR":"EACC","PA-MNQ":"EACC","PA-PAFN":"EACC","PA-PNQ":"EACC","PA-SEM":"EACC","PA-SPF":"EACC","PA-STP":"EACC","PA-TKP":"EACC","PA-TNR":"EACC","PA-UDP":"EACC","PA-VFP":"EACC","PR-BESR":"SACC","PR-BNYQ":"SACC","PR-CBR":"SACC","PR-CIR":"SACC","PR-CUR":"SACC","PR-DER":"SACC","PR-DNR":"SACC","PR-EYF":"SACC","PR-FE2":"SACC","PR-LCR":"SACC","PR-PPER":"SACC","PR-PRS":"SACC","PR-SAP":"SACC","PR-SYNG":"SACC","PR-VQR":"SACC","RI-BIR":"EACC","RI-FYNG":"EACC","RI-JCR":"EACC","RI-NGR":"EACC","RI-NNQ":"EACC","RI-RIFN":"EACC","RI-RIR":"EACC","RI-RIS":"EACC","RI-ROP":"EACC","RI-SEM":"EACC","RI-SPR":"EACC","RI-TPR":"EACC","RI-TSP":"EACC","SC-ACR":"SACC","SC-BBFH":"SACC","SC-BMQ":"SACC","SC-BNQ":"SACC","SC-CAEW":"SACC","SC-CAT":"SACC","SC-CESR":"SACC","SC-CHSW":"SACC","SC-CMR":"SACC","SC-CPP":"SACC","SC-CRR":"SACC","SC-CSP":"SACC","SC-CWP":"SACC","SC-FE4":"SACC","SC-FJQ":"SACC","SC-FMF":"SACC","SC-FSP":"SACC","SC-GSPW":"SACC","SC-JTBQ":"SACC","SC-KMP":"SACC","SC-NIP":"SACC","SC-OBFH":"SACC","SC-OVP":"SACC","SC-PKR":"SACC","SC-PMQ":"SACC","SC-REP":"SACC","SC-SAR":"SACC","SC-SCS":"SACC","SC-SEM":"SACC","SC-SHQ":"SACC","SC-SNR":"SACC","SC-SRE":"SACC","SC-SRF":"SACC","SC-WAR":"SACC","SC-WXW":"SACC","SD-ALKX":"RMCC","SD-ARMX":"RMCC","SD-ARRX":"RMCC","SD-ARX":"RMCC","SD-ASCX":"RMCC","SD-BBE":"RMCC","SD-BDP":"RMCC","SD-BDX":"RMCC","SD-BFX":"RMCC","SD-BKF":"RMCC","SD-BKX":"RMCC","SD-BNX":"RMCC","SD-BRRX":"RMCC","SD-BRX":"RMCC","SD-BTX":"RMCC","SD-BUX":"RMCC","SD-CAX":"RMCC","SD-CBE":"RMCC","SD-CCA":"RMCC","SD-CDX":"RMCC","SD-CHX":"RMCC","SD-CLX":"RMCC","SD-CRA":"RMCC","SD-CRX":"RMCC","SD-CUX":"RMCC","SD-CWE":"RMCC","SD-CYX":"RMCC","SD-DAX":"RMCC","SD-DCRX":"RMCC","SD-DEX":"RMCC","SD-DLX":"RMCC","SD-DOX":"RMCC","SD-DVX":"RMCC","SD-EDX":"RMCC","SD-ELAQ":"RMCC","SD-ESR":"RMCC","SD-FAX":"RMCC","SD-FRE":"RMCC","SD-FRX":"RMCC","SD-FSA":"RMCC","SD-GPA":"RMCC","SD-GPR":"RMCC","SD-GRX":"RMCC","SD-GTX":"RMCC","SD-HAX":"RMCC","SD-HDX":"RMCC","SD-HMX":"RMCC","SD-HNX":"RMCC","SD-HRX":"NRCC","SD-HTX":"RMCC","SD-HUR":"RMCC","SD-HUX":"RMCC","SD-HYX":"RMCC","SD-JAX":"RMCC","SD-JCP":"RMCC","SD-JEX":"RMCC","SD-JOX":"RMCC","SD-KIX":"RMCC","SD-KMR":"RMCC","SD-LABX":"RMCC","SD-LAR":"RMCC","SD-LAX":"RMCC","SD-LBA":"RMCC","SD-LCR":"RMCC","SD-LDR":"RMCC","SD-LIX":"RMCC","SD-LKX":"RMCC","SD-LOWX":"RMCC","SD-LYX":"RMCC","SD-MAX":"RMCC","SD-MCX":"RMCC","SD-MDR":"RMCC","SD-MDX":"RMCC","SD-MHX":"RMCC","SD-MIX":"RMCC","SD-MMP":"RMCC","SD-MNX":"RMCC","SD-MOP":"RMCC","SD-MOX":"RMCC","SD-MPX":"RMCC","SD-MRP":"RMCC","SD-MVNX":"RMCC","SD-OAE":"RMCC","SD-OPLX":"RMCC","SD-PCKX":"RMCC","SD-PEX":"RMCC","SD-PNX":"RMCC","SD-POX":"RMCC","SD-PRA":"RMCC","SD-PRMX":"RMCC","SD-RANX":"RMCC","SD-RBA":"RMCC","SD-RBFX":"RMCC","SD-RDSX":"RMCC","SD-RFDX":"RMCC","SD-RFHX":"RMCC","SD-ROX":"RMCC","SD-RYNG":"RMCC","SD-SAX":"RMCC","SD-SDD":"NRCC","SD-SDS":"RMCC","SD-SENX":"RMCC","SD-SFR":"RMCC","SD-SHNX":"RMCC","SD-SHX":"RMCC","SD-SIA":"RMCC","SD-SLR":"RMCC","SD-SPX":"RMCC","SD-STX":"RMCC","SD-SUX":"RMCC","SD-TOX":"RMCC","SD-TPX":"RMCC","SD-TUX":"RMCC","SD-UNX":"RMCC","SD-VIVX":"RMCC","SD-WAR":"RMCC","SD-WAX":"RMCC","SD-WCP":"RMCC","SD-WDR":"RMCC","SD-WLCX":"RMCC","SD-YAA":"RMCC","SD-YAX":"RMCC","SD-ZBX":"RMCC","TN-ANQ":"SACC","TN-ASP":"SACC","TN-BSP":"SACC","TN-CHR":"SACC","TN-CNF":"SACC","TN-CRR":"SACC","TN-CVER":"SACC","TN-CYNG":"SACC","TN-DHFH":"SACC","TN-EAA":"SACC","TN-EWFH":"SACC","TN-FDP":"SACC","TN-FE4":"SACC","TN-GSP":"SACC","TN-HOYQ":"SACC","TN-HTR":"SACC","TN-LHR":"SACC","TN-LIR":"SACC","TN-MEMW":"SACC","TN-MIYQ":"SACC","TN-MPRX":"SACC","TN-MSNQ":"SACC","TN-MYNG":"SACC","TN-OWP":"SACC","TN-RLR":"SACC","TN-SHP":"SACC","TN-STP":"SACC","TN-SYNG":"SACC","TN-TNR":"SACC","TN-TNS":"SACC","TN-TVA":"SACC","TX-ABLM":"SACC","TX-ABSX":"SACC","TX-ADWX":"SACC","TX-AESR":"SACC","TX-AFP":"SACC","TX-AHR":"SACC","TX-ALIM":"SACC","TX-ALLM":"SACC","TX-ALVM":"SACC","TX-AMAM":"SACC","TX-AMD":"SACC","TX-AMP":"SACC","TX-ANNX":"SACC","TX-APPX":"SACC","TX-ARGX":"SACC","TX-ARLM":"SACC","TX-ARR":"SACC","TX-ARRX":"SACC","TX-ATAX":"SACC","TX-ATHM":"SACC","TX-ATR":"SACC","TX-AUBM":"SACC","TX-AUER":"SACC","TX-AUSM":"SACC","TX-AZLM":"SACC","TX-B10X":"SACC","TX-B11X":"SACC","TX-BANX":"SACC","TX-BAR":"SACC","TX-BASM":"SACC","TX-BAYM":"SACC","TX-BBP":"SACC","TX-BBR":"SACC","TX-BC2X":"SACC","TX-BC3X":"SACC","TX-BC4X":"SACC","TX-BCSX":"SACC","TX-BEAM":"SACC","TX-BEDM":"SACC","TX-BELM":"SACC","TX-BENM":"SACC","TX-BERX":"SACC","TX-BETM":"SACC","TX-BFR":"SACC","TX-BIFX":"SACC","TX-BISM":"SACC","TX-BLOM":"SACC","TX-BLUM":"SACC","TX-BLYQ":"SWCC","TX-BMZX":"SACC","TX-BOEX":"SACC","TX-BORM":"SACC","TX-BRAX":"SACC","TX-BREM":"SACC","TX-BROM":"SACC","TX-BRR":"SACC","TX-BRRX":"SACC","TX-BTP":"SACC","TX-BUKM":"SACC","TX-BULX":"SACC","TX-BUSM":"SACC","TX-BX2X":"SACC","TX-BX7X":"SACC","TX-BXBX":"SACC","TX-BXSX":"SACC","TX-BYNG":"SACC","TX-CACX":"SACC","TX-CAHX":"SACC","TX-CAMX":"SACC","TX-CAPX":"SACC","TX-CASX":"SACC","TX-CBAQ":"SACC","TX-CC3X":"SACC","TX-CCER":"SACC","TX-CCMX":"SACC","TX-CCNQ":"SACC","TX-CCYQ":"SACC","TX-CEBX":"SACC","TX-CEHM":"SACC","TX-CELM":"SACC","TX-CENX":"SACC","TX-CEPM":"SACC","TX-CHIX":"SACC","TX-CHP":"SACC","TX-CIBM":"SACC","TX-CISM":"SACC","TX-CLEM":"SACC","TX-CLER":"SACC","TX-CLR":"SACC","TX-CLYM":"SACC","TX-COCM":"SACC","TX-COFX":"SACC","TX-COHM":"SACC","TX-COLX":"SACC","TX-COMX":"SACC","TX-COPM":"SACC","TX-COR":"SACC","TX-CORM":"SACC","TX-COSM":"SACC","TX-COTM":"SACC","TX-COUX":"SACC","TX-COVM":"SACC","TX-COVX":"SACC","TX-CRAX":"SACC","TX-CREX":"SACC","TX-CYFX":"SACC","TX-CYPX":"SACC","TX-DALM":"SACC","TX-DALX":"SACC","TX-DECM":"SACC","TX-DEMX":"SACC","TX-DENM":"SACC","TX-DEOM":"SACC","TX-DESM":"SACC","TX-DEVX":"SACC","TX-DICX":"SACC","TX-DILX":"SACC","TX-DOUM":"SACC","TX-DUNM":"SACC","TX-DYAQ":"SACC","TX-EASX":"SACC","TX-EDGM":"SACC","TX-EESR":"SACC","TX-ELGX":"SACC","TX-ENNM":"SACC","TX-EULM":"SACC","TX-EVEX":"SACC","TX-FAIM":"SACC","TX-FDP":"SACC","TX-FLAX":"SACC","TX-FLMM":"SACC","TX-FLSX":"SACC","TX-FOBX":"SACC","TX-FORX":"SACC","TX-FRCX":"SACC","TX-FRIM":"SACC","TX-FRMM":"SACC","TX-FRVM":"SACC","TX-FTWM":"SACC","TX-FWNQ":"SACC","TX-GALM":"SACC","TX-GARM":"SACC","TX-GATX":"SACC","TX-GEOM":"SACC","TX-GOAQ":"SACC","TX-GODM":"SACC","TX-GONX":"SACC","TX-GRAM":"SACC","TX-GREM":"SACC","TX-GROX":"SACC","TX-GRPM":"SACC","TX-GRR":"SWCC","TX-GRVX":"SACC","TX-GRYX":"SACC","TX-GUNX":"SACC","TX-GUP":"SWCC","TX-H48X":"SACC","TX-HALX":"SACC","TX-HARX":"SACC","TX-HATM":"SACC","TX-HCFX":"SACC","TX-HELM":"SACC","TX-HEWM":"SACC","TX-HFMX":"SACC","TX-HGR":"SACC","TX-HILM":"SACC","TX-HORX":"SACC","TX-HOSM":"SACC","TX-HOUM":"SACC","TX-HTOX":"SACC","TX-HUCM":"SACC","TX-HUFX":"SACC","TX-HUNM":"SACC","TX-HURM":"SACC","TX-IDR":"SACC","TX-INCX":"SACC","TX-JF4X":"SACC","TX-JOLX":"SACC","TX-JUNM":"SACC","TX-JUSX":"SACC","TX-KAUX":"SACC","TX-KEEM":"SACC","TX-KELM":"SACC","TX-KEMX":"SACC","TX-KENX":"SACC","TX-KERM":"SACC","TX-KILM":"SACC","TX-KIMX":"SACC","TX-KLEM":"SACC","TX-KLEX":"SACC","TX-KNQ":"SACC","TX-KYLX":"SACC","TX-LAAQ":"SACC","TX-LAMM":"SACC","TX-LANM":"SACC","TX-LAP":"SACC","TX-LASM":"SACC","TX-LCIM":"SACC","TX-LEAX":"SACC","TX-LECM":"SACC","TX-LESX":"SACC","TX-LEVM":"SACC","TX-LEWM":"SACC","TX-LGR":"SACC","TX-LINX":"SACC","TX-LITM":"SACC","TX-LJKM":"SACC","TX-LOCQ":"SACC","TX-LOGM":"SACC","TX-LONX":"SACC","TX-LOYX":"SACC","TX-LPPX":"SACC","TX-LUBM":"SACC","TX-LUCM":"SACC","TX-LUFM":"SACC","TX-LVLM":"SACC","TX-LVS":"SACC","TX-LWRM":"SACC","TX-LYP":"SACC","TX-MALM":"SACC","TX-MAR":"SACC","TX-MARM":"SACC","TX-MATX":"SACC","TX-MAXX":"SACC","TX-MC1X":"SACC","TX-MC2X":"SACC","TX-MC7X":"SACC","TX-MC9X":"SACC","TX-MCKM":"SACC","TX-MCMX":"SACC","TX-MCQX":"SACC","TX-MCR":"SACC","TX-MCSX":"SACC","TX-MDR":"SACC","TX-MESM":"SACC","TX-MEYX":"SACC","TX-MIDM":"SACC","TX-MILM":"SACC","TX-MINM":"SACC","TX-MISM":"SACC","TX-MLR":"SACC","TX-MO3X":"SACC","TX-MOFX":"SACC","TX-MTPM":"SACC","TX-MURM":"SACC","TX-MYNG":"SACC","TX-NASM":"SACC","TX-NAVX":"SACC","TX-NEEX":"SACC","TX-NEMX":"SACC","TX-NOMX":"SACC","TX-NRHX":"SACC","TX-NRR":"SACC","TX-NRRM":"SACC","TX-NRSX":"SACC","TX-NTRX":"SACC","TX-NWBX":"SACC","TX-ODEM":"SACC","TX-OTAL":"SACC","TX-PAP":"SACC","TX-PARM":"SACC","TX-PBP":"SACC","TX-PC1X":"SACC","TX-PC3X":"SACC","TX-PERM":"SACC","TX-PHAM":"SACC","TX-PHRX":"SACC","TX-PILM":"SACC","TX-PLAM":"SACC","TX-PLNM":"SACC","TX-POBM":"SACC","TX-PONX":"SACC","TX-POSX":"SACC","TX-POTX":"SACC","TX-POWX":"SACC","TX-PRAM":"SACC","TX-PREX":"SACC","TX-PRIM":"SACC","TX-PROM":"SACC","TX-QUIX":"SACC","TX-RANX":"SACC","TX-RDOM":"SACC","TX-RENX":"SACC","TX-RGP":"SACC","TX-RGR":"SACC","TX-RHHM":"SACC","TX-RHMM":"SACC","TX-RICM":"SACC","TX-ROAM":"SACC","TX-ROAQ":"SACC","TX-ROBM":"SACC","TX-ROCX":"SACC","TX-RORM":"SACC","TX-ROVX":"SACC","TX-ROWM":"SACC","TX-ROXX":"SACC","TX-ROYM":"SACC","TX-RRYQ":"SACC","TX-SAAM":"SACC","TX-SACM":"SACC","TX-SAGM":"SACC","TX-SAJM":"SACC","TX-SAMM":"SACC","TX-SANM":"SACC","TX-SANW":"SACC","TX-SAP":"SACC","TX-SAPM":"SACC","TX-SAWM":"SACC","TX-SC2X":"SACC","TX-SCHM":"SACC","TX-SEAM":"SACC","TX-SECX":"SACC","TX-SEGM":"SACC","TX-SELM":"SACC","TX-SEM":"SACC","TX-SFEX":"SACC","TX-SHAM":"SACC","TX-SHAQ":"SACC","TX-SISX":"SACC","TX-SMR":"SACC","TX-SNR":"SACC","TX-SOHX":"SACC","TX-SOLM":"SACC","TX-SOMM":"SACC","TX-SOMX":"SACC","TX-SOPX":"SACC","TX-SOWX":"SACC","TX-SPRX":"SACC","TX-SRHW":"SACC","TX-SRR":"SACC","TX-STAM":"SACC","TX-STEM":"SACC","TX-STR":"SACC","TX-SUGM":"SACC","TX-SULM":"SACC","TX-SUNM":"SACC","TX-SUSX":"SACC","TX-SWEM":"SACC","TX-SYNG":"SACC","TX-TAYX":"SACC","TX-TC1X":"SACC","TX-TC2X":"SACC","TX-TC5X":"SACC","TX-TC6X":"SACC","TX-TC8X":"SACC","TX-TC9X":"SACC","TX-TCFS":"SACC","TX-TCR":"SACC","TX-TEMM":"SACC","TX-TERX":"SACC","TX-TEXM":"SACC","TX-TEXS":"SACC","TX-THRX":"SACC","TX-TIMX":"SACC","TX-TMR":"SACC","TX-TOHX":"SACC","TX-TOMX":"SACC","TX-TPR":"SACC","TX-TPWS":"SACC","TX-TROM":"SACC","TX-TRR":"SACC","TX-TURX":"SACC","TX-TXF":"SACC","TX-TXS":"SACC","TX-TYLX":"SACC","TX-UNIM":"SACC","TX-UVAM":"SACC","TX-UVFH":"SACC","TX-VAMX":"SACC","TX-VAVX":"SACC","TX-VERM":"SACC","TX-VICM":"SACC","TX-VNAM":"SACC","TX-WACM":"SACC","TX-WATM":"SACC","TX-WAXM":"SACC","TX-WBBX":"SACC","TX-WC2X":"SACC","TX-WEAM":"SACC","TX-WEBM":"SACC","TX-WESM":"SACC","TX-WESR":"SACC","TX-WHTM":"SACC","TX-WHWX":"SACC","TX-WI4X":"SACC","TX-WI5X":"SACC","TX-WIFM":"SACC","TX-WINM":"SACC","TX-WL1X":"SACC","TX-WL2X":"SACC","TX-WOOM":"SACC","TX-WSLX":"SACC","TX-WSOX":"SACC","TX-WSTM":"SACC","TX-WYLM":"SACC","TX-WYNG":"SACC","UT-ARP":"GBCC","UT-ASF":"GBCC","UT-BBR":"GBCC","UT-BEMD":"GBCC","UT-BRP":"GBCC","UT-BRS":"GBCC","UT-CAP":"GBCC","UT-CBP":"GBCC","UT-CFOD":"GBCC","UT-CLD":"GBCC","UT-CPD":"GBCC","UT-CRP":"GBCC","UT-CYD":"GBCC","UT-DGX":"GBCC","UT-DIF":"GBCC","UT-DPYQ":"GBCC","UT-DRD":"GBCC","UT-DUX":"GBCC","UT-ESR":"GBCC","UT-FFOD":"GBCC","UT-FIF":"GBCC","UT-FSR":"GBCC","UT-GRD":"GBCC","UT-GSMD":"GBCC","UT-GSP":"GBCC","UT-HIAQ":"GBCC","UT-HOP":"GBCC","UT-JBX":"GBCC","UT-JFR":"GBCC","UT-KFOD":"GBCC","UT-MFOD":"GBCC","UT-MLF":"GBCC","UT-MLX":"GBCC","UT-MPP":"GBCC","UT-MTOD":"GBCC","UT-NBP":"GBCC","UT-NES":"GBCC","UT-NWS":"GBCC","UT-ORP":"GBCC","UT-OWR":"GBCC","UT-PAP":"GBCC","UT-PEP":"GBCC","UT-PFOD":"GBCC","UT-PRD":"GBCC","UT-PUX":"GBCC","UT-RFOD":"GBCC","UT-SCS":"GBCC","UT-SES":"GBCC","UT-SGOD":"GBCC","UT-SKT":"GBCC","UT-SLOD":"GBCC","UT-SNX":"GBCC","UT-SPA":"GBCC","UT-SVX":"GBCC","UT-SWS":"GBCC","UT-TIP":"GBCC","UT-TOYQ":"GBCC","UT-UIX":"GBCC","UT-UOA":"GBCC","UT-UTS":"GBCC","UT-UWF":"GBCC","UT-VFOD":"GBCC","UT-WBX":"GBCC","UT-WDD":"GBCC","UT-WRH":"GBCC","UT-WYNG":"GBCC","UT-WYX":"GBCC","UT-ZIP":"GBCC","VA-ACP":"SACC","VA-ARP":"SACC","VA-BBR":"SACC","VA-BVYQ":"SACC","VA-BWP":"SACC","VA-BYNG":"SACC","VA-CBP":"SACC","VA-CHP":"SACC","VA-CHR":"SACC","VA-COP":"SACC","VA-DNQ":"SACC","VA-ESR":"SACC","VA-EVR":"SACC","VA-FE3":"SACC","VA-FIR":"SACC","VA-FMP":"SACC","VA-FSP":"SACC","VA-FSR":"SACC","VA-GDR":"SACC","VA-GFP":"SACC","VA-GMP":"SACC","VA-GWP":"SACC","VA-HLFH":"SACC","VA-HRNQ":"SACC","VA-JRR":"SACC","VA-LAAQ":"SACC","VA-LCNQ":"SACC","VA-LGP":"SACC","VA-LPFD":"SACC","VA-MAP":"SACC","VA-MHYQ":"SACC","VA-MNR":"SACC","VA-NMR":"SACC","VA-NNQ":"SACC","VA-NSNQ":"SACC","VA-ONQ":"SACC","VA-OQR":"SACC","VA-PEP":"SACC","VA-PGP":"SACC","VA-PQR":"SACC","VA-PRR":"SACC","VA-PTR":"SACC","VA-PWP":"SACC","VA-QMQ":"SACC","VA-RAYQ":"SACC","VA-RIP":"SACC","VA-RVR":"SACC","VA-SCNQ":"SACC","VA-SEM":"SACC","VA-SHP":"SACC","VA-SPNQ":"SACC","VA-SRF":"SACC","VA-SWER":"SACC","VA-TRP":"SACC","VA-VAF":"SACC","VA-VAS":"SACC","VA-VESR":"SACC","VA-WIR":"SACC","VA-WTP":"SACC","VA-YNQ":"SACC","VI-BIP":"SACC","VI-BIR":"SACC","VI-CHP":"SACC","VI-FE2":"SACC","VI-GCR":"SACC","VI-SPR":"SACC","VI-SRP":"SACC","VI-VIP":"SACC","VI-VIS":"SACC","VT-EYNG":"EACC","VT-GMF":"EACC","VT-JYNG":"EACC","VT-MBP":"EACC","VT-MQR":"EACC","VT-NBR":"EACC","VT-SEM":"EACC","VT-VTFN":"EACC","VT-VTS":"EACC","VT-WRR":"EACC","WA-ABDN":"NWCC","WA-ACKN":"NWCC","WA-AFNG":"NWCC","WA-AHC":"NWCC","WA-AIRN":"NWCC","WA-ALBN":"NWCC","WA-ALMN":"NWCC","WA-AMCN":"NWCC","WA-ANAN":"NWCC","WA-ARLN":"NWCC","WA-ARNG":"NWCC","WA-ASON":"NWCC","WA-BEHM":"NWCC","WA-BELN":"NWCC","WA-BENN":"NWCC","WA-BFOD":"NWCC","WA-BINN":"NWCC","WA-BREN":"NWCC","WA-BRIN":"NWCC","WA-BUCN":"NWCC","WA-BUKN":"NWCC","WA-BURN":"NWCC","WA-CABN":"NWCC","WA-CASN":"NWCC","WA-CATN":"NWCC","WA-CBR":"NWCC","WA-CCAL":"NWCC","WA-CCDN":"NWCC","WA-CHEN":"NWCC","WA-CHHN":"NWCC","WA-CHLN":"NWCC","WA-CHLZ":"NWCC","WA-CHWN":"NWCC","WA-CKAN":"NWCC","WA-CKTN":"NWCC","WA-CLCN":"NWCC","WA-CLEN":"NWCC","WA-CNR":"NWCC","WA-COA":"NWCC","WA-COCN":"NWCC","WA-CODN":"NWCC","WA-COF":"NWCC","WA-COLN":"NWCC","WA-CONN":"NWCC","WA-COPN":"NWCC","WA-COSN":"NWCC","WA-COUN":"NWCC","WA-COVN":"NWCC","WA-CRC":"NWCC","WA-CREN":"NWCC","WA-CUSN":"NWCC","WA-CVFN":"NWCC","WA-CZCN":"NWCC","WA-DARN":"NWCC","WA-DAVN":"NWCC","WA-DGEN":"NWCC","WA-DNR":"NWCC","WA-DUPN":"NWCC","WA-EATN":"NWCC","WA-ELEN":"NWCC","WA-ELMN":"NWCC","WA-ELP":"NWCC","WA-ENQ":"NWCC","WA-EPHN":"NWCC","WA-EVEN":"NWCC","WA-FAAQ":"NWCC","WA-FAMN":"NWCC","WA-FE10":"NWCC","WA-FECN":"NWCC","WA-FEPN":"NWCC","WA-FVP":"NWCC","WA-GA1N":"NWCC","WA-GCPL":"NWCC","WA-GHCN":"NWCC","WA-GNRN":"NWCC","WA-GOLN":"NWCC","WA-GPF":"NWCC","WA-GRAN":"NWCC","WA-GRGN":"NWCC","WA-GRVN":"NWCC","WA-HAMN":"NWCC","WA-HANN":"NWCC","WA-HFR":"NWCC","WA-HNE":"NWCC","WA-HOQN":"NWCC","WA-ILWN":"NWCC","WA-ILX":"NWCC","WA-IONN":"NWCC","WA-JCNQ":"NWCC","WA-JECN":"NWCC","WA-JHR":"NWCC","WA-KENN":"NWCC","WA-KETN":"NWCC","WA-KGP":"NWCC","WA-KIGN":"NWCC","WA-KITN":"NWCC","WA-KKLN":"NWCC","WA-KLCN":"NWCC","WA-KNQ":"NWCC","WA-KTCN":"NWCC","WA-KTTN":"NWCC","WA-LACN":"NWCC","WA-LAXN":"NWCC","WA-LCC":"NWCC","WA-LCP":"NWCC","WA-LECN":"NWCC","WA-LIDN":"NWCC","WA-LMYQ":"NWCC","WA-LONN":"NWCC","WA-LOVN":"NWCC","WA-LPR":"NWCC","WA-LRP":"NWCC","WA-LWR":"NWCC","WA-LYDN":"NWCC","WA-LYNN":"NWCC","WA-MAA":"NWCC","WA-MALN":"NWCC","WA-MARN":"NWCC","WA-MASN":"NWCC","WA-MCLN":"NWCC","WA-MCR":"NWCC","WA-MEDN":"NWCC","WA-MEFN":"NWCC","WA-MERN":"NWCC","WA-MESN":"NWCC","WA-METN":"NWCC","WA-MNR":"NWCC","WA-MORN":"NWCC","WA-MOSN":"NWCC","WA-MOTN":"NWCC","WA-MRP":"NWCC","WA-MSF":"NWCC","WA-MTVN":"NWCC","WA-MUKN":"NWCC","WA-MYNG":"NWCC","WA-NCP":"NWCC","WA-NEDN":"NWCC","WA-NES":"NWCC","WA-NESN":"NWCC","WA-NEWN":"NWCC","WA-NKT":"NWCC","WA-NORN":"NWCC","WA-NQR":"NWCC","WA-NWS":"NWCC","WA-NYC":"NWCC","WA-OAKN":"NWCC","WA-OCC":"NWCC","WA-OCEN":"NWCC","WA-ODEN":"NWCC","WA-OKAN":"NWCC","WA-OKCN":"NWCC","WA-OLF":"NWCC","WA-OLP":"NWCC","WA-OLS":"NWCC","WA-OLYN":"NWCC","WA-OMAN":"NWCC","WA-OPA":"NWCC","WA-ORON":"NWCC","WA-OWF":"NWCC","WA-PACN":"NWCC","WA-PASN":"NWCC","WA-PCS":"NWCC","WA-PECN":"NWCC","WA-PICN":"NWCC","WA-PREN":"NWCC","WA-PSA":"NWCC","WA-PTAN":"NWCC","WA-PTSN":"NWCC","WA-PULN":"NWCC","WA-RAYN":"NWCC","WA-REDN":"NWCC","WA-RENN":"NWCC","WA-RFR":"NWCC","WA-RICN":"NWCC","WA-RLP":"NWCC","WA-ROLN":"NWCC","WA-ROSN":"NWCC","WA-RUSN":"NWCC","WA-RZVN":"NWCC","WA-SCEN":"NWCC","WA-SEAN":"NWCC","WA-SEDN":"NWCC","WA-SES":"NWCC","WA-SETN":"NWCC","WA-SEW":"NWCC","WA-SGR":"NWCC","WA-SJP":"NWCC","WA-SJX":"NWCC","WA-SKX":"NWCC","WA-SLT":"NWCC","WA-SMCN":"NWCC","WA-SNON":"NWCC","WA-SNX":"NWCC","WA-SOBN":"NWCC","WA-SOPN":"NWCC","WA-SPA":"NWCC","WA-SPD":"NWCC","WA-SPFN":"NWCC","WA-SPKN":"NWCC","WA-SPS":"NWCC","WA-SPW":"NWCC","WA-SST":"NWCC","WA-STCN":"NWCC","WA-STEN":"NWCC","WA-STFN":"NWCC","WA-SUNN":"NWCC","WA-SYNG":"NWCC","WA-TACN":"NWCC","WA-TBR":"NWCC","WA-THUN":"NWCC","WA-TLT":"NWCC","WA-TOPN":"NWCC","WA-TPR":"NWCC","WA-TUKN":"NWCC","WA-TUMN":"NWCC","WA-TWIN":"NWCC","WA-UNIN":"NWCC","WA-VANN":"NWCC","WA-WAIN":"NWCC","WA-WALN":"NWCC","WA-WASN":"NWCC","WA-WESN":"NWCC","WA-WFOD":"NWCC","WA-WFS":"NWCC","WA-WHSN":"NWCC","WA-WHX":"NWCC","WA-WILN":"NWCC","WA-WINQ":"NWCC","WA-WKCN":"NWCC","WA-WLR":"NWCC","WA-WMP":"NWCC","WA-WMR":"NWCC","WA-WNGS":"NWCC","WA-WTMN":"NWCC","WA-WWLN":"NWCC","WA-YAA":"NWCC","WA-YAKN":"NWCC","WA-YKCN":"NWCC","WA-YTYQ":"NWCC","WA-ZILN":"NWCC","WI-AIP":"EACC","WI-CNF":"EACC","WI-FPF":"EACC","WI-FRR":"EACC","WI-GBR":"EACC","WI-GLA":"EACC","WI-GNR":"EACC","WI-HRR":"EACC","WI-IAP":"EACC","WI-IRR":"EACC","WI-JRR":"EACC","WI-LCR":"EACC","WI-LPR":"EACC","WI-MCYQ":"EACC","WI-MID":"EACC","WI-NCP":"EACC","WI-NCR":"EACC","WI-NRF":"EACC","WI-PVR":"EACC","WI-R09":"EACC","WI-SCP":"EACC","WI-SCR":"EACC","WI-SEM":"EACC","WI-TPR":"EACC","WI-WCR":"EACC","WI-WIFN":"EACC","WI-WIS":"EACC","WV-APP":"SACC","WV-BLP":"EACC","WV-CVR":"EACC","WV-DYNG":"EACC","WV-GRP":"EACC","WV-HFP":"EACC","WV-MOF":"EACC","WV-NRP":"EACC","WV-OHR":"EACC","WV-SEM":"EACC","WV-WSR":"EACC","WV-WVFN":"EACC","WV-WVS":"EACC","WY-ALX":"RMCC","WY-BAR":"RMCC","WY-BFD":"RMCC","WY-BHF":"RMCC","WY-BHX":"RMCC","WY-BTF":"GBCC","WY-CAD":"RMCC","WY-CAX":"RMCC","WY-CMX":"RMCC","WY-COD":"RMCC","WY-COX":"RMCC","WY-CRX":"RMCC","WY-CVR":"RMCC","WY-DTP":"RMCC","WY-ESR":"RMCC","WY-FBP":"RMCC","WY-FLP":"RMCC","WY-FRX":"RMCC","WY-FWAQ":"RMCC","WY-GOX":"RMCC","WY-GTP":"GBCC","WY-GYNG":"RMCC","WY-HDD":"RMCC","WY-HLR":"RMCC","WY-HOX":"RMCC","WY-HPD":"RMCC","WY-JOX":"RMCC","WY-JRP":"GBCC","WY-KRD":"RMCC","WY-LAX":"RMCC","WY-LIX":"RMCC","WY-LLNG":"RMCC","WY-LND":"RMCC","WY-LYNG":"RMCC","WY-MLR":"RMCC","WY-MRF":"RMCC","WY-NAX":"RMCC","WY-NCD":"RMCC","WY-NER":"GBCC","WY-NIX":"RMCC","WY-PAR":"RMCC","WY-PAX":"RMCC","WY-PDD":"RMCC","WY-PLX":"RMCC","WY-RAD":"RMCC","WY-RSD":"RMCC","WY-SER":"RMCC","WY-SFR":"RMCC","WY-SHF":"RMCC","WY-SHX":"RMCC","WY-SUX":"RMCC","WY-SWX":"RMCC","WY-SYNG":"RMCC","WY-TDX":"GBCC","WY-UIX":"RMCC","WY-WAL":"RMCC","WY-WAX":"RMCC","WY-WBD":"RMCC","WY-WEX":"RMCC","WY-WOD":"RMCC","WY-WRA":"RMCC","WY-WYI":"RMCC","WY-WYS":"RMCC","WY-YNP":"NRCC"};
+
+// --- File handling: two-step workflow ---
+const GACC_ABBR = ['AICC','NWCC','ONCC','OSCC','NRCC','GBCC','SWCC','RMCC','EACC','SACC'];
+let yesterdayPPL = null;
+let step = 1;
+let lastIMSRText = '';
+
+// Step 1 drop zone (yesterday)
+const dz = document.getElementById('dropZone'), fi = document.getElementById('fileInput');
+fi.addEventListener('change', () => { if(fi.files.length) handleFile(fi.files[0]); });
+setupDropZone(dz, fi);
+
+// Step 2 drop zone (today)
+function initStep2DropZone() {
+  const dz2 = document.getElementById('dropZone2');
+  const fi2 = document.getElementById('fileInput2');
+  if (!dz2 || !fi2) return;
+  fi2.addEventListener('change', () => { if(fi2.files.length) handleFile(fi2.files[0]); });
+  setupDropZone(dz2, fi2);
+}
+
+// GACC overrides — unit codes where the spreadsheet differs from current NICC assignments
+// Update this list when NICC issues updated unit ID assignments
+const UNIT_GACC_OVERRIDES = {
+  'MT-BIP': 'RMCC',  // Bighorn Canyon NRA — spreadsheet says NRCC, NICC assignment is RMCC
+};
+document.body.addEventListener('dragover', e => e.preventDefault());
+document.body.addEventListener('drop', e => e.preventDefault());
+
+function setupDropZone(zone, input) {
+  // Click to browse
+  zone.addEventListener('click', (e) => {
+    if (e.target.tagName === 'BUTTON') return; // don't intercept button clicks
+    input.click();
+  });
+  // Drag events
+  zone.addEventListener('dragenter', e => { e.preventDefault(); zone.classList.add('dragover'); });
+  zone.addEventListener('dragover',  e => { e.preventDefault(); zone.classList.add('dragover'); });
+  zone.addEventListener('dragleave', e => {
+    // Only remove highlight when leaving the zone itself, not its children
+    if (!zone.contains(e.relatedTarget)) zone.classList.remove('dragover');
+  });
+  zone.addEventListener('drop', e => {
+    e.preventDefault();
+    zone.classList.remove('dragover');
+    let file = null;
+    if (e.dataTransfer.files && e.dataTransfer.files.length > 0) {
+      file = e.dataTransfer.files[0];
+    } else if (e.dataTransfer.items && e.dataTransfer.items.length > 0) {
+      const item = e.dataTransfer.items[0];
+      if (item.kind === 'file') file = item.getAsFile();
+    }
+    if (file) handleFile(file);
+  });
+}
+
+function showStep2() {
+  document.getElementById('step1Area').style.display = 'none';
+  document.getElementById('step2Area').style.display = 'block';
+  initStep2DropZone();
+}
+
+function switchTab(tab) {
+  document.getElementById('tabFile').classList.toggle('active', tab === 'file');
+  document.getElementById('tabPaste').classList.toggle('active', tab === 'paste');
+  document.getElementById('panelFile').style.display = tab === 'file' ? 'block' : 'none';
+  document.getElementById('panelPaste').style.display = tab === 'paste' ? 'block' : 'none';
+}
+
+function runFromPaste() {
+  const text = document.getElementById('pasteBox').value.trim();
+  if (!text) { alert('Paste some IMSR text first.'); return; }
+  document.getElementById('panelPaste').innerHTML += '<p style="color:var(--text-dim);font-size:13px;margin-top:8px;">Analyzing…</p>';
+  lastIMSRText = text;
+  document.getElementById('rawText').textContent = text;
+  // For paste mode, generate minimal HTML (no table structure for math — that's expected)
+  const html = textToProofHtml(text);
+  render(analyze(text, html));
+}
+
+function skipYesterday() {
+  yesterdayPPL = null;
+  step = 2;
+  showStep2();
+}
+
+
+async function handleFile(file) {
+  const isDocx = file.name.endsWith('.docx');
+  const isPdf = file.name.endsWith('.pdf') || file.type === 'application/pdf';
+  if (!isDocx && !isPdf) { alert('Need .docx or .pdf'); return; }
+
+  if (step === 1) {
+    // Parse yesterday's IMSR for Total Personnel per GACC
+    dz.style.opacity = '0.5';
+    dz.style.pointerEvents = 'none';
+    dz.querySelector('h2').textContent = 'Reading yesterday\'s personnel…';
+    if (isDocx) {
+      const buf = await file.arrayBuffer();
+      const hr = await mammoth.convertToHtml({arrayBuffer: buf});
+      htmlText = hr.value;
+      yesterdayPPL = extractResPPL(htmlText);
+    } else {
+      const rawText = await extractPdfText(file);
+      yesterdayPPL = extractResPPLFromText(rawText);
+    }
+    dz.style.opacity = '';
+    dz.style.pointerEvents = '';
+    if (yesterdayPPL) {
+      const info = GACC_ABBR.map(g => `${g}: ${yesterdayPPL[g]??0}`).join('  ');
+      document.getElementById('prevInfo').innerHTML = `<strong>Yesterday's Total Personnel loaded:</strong> ${info}`;
+      document.getElementById('prevInfo').classList.remove('hidden');
+    } else {
+      document.getElementById('prevInfo').innerHTML = '<strong>Warning:</strong> Could not find Resource Summary in yesterday\'s IMSR. Personnel math will be skipped.';
+      document.getElementById('prevInfo').classList.remove('hidden');
+    }
+    step = 2;
+    showStep2();
+  } else {
+    // Step 2: analyze today's IMSR
+    const dz2 = document.getElementById('dropZone2');
+    if (dz2) { dz2.style.opacity = '0.5'; dz2.style.pointerEvents = 'none'; dz2.querySelector('h2').textContent = 'Analyzing…'; }
+    let rawText = '', htmlText = '';
+    if (isDocx) {
+      const buf = await file.arrayBuffer();
+      const [tr, hr] = await Promise.all([mammoth.extractRawText({arrayBuffer:buf}), mammoth.convertToHtml({arrayBuffer:buf})]);
+      rawText = tr.value;
+      htmlText = hr.value;
+    } else {
+      rawText = await extractPdfText(file);
+      htmlText = textToProofHtml(rawText);
+    }
+    if (dz2) { dz2.style.opacity = ''; dz2.style.pointerEvents = ''; dz2.querySelector('h2').textContent = 'Drop another IMSR to re-check'; }
+    document.getElementById('rawText').textContent = rawText;
+    lastIMSRText = rawText;
+    render(analyze(rawText, htmlText));
+  }
+}
+
+// === PDF TEXT EXTRACTION ===
+async function extractPdfText(file) {
+  pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
+  const buf = await file.arrayBuffer();
+  const pdf = await pdfjsLib.getDocument({data: buf}).promise;
+  let fullText = '';
+  for (let i = 1; i <= pdf.numPages; i++) {
+    const page = await pdf.getPage(i);
+    const content = await page.getTextContent();
+    // Reconstruct lines by grouping items with similar Y positions
+    const items = content.items.filter(it => it.str.trim());
+    const lineMap = new Map();
+    for (const item of items) {
+      const y = Math.round(item.transform[5]);
+      if (!lineMap.has(y)) lineMap.set(y, []);
+      lineMap.get(y).push({x: item.transform[4], str: item.str});
+    }
+    // Sort lines top-to-bottom (descending Y in PDF coords)
+    const sortedYs = [...lineMap.keys()].sort((a,b) => b-a);
+    for (const y of sortedYs) {
+      const lineItems = lineMap.get(y).sort((a,b) => a.x-b.x);
+      const lineStr = lineItems.map(it => it.str).join(' ');
+      fullText += lineStr + '\n';
+    }
+    fullText += '\n';
+  }
+  return fullText;
+}
+
+// Convert plain text to minimal HTML for analysis functions that need HTML
+function textToProofHtml(text) {
+  const lines = text.split('\n');
+  let html = '';
+  let inTable = false;
+  for (const line of lines) {
+    const t = line.trim();
+    if (!t) { if (inTable) { html += '</table>'; inTable = false; } html += '<p></p>'; continue; }
+    // Detect table-like lines (multiple tab/spaces between tokens with numbers)
+    if (/\t/.test(line) || /\s{3,}/.test(line)) {
+      if (!inTable) { html += '<table><tbody>'; inTable = true; }
+      const cells = t.split(/\t|\s{3,}/).map(c => `<td>${c.replace(/</g,'&lt;').replace(/>/g,'&gt;')}</td>`).join('');
+      html += `<tr>${cells}</tr>`;
+    } else {
+      if (inTable) { html += '</tbody></table>'; inTable = false; }
+      html += `<p>${t.replace(/</g,'&lt;').replace(/>/g,'&gt;')}</p>`;
+    }
+  }
+  if (inTable) html += '</tbody></table>';
+  return html;
+}
+
+function extractResPPL(html) {
+  // Primary: Extract Total Personnel per GACC from Resource Summary HTML table (docx path)
+  const doc = new DOMParser().parseFromString(html, 'text/html');
+  const tables = [...doc.querySelectorAll('table')];
+  for (const table of tables) {
+    const rows = [...table.querySelectorAll('tr')].map(r => [...r.querySelectorAll('td,th')].map(c => c.textContent.trim()));
+    if (rows.length < 5) continue;
+    const hdr = rows[0].join(' ').toLowerCase();
+    if (!/total personnel|cumulative acres/i.test(hdr)) continue;
+    const pplCol = rows[0].findIndex(c => /total\s*personnel/i.test(c));
+    if (pplCol < 0) continue;
+    const result = {};
+    for (let r = 1; r < rows.length; r++) {
+      const gacc = (rows[r][0] || '').trim().toUpperCase();
+      if (GACC_ABBR.includes(gacc)) {
+        result[gacc] = parseInt((rows[r][pplCol] || '0').replace(/,/g, '')) || 0;
+      }
+    }
+    if (Object.keys(result).length >= 5) return result;
+  }
+  // Fallback: parse from plain text (PDF path)
+  // The Resource Summary in plain text looks like rows of:
+  //   AICC  0  0  0  0  0  0  0
+  //   RMCC  12  835,303  12  112  4  882  -94
+  // with a header row containing "Total Personnel"
+  const plainText = doc.body ? doc.body.textContent : '';
+  return extractResPPLFromText(plainText);
+}
+
+function extractResPPLFromText(text) {
+  // Find the Resource Summary block
+  const startIdx = text.search(/Active Incident Resource Summary/i);
+  if (startIdx < 0) return null;
+  // End at the next major section or after ~60 lines
+  const block = text.substring(startIdx, startIdx + 3000);
+  const lines = block.split('\n').map(l => l.trim()).filter(Boolean);
+
+  // Find header line that contains "Total Personnel"
+  let pplColIdx = -1;
+  let headerLineIdx = -1;
+  for (let i = 0; i < lines.length; i++) {
+    if (/total\s*personnel/i.test(lines[i])) {
+      headerLineIdx = i;
+      // Split header into tokens and find which position "Total Personnel" falls at
+      // Header looks like: GACC Incidents Cumulative Acres Crews Engines Helicopters Total Personnel Change in Personnel
+      const tokens = lines[i].split(/\s{2,}|\t/).map(t => t.trim()).filter(Boolean);
+      pplColIdx = tokens.findIndex(t => /total\s*personnel/i.test(t));
+      break;
+    }
+  }
+
+  // If header is split across lines (PDF reflow), try combining adjacent short lines
+  if (headerLineIdx < 0) {
+    // Try to find it by looking for a line with "Personnel"
+    for (let i = 0; i < lines.length; i++) {
+      if (/\bPersonnel\b/.test(lines[i]) && /\bCrew|Engines|Helicopters\b/.test(lines[i])) {
+        headerLineIdx = i;
+        break;
+      }
+    }
+  }
+
+  const result = {};
+  // Scan lines after header for GACC rows
+  // Each GACC row: AICC  0  0  0  0  0  0  0
+  // The Total Personnel value is at a fixed position (index 6, 0-based: GACC Incidents CumAcres Crews Engines Helis TotalPPL ChgePPL)
+  const TOTAL_PPL_POS = 6; // 0=GACC, 1=Incidents, 2=CumAcres, 3=Crews, 4=Engines, 5=Helis, 6=TotalPPL, 7=ChgPPL
+  const searchStart = headerLineIdx >= 0 ? headerLineIdx + 1 : 0;
+
+  for (let i = searchStart; i < Math.min(lines.length, searchStart + 25); i++) {
+    const line = lines[i];
+    // Stop if we hit the next section
+    if (/^(Southern|Northern|Rocky|Great|Southwest|Alaska|Northwest|Eastern|Predictive|Fires and|6 Minutes)/i.test(line)) break;
+    // Try to match GACC row: starts with a known GACC code
+    const gaccMatch = line.match(/^(AICC|NWCC|ONCC|OSCC|NRCC|GBCC|SWCC|RMCC|EACC|SACC|Total)\b/i);
+    if (!gaccMatch) continue;
+    const gacc = gaccMatch[1].toUpperCase();
+    if (gacc === 'TOTAL') continue; // skip total row
+
+    // Split into numeric tokens — handle commas in numbers and bold markers
+    // Line may look like: "RMCC 12 835,303 12 112 4 882 -94"
+    const tokens = line.replace(/\*/g, '').trim().split(/\s+/);
+    // tokens[0] = GACC code, then numbers follow
+    // Position 6 (index 6) = Total Personnel
+    if (tokens.length >= 7) {
+      const rawVal = tokens[TOTAL_PPL_POS] || '0';
+      const val = parseInt(rawVal.replace(/,/g, '')) || 0;
+      result[gacc] = val;
+    } else {
+      // Short row — PDF may have reflowed; try extracting last number before a +/- number
+      const nums = line.match(/[\d,]+/g);
+      if (nums && nums.length >= 2) {
+        // Second-to-last number is likely Total PPL (last is Change in PPL)
+        result[gacc] = parseInt(nums[nums.length - 2].replace(/,/g, '')) || 0;
+      }
+    }
+  }
+
+  return Object.keys(result).length >= 3 ? result : null;
+}
+
+function clearAll() {
+  document.getElementById('output').classList.add('hidden');
+  document.getElementById('rawText').textContent = '';
+  document.getElementById('rawText').classList.add('hidden');
+  document.getElementById('results').innerHTML = '';
+  document.getElementById('summary').innerHTML = '';
+  document.getElementById('prevInfo').classList.add('hidden');
+  document.getElementById('l2Container').classList.add('hidden');
+  document.getElementById('l2Results').innerHTML = '';
+  document.getElementById('l2Summary').innerHTML = '';
+  document.getElementById('pasteBox').value = '';
+  lastIMSRText = '';
+  yesterdayPPL = null;
+  step = 1;
+  // Reset step areas
+  document.getElementById('step1Area').style.display = 'block';
+  document.getElementById('step2Area').style.display = 'none';
+  // Reset step2 drop zone header
+  const dz2hdr = document.querySelector('#dropZone2 h2');
+  if (dz2hdr) dz2hdr.textContent = "Drop today's IMSR here";
+  // Reset tab to file
+  switchTab('file');
+}
+
+// --- Parse GACC sections from text ---
+function parseGacc(text) {
+  const pat = new RegExp('(' + GA.join('|') + ')', 'i');
+  const lines = text.split('\n'), secs = [];
+  let cur = null;
+  // Only start parsing GACC sections after the Resource Summary
+  let pastResSummary = false;
+  // Stop at Fires and Acres tables
+  let inFiresAcres = false;
+
+  for (const line of lines) {
+    const t = line.trim(); if (!t) continue;
+    if (/Active Incident Resource Summary/i.test(t)) pastResSummary = true;
+    if (!pastResSummary) continue;
+    if (/Fires and Acres/i.test(t)) { inFiresAcres = true; }
+    if (inFiresAcres) continue;
+
+    const gm = t.match(pat);
+    // GACC header line: has the area name and is short (not inside a table or paragraph)
+    if (gm && t.length < 120 && !/AICC|NWCC|ONCC|OSCC|NRCC|GBCC|SWCC|RMCC|EACC|SACC/i.test(t.replace(gm[1],''))) {
+      if (cur) secs.push(cur);
+      cur = { name: gm[1], lines: [], narrs: [] };
+    }
+    if (cur) cur.lines.push(t);
+  }
+  if (cur) secs.push(cur);
+
+  // Deduplicate: if same GACC name appears twice, merge into the first
+  const merged = [];
+  const seen = {};
+  for (const s of secs) {
+    if (seen[s.name]) { seen[s.name].lines.push(...s.lines); }
+    else { seen[s.name] = s; merged.push(s); }
+  }
+
+  // Parse narratives from each section
+  for (const s of merged) {
+    for (const l of s.lines) {
+      const isTableRow = /^\*?\s*[\w\s'-]+\s+[A-Z]{2}-[A-Z]{2,4}\s+\d/.test(l);
+      if (isTableRow) continue;
+
+      if (/^\*\s+\w/.test(l) && /,\s+[A-Z][a-z]/.test(l)) {
+        s.narrs.push({ name: l.replace(/^\*\s+/,'').split(',')[0].trim(), isNew: true, raw: l });
+      } else if (/^[A-Z][\w\s'-]+,\s+[A-Z][a-z][\w\s&'-]+[.]/.test(l) && !SKIP.test(l) && !pat.test(l) && l.length > 30) {
+        const nm = l.split(',')[0].trim();
+        if (!/^(GACC|Incident|Unit|Total|New |Uncontained|Large fires|CIMTs|NIMOs|Fire Activity|Fires and)/i.test(nm))
+          s.narrs.push({ name: nm, isNew: false, raw: l });
+      }
+    }
+  }
+  return merged;
+}
+
+// --- Parse tables from HTML ---
+function parseTables(html) {
+  const doc = new DOMParser().parseFromString(html, 'text/html');
+  return [...doc.querySelectorAll('table')].map(t =>
+    [...t.querySelectorAll('tr')].map(r => [...r.querySelectorAll('td,th')].map(c => c.textContent.trim()))
+  );
+}
+
+function identifyGaccTables(tables) {
+  const result = [];
+  for (const rows of tables) {
+    if (rows.length < 2) continue;
+    const hdr = rows[0].join(' ').toLowerCase();
+
+    // MUST have Origin Own or Ctn/Comp — only incident tables have these
+    if (!/origin|ctn.*comp|comp.*ctn/i.test(hdr)) continue;
+
+    // REJECT Resource Summary (has "GACC" and "Cumulative Acres" or GACC abbreviations in data)
+    if (/cumulative|gacc.*incidents|change in personnel/i.test(hdr)) continue;
+    // REJECT if data rows contain GACC abbreviations
+    const firstDataCell = (rows[1] || [])[0] || '';
+    if (/^(AICC|NWCC|ONCC|OSCC|NRCC|GBCC|SWCC|RMCC|EACC|SACC|Total)$/i.test(firstDataCell.trim())) continue;
+
+    // REJECT Fire Activity stats tables
+    if (/fire activity|teams assigned/i.test(hdr)) continue;
+
+    const h = rows[0].map(c => c.toLowerCase());
+    const cm = {};
+    h.forEach((c,i) => {
+      if (/incident/i.test(c)) cm.name=i; if (/^unit/i.test(c)) cm.unit=i;
+      if (/total\s*acres/i.test(c)) cm.acres=i; if (/chge.*acres/i.test(c)) cm.chgeAcres=i;
+      if (/^%$/.test(c.trim())||/contained/i.test(c)) cm.pct=i; if (/ctn|comp/i.test(c)) cm.ctn=i;
+      if (/^est$/i.test(c.trim())) cm.est=i; if (/total\s*ppl/i.test(c)) cm.ppl=i;
+      if (/chge.*ppl/i.test(c)) cm.chgePpl=i; if (/crw|crew/i.test(c)) cm.crw=i;
+      if (/eng/i.test(c)) cm.eng=i; if (/heli/i.test(c)) cm.heli=i;
+      if (/strc|struct/i.test(c)) cm.strc=i; if (/ctd|\$\$/i.test(c)) cm.cost=i;
+      if (/origin/i.test(c)) cm.origin=i;
+    });
+    if (cm.name===undefined) cm.name=0;
+    const pn = idx => { if(idx===undefined) return null; const v=(rows[1]||[])[idx]; return v; }; // just for structure
+    const incs = [];
+    for (let r=1; r<rows.length; r++) {
+      const row=rows[r]; if(row.length<3) continue;
+      const rn=(row[cm.name]||'').trim(); if(!rn||/^total|^gacc/i.test(rn)) continue;
+      const isNew=rn.startsWith('*'), name=rn.replace(/^\*\s*/,'').trim();
+      const num=idx=>{ if(idx===undefined) return null; const v=(row[idx]||'').trim(); if(!v||v==='---'||v==='NR'||v==='UNK') return null; return parseInt(v.replace(/,/g,''))||0; };
+      incs.push({ name, isNew, unit:row[cm.unit]||'', acres:num(cm.acres), chgeAcres:(row[cm.chgeAcres]||'').trim(),
+        pct:num(cm.pct), ctn:(row[cm.ctn]||'').trim(), est:(row[cm.est]||'').trim(),
+        ppl:num(cm.ppl), chgePpl:(row[cm.chgePpl]||'').trim(), crw:num(cm.crw), eng:num(cm.eng), heli:num(cm.heli),
+        strc:num(cm.strc), cost:(row[cm.cost]||'').trim(), origin:(row[cm.origin]||'').trim(), rawRow:row });
+    }
+    if (incs.length) result.push({ cm, incs, hdr: rows[0] });
+  }
+  return result;
+}
+
+function findResSummary(tables) {
+  for (const rows of tables) { if (rows.length<5) continue; const f=rows.map(r=>r.join(' ')).join(' ').toLowerCase(); if(/aicc.*nwcc|cumulative acres|total personnel/i.test(f)) return rows; }
+  return null;
+}
+
+// Parse Fires and Acres table to extract New Fires per GACC
+// Returns { AICC: 45, NWCC: 12, ... } or null
+function parseFANewFires(tables) {
+  // F&A area names → GACC abbreviation mapping
+  const FA_TO_GACC = {
+    'ak': 'AICC', 'alaska': 'AICC', 'alaska area': 'AICC',
+    'nw': 'NWCC', 'northwest': 'NWCC', 'northwest area': 'NWCC',
+    'n.ca': 'ONCC', 'n.cal': 'ONCC', 'n. ca': 'ONCC', 'northern california': 'ONCC', 'northern california area': 'ONCC',
+    's.ca': 'OSCC', 's.cal': 'OSCC', 's. ca': 'OSCC', 'southern california': 'OSCC', 'southern california area': 'OSCC',
+    'n.rockies': 'NRCC', 'n. rockies': 'NRCC', 'northern rockies': 'NRCC', 'northern rockies area': 'NRCC',
+    'gt.basin': 'GBCC', 'gt. basin': 'GBCC', 'great basin': 'GBCC', 'great basin area': 'GBCC',
+    'sw': 'SWCC', 'southwest': 'SWCC', 'southwest area': 'SWCC',
+    'rocky mtn': 'RMCC', 'rocky mountain': 'RMCC', 'rocky mountain area': 'RMCC',
+    'eastern': 'EACC', 'east': 'EACC', 'eastern area': 'EACC',
+    'southern': 'SACC', 'south': 'SACC', 'southern area': 'SACC',
+  };
+  for (const rows of tables) {
+    if (rows.length < 5) continue;
+    const hdr = rows[0].join(' ').toLowerCase();
+    // Must have TOTAL column and look like an F&A table (BIA, BLM, USFS columns)
+    if (!/total/i.test(hdr)) continue;
+    if (!/bia|blm|usfs|st.ot/i.test(hdr)) continue;
+    // Find TOTAL column index
+    const totalCol = rows[0].findIndex(c => /^total$/i.test(c.trim()));
+    if (totalCol < 0) continue;
+    // Walk rows looking for "Fires" rows per area
+    const result = {};
+    for (let r = 1; r < rows.length; r++) {
+      const area = (rows[r][0] || '').trim().toLowerCase();
+      const type = (rows[r][1] || '').trim().toLowerCase();
+      if (type !== 'fires') continue;
+      // Match area to GACC
+      const gacc = FA_TO_GACC[area];
+      if (!gacc) continue;
+      const val = parseInt((rows[r][totalCol] || '0').replace(/,/g, '')) || 0;
+      result[gacc] = val;
+    }
+    if (Object.keys(result).length >= 3) return result;
+  }
+  return null;
+}
+
+function matchTable(sec, tables) {
+  let best=null, bestN=0;
+  for (const t of tables) {
+    let n=0; for (const inc of t.incs) { if(sec.lines.some(l=>l.toLowerCase().includes(inc.name.toLowerCase()))) n++; }
+    if(n>bestN){bestN=n;best=t;}
+  } return best;
+}
+
+function getNarr(name, text) {
+  const e=name.replace(/[.*+?^${}()|[\]\\]/g,'\\$&');
+  const m=text.match(new RegExp('(?:^|\\n)\\*?\\s*'+e+'\\s*,.*?(?=\\n|$)','i'));
+  return m?m[0]:'';
+}
+
+function parseStats(lines) {
+  const t = (Array.isArray(lines)?lines:[]).join('\n');
+  const s = {};
+  const p = [
+    ['newLargeIncidents', /new\s+large\s+incidents[:\s]+(\d+|[xX]+)/i],
+    ['uncontainedLargeFires', /uncontained\s+large\s+fires[:\s]+(\d+|[xX]+)/i],
+    ['largeFiresContained', /large\s+fires\s+contained[:\s]+(\d+|[xX]+)/i],
+    ['newFires', /new\s+fires[:\s]+(\d[\d,]*|[xX]+)/i],
+    ['cimtsCommitted', /cimts?\s+committed[:\s]+(\d+|[xX]+)/i],
+    ['nimosCommitted', /nimos?\s+committed[:\s]+(\d+|[xX]+)/i],
+  ];
+  for (const [k,r] of p) { const m=t.match(r); if(m) s[k]=/^\d+$/.test(m[1].replace(/,/g,''))?parseInt(m[1].replace(/,/g,'')):m[1]; }
+  // initial attack — try multiple formats
+  // Format 1: "Initial attack activity: Light (179 fires)"
+  const ia=t.match(/initial\s+attack\s+activity[:\s]*\n?\s*(\w+)\s*\((\d[\d,]*)\s*fires?\)/i);
+  if(ia){s.iaAdj=ia[1];s.iaCount=parseInt(ia[2].replace(/,/g,''));}
+  else {
+    // Format 2: "Initial attack activity was Light" or ": Light" or just whitespace before adjective
+    const ia2=t.match(/initial\s+attack\s+activity(?:\s+was\s+|\s*[:–—-]\s*|\s+)(light|moderate|heavy)\b/i);
+    if(ia2){s.iaAdj=ia2[1];}
+    else {
+      // Format 3: adjective on next line after "Initial attack activity"
+      const ia3=t.match(/initial\s+attack\s+activity\s*\n\s*(light|moderate|heavy)/i);
+      if(ia3){s.iaAdj=ia3[1];}
+    }
+  }
+  return s;
+}
+
+function calcStats(tbl, gaccText) {
+  const incs = tbl ? tbl.incs : [];
+  const newLarge = incs.filter(i=>i.isNew).length;
+  const uncontained = incs.filter(i=>(i.pct===null||i.pct<100)&&!/comp/i.test(i.ctn)).length;
+  const contained100 = incs.filter(i=>i.pct===100).length;
+  const cimtRaw = (gaccText.match(/\bCIMT\b/g)||[]).length;
+  const alsoM = (gaccText.match(/CIMT is also managing/gi)||[]).length;
+  const xfer = (gaccText.match(/Transfer of command/gi)||[]).length;
+  const cimts = Math.max(0, cimtRaw - alsoM - xfer);
+  const nimos = (gaccText.match(/\bNIMO\b/gi)||[]).length;
+  return { newLarge, uncontained, contained100, cimts, nimos };
+}
+
+// --- ANALYZE: returns ordered section array ---
+function analyze(text, html) {
+  const gaccs = parseGacc(text);
+  const allTbl = parseTables(html);
+  const gaccTbls = identifyGaccTables(allTbl);
+  const resTbl = findResSummary(allTbl);
+  const faNewFires = parseFANewFires(allTbl); // New fires per GACC from F&A table
+  const sections = []; // { title, findings[] }
+
+  // 0. IMSR HEADER VALIDATION
+  const hdrFindings = [];
+  // Expected header format: "Friday March 19, 2026 – 0730 MDT" or similar
+  // Check date line
+  const datePat = /(\w+day)\s+(\w+)\s+(\d{1,2}),?\s+(\d{4})\s*[–—-]\s*(\d{4})\s*(MDT|MST|MT)/i;
+  const dateMatch = text.match(datePat);
+  if (dateMatch) {
+    const [, dayName, month, day, year, time, tz] = dateMatch;
+    // Validate day of week matches actual date
+    const months = {january:0,february:1,march:2,april:3,may:4,june:5,july:6,august:7,september:8,october:9,november:10,december:11};
+    const mi = months[month.toLowerCase()];
+    if (mi !== undefined) {
+      const d = new Date(parseInt(year), mi, parseInt(day));
+      const days = ['Sunday','Monday','Tuesday','Wednesday','Thursday','Friday','Saturday'];
+      const actualDay = days[d.getDay()];
+      if (actualDay && dayName.toLowerCase() !== actualDay.toLowerCase()) {
+        hdrFindings.push(F('error','SCHED',`Header says "${dayName} ${month} ${day}" but ${month} ${day}, ${year} is actually a ${actualDay}.`));
+      }
+    }
+    // Validate time is 0730
+    if (time !== '0730') {
+      hdrFindings.push(F('warning','SCHED',`Posting time "${time}" — standard is 0730 MDT.`));
+    }
+    // Check comma after day number
+    if (!dateMatch[0].includes(day + ',')) {
+      hdrFindings.push(F('warning','PROOF',`Date "${month} ${day}" — should have comma: "${month} ${day}, ${year}".`));
+    }
+  } else {
+    // Try to find any date-like header
+    const looseDatePat = /(\w+day)\s+(\w+)\s+(\d{1,2})/i;
+    const looseMatch = text.substring(0, 500).match(looseDatePat);
+    if (looseMatch) {
+      hdrFindings.push(F('warning','SCHED',`Header date "${looseMatch[0]}" — verify format: "[Day] [Month] [DD], [YYYY] – 0730 MDT".`));
+    }
+  }
+  // Check PL statement
+  const plMatch = text.match(/National Preparedness Level\s*(\d)/i);
+  if (plMatch) {
+    const pl = parseInt(plMatch[1]);
+    if (pl < 1 || pl > 5) hdrFindings.push(F('error','SCHED',`National PL ${pl} out of range — must be 1–5.`));
+  } else {
+    hdrFindings.push(F('error','SCHED','National Preparedness Level not found in header.'));
+  }
+  // Check GACC-level PL values: "(PL N)" must be 1–5
+  const gaccPlRe = /\(PL\s*(\d+)\)/gi;
+  let gaccPlM;
+  while ((gaccPlM = gaccPlRe.exec(text)) !== null) {
+    const gpl = parseInt(gaccPlM[1]);
+    if (gpl < 1 || gpl > 5) {
+      const ctx = text.substring(Math.max(0, gaccPlM.index - 30), gaccPlM.index + gaccPlM[0].length).trim();
+      hdrFindings.push(F('error','SCHED',`"(PL ${gpl})" out of range — Preparedness Level must be 1–5.`, ctx));
+    }
+  }
+  // HDR-01: X/XX/XXX placeholder detection — any x-string where a number is expected
+  const hdrBlock = text.substring(0, 800);
+  const xPat = /(?:committed|contained|activity|fires)[:\s]+([Xx]{1,10})\b/g;
+  let xm;
+  while ((xm = xPat.exec(hdrBlock)) !== null) {
+    hdrFindings.push(F('error','HDR-01',`Unfilled placeholder "${xm[1]}" in header — replace with actual number.`, hdrBlock.substring(Math.max(0,xm.index-20), xm.index+30).trim()));
+  }
+  // Also sweep table cells for X/XX/XXX placeholder values
+  const xCellPat = /\|\s*[Xx]{1,10}\s*\|/g;
+  while ((xm = xCellPat.exec(text)) !== null) {
+    hdrFindings.push(F('error','HDR-01',`Unfilled placeholder in table cell — replace with actual number.`, text.substring(Math.max(0,xm.index-30),xm.index+30).trim()));
+  }
+  // HDR-02: NIMOs label spelling — correct form is "NIMOs committed" (plural, lowercase s only)
+  // Flag: NIMOS (all caps wrong), NIMO committed (singular wrong)
+  if (/\bNIMOS\b/.test(text)) {
+    hdrFindings.push(F('error','HDR-02','"NIMOS" → "NIMOs" — only the S is lowercase.', (text.match(/\bNIMOS\b.*/) || [''])[0].substring(0,60), (text.match(/\bNIMOS\b.*/) || [''])[0].substring(0,60).replace('NIMOS','NIMOs')));
+  }
+  if (/\bNIMO\s+committed\b/i.test(text) && !/\bNIMOs\s+committed\b/i.test(text)) {
+    hdrFindings.push(F('error','HDR-02','"NIMO committed" → "NIMOs committed" — label is always plural.', (text.match(/\bNIMO\s+committed\b.*?(?:\n|$)/i) || [''])[0].substring(0,60)));
+  }
+  // Column header validation — Resource Summary must have exact headers
+  const resSummHdr = ['GACC','Incidents','Cumulative Acres','Crews','Engines','Helicopters','Total Personnel','Change in Personnel'];
+  const missingHdrs = resSummHdr.filter(h => !text.includes(h));
+  if (missingHdrs.length && missingHdrs.length < resSummHdr.length) {
+    hdrFindings.push(F('warning','HDR-03',`Resource Summary missing or renamed column(s): ${missingHdrs.join(', ')}.`));
+  }
+  // Large fire table column headers
+  const lfHdrs = ['Incident','Unit','Total Acres','Chge in','%','Ctn','Est','Total','PPL','Crw','Eng','Heli','Strc','$$','Origin'];
+  const missingLF = lfHdrs.filter(h => !text.includes(h));
+  if (missingLF.length > 3) {
+    hdrFindings.push(F('warning','HDR-04',`Large fire table may be missing standard column headers (${missingLF.slice(0,4).join(', ')}…).`));
+  }
+  // Two-space requirement between GACC legend entries (e.g. "MSS -- Mississippi...LAS -- Louisiana")
+  const legendPat = /[A-Z]{2,5}\s+--\s+[A-Za-z\s]+[A-Z]{2,5}\s+--\s+/g;
+  let lm;
+  while ((lm = legendPat.exec(text)) !== null) {
+    // Check that GACCs are separated by exactly two spaces in source (look for single space gap)
+    if (/ [A-Z]{2,5} -- /.test(lm[0]) && !/ {2}[A-Z]{2,5} -- /.test(lm[0])) {
+      hdrFindings.push(F('warning','HDR-05','GACC legend entries appear to have single space between them — standard is two spaces.', lm[0].substring(0,80)));
+    }
+  }
+
+  if (hdrFindings.length) sections.push({ title: 'IMSR Header', findings: hdrFindings });
+
+  // 1. NATIONAL HEADER
+  const natFindings = [];
+  const firstGaccIdx = text.search(new RegExp(GA.join('|'),'i'));
+  const natBlock = firstGaccIdx>0 ? text.substring(0,firstGaccIdx) : text.substring(0,3000);
+  // Pre-assign tables to GACCs (each table used at most once) — needed for both
+  // national totals and per-GACC stats so the same table can't be counted twice.
+  const usedTables = new Set();
+  const gaccTableMap = new Map();
+  for (const sec of gaccs) {
+    const tbl = matchTable(sec, gaccTbls.filter((_,i) => !usedTables.has(i)));
+    if (tbl) {
+      const idx = gaccTbls.indexOf(tbl);
+      usedTables.add(idx);
+      gaccTableMap.set(sec.name, tbl);
+    }
+  }
+  // Calculate national totals using deduplicated table assignments
+  let tNewFires=0,tNewLarge=0,tUncontained=0,tContained=0,tCIMTs=0,tNIMOs=0;
+  if (faNewFires) { for (const g of Object.values(faNewFires)) tNewFires += g; }
+  for (const sec of gaccs) {
+    const tbl = gaccTableMap.get(sec.name) || null;
+    const c=calcStats(tbl,sec.lines.join('\n'));
+    tNewLarge+=c.newLarge; tUncontained+=c.uncontained; tContained+=c.contained100; tCIMTs+=c.cimts; tNIMOs+=c.nimos;
+  }
+  const natDec = parseStats(natBlock.split('\n'));
+  // Initial attack activity = new fires total from F&A Yesterday table
+  // The IA label combines the count with Light/Moderate/Heavy descriptor from the header
+  const iaCount = faNewFires ? tNewFires : (natDec.iaCount ?? '?');
+  const iaAdj = natDec.iaAdj ? natDec.iaAdj[0].toUpperCase() + natDec.iaAdj.slice(1).toLowerCase() : '';
+  const iaLabel = iaAdj ? `${iaAdj} (${iaCount} fires)` : (faNewFires ? `${tNewFires} fires` : '?');
+  natFindings.push(F('info','NAT-02','Calculated national totals:',
+    `Initial attack activity: ${iaLabel}\nNew large incidents: ${tNewLarge}\nLarge fires contained: ${tContained}\nUncontained large fires: ${tUncontained}\nCIMTs committed: ${tCIMTs}\nNIMOs committed: ${tNIMOs}`,
+    '__table__'));
+  compareStats(natDec, {newLargeIncidents:tNewLarge,uncontainedLargeFires:tUncontained,largeFiresContained:tContained,cimtsCommitted:tCIMTs,nimosCommitted:tNIMOs}, 'National', natFindings);
+  // Initial attack adjective check
+  const iaCheckCount = natDec.iaCount ?? (faNewFires ? tNewFires : undefined);
+  if (natDec.iaAdj && iaCheckCount !== undefined) {
+    let days=1;
+    const dr=text.match(/fires and acres from\s+(\w+ \d+, \d{4})\s*[-–—]\s*(\w+ \d+, \d{4})/i);
+    if(dr){const s=new Date(dr[1]),e=new Date(dr[2]); if(!isNaN(s)&&!isNaN(e)) days=Math.max(1,Math.round((e-s)/864e5)+1);}
+    else if(/PL\s*1/i.test(natBlock)) days=7;
+    const avg=iaCheckCount/days;
+    let exp; if(avg<200) exp='Light'; else if(avg<300) exp='Moderate'; else exp='Heavy';
+    if(natDec.iaAdj.toLowerCase()!==exp.toLowerCase())
+      natFindings.push(F('error','NAT-02',`Initial attack "${natDec.iaAdj}" with ${iaCheckCount} fires / ${days} days = ${Math.round(avg)}/day avg. Expected "${exp}".`));
+    else
+      natFindings.push(F('info','NAT-02',`Initial attack "${natDec.iaAdj}" (${iaCheckCount} fires / ${days} days = ${Math.round(avg)}/day) ✓`));
+  }
+  // Comp boilerplate
+  if(!/fires\s+not\s+managed\s+under\s+a\s+full\s+suppression/i.test(text)&&!/zero\s+fires\s+being\s+managed/i.test(text))
+    natFindings.push(F('warning','COMP-05','Comp boilerplate or zero-comp statement not found. Required until 5/1/2026.'));
+  // Old threshold
+  if(/fewer\s+than\s+250\s+personnel/i.test(text))
+    natFindings.push(F('error','QUAL-06','Old threshold "fewer than 250 personnel" — should be 100.'));
+
+  sections.push({ title: 'National Fire Activity', findings: natFindings });
+
+  // 2. RESOURCE SUMMARY TABLE
+  const resFindings = [];
+  if (resTbl && resTbl.length > 3) {
+    const totIdx = resTbl.findIndex(r=>/total/i.test(r[0]));
+    if (totIdx > 0) {
+      const totRow=resTbl[totIdx], dataRows=resTbl.slice(1,totIdx);
+      for (let c=1; c<totRow.length; c++) {
+        const dec=parseInt((totRow[c]||'0').replace(/,/g,'').replace(/[−-]/g,'-'))||0;
+        let sum=0; for(const r of dataRows) sum+=parseInt((r[c]||'0').replace(/,/g,'').replace(/[−-]/g,'-'))||0;
+        if(sum!==dec) {
+          const hdr=resTbl[0][c]||`Col ${c}`;
+          resFindings.push(F(dec===0?'info':'error','RES-06',`"${hdr}": declared ${dec.toLocaleString()}, calculated ${sum.toLocaleString()} (diff: ${(sum-dec).toLocaleString()}).`));
+        }
+      }
+    }
+
+    // --- Change in Personnel math (requires yesterday's IMSR) ---
+    if (yesterdayPPL) {
+      // Find column indices for Total Personnel and Change in Personnel
+      const hdr = resTbl[0].map(c => c.toLowerCase());
+      const pplCol = hdr.findIndex(c => /total\s*personnel/i.test(c));
+      const chgCol = hdr.findIndex(c => /change\s*in\s*personnel/i.test(c));
+      if (pplCol >= 0 && chgCol >= 0) {
+        const calcLines = [];
+        let totalCalcChg = 0, totalDeclChg = 0;
+        for (let r = 1; r < resTbl.length; r++) {
+          const gacc = (resTbl[r][0] || '').trim().toUpperCase();
+          if (!GACC_ABBR.includes(gacc)) continue;
+          const todayPpl = parseInt((resTbl[r][pplCol]||'0').replace(/,/g,''))||0;
+          const declaredChg = parseInt((resTbl[r][chgCol]||'0').replace(/,/g,'').replace(/[−–-]/g,'-'))||0;
+          const yestPpl = yesterdayPPL[gacc] ?? 0;
+          const calcChg = todayPpl - yestPpl;
+          totalCalcChg += calcChg;
+          totalDeclChg += declaredChg;
+          if (calcChg !== declaredChg) {
+            resFindings.push(F('error','RES-05',
+              `${gacc} Change in Personnel: declared ${declaredChg}, calculated ${calcChg} (today ${todayPpl} − yesterday ${yestPpl}).`,
+              '', `Should be ${calcChg}.`));
+          }
+          calcLines.push(`${gacc}: ${yestPpl} → ${todayPpl} = ${calcChg}${declaredChg !== calcChg ? ' ✗' : ''}`);
+        }
+        resFindings.push(F('info','RES-05','Change in Personnel calculated (today − yesterday):',
+          calcLines.join('\n') + `\n\nTotal: ${totalCalcChg}`,
+          '__personnel__'));
+      }
+    } else {
+      resFindings.push(F('info','RES-05','Change in Personnel not checked — no previous IMSR loaded. Use Step 1 or re-run with yesterday\'s IMSR.'));
+    }
+  }
+  if (resFindings.length) sections.push({ title: 'Active Incident Resource Summary', findings: resFindings });
+
+  // 2b. RESOURCE SUMMARY — RES-01 GACC order and numeric validation
+  const resOrderFindings = [];
+  if (resTbl && resTbl.length > 3) {
+    // RES-01: all 10 GACCs in fixed order
+    const GACC_ORDER = ['AICC','NWCC','ONCC','OSCC','NRCC','GBCC','SWCC','RMCC','EACC','SACC'];
+    const foundGaccs = resTbl.slice(1).map(r => (r[0]||'').trim().toUpperCase()).filter(g => GACC_ORDER.includes(g));
+    for (let i = 0; i < Math.min(foundGaccs.length, GACC_ORDER.length); i++) {
+      if (foundGaccs[i] !== GACC_ORDER[i])
+        resOrderFindings.push(F('error','RES-01',`Resource Summary row ${i+1}: expected "${GACC_ORDER[i]}", found "${foundGaccs[i]}". Fixed GACC order required.`));
+    }
+    const missingGaccs = GACC_ORDER.filter(g => !foundGaccs.includes(g));
+    if (missingGaccs.length) resOrderFindings.push(F('error','RES-01',`Resource Summary missing GACC row(s): ${missingGaccs.join(', ')}.`));
+    // Numeric validation — all cells except GACC col and header must be integers or valid signed integers
+    for (let r = 1; r < resTbl.length; r++) {
+      const gacc = (resTbl[r][0]||'').trim().toUpperCase();
+      if (!gacc) continue;
+      for (let c = 1; c < resTbl[r].length; c++) {
+        const val = (resTbl[r][c]||'').trim();
+        if (!val) continue;
+        // Allow: integer, negative integer, comma-integer, signed integer
+        if (!/^-?[\d,]+$/.test(val))
+          resOrderFindings.push(F('error','RES-01',`Resource Summary "${gacc}" col ${c}: "${val}" — must be integer, no decimals.`, val));
+        // Check comma format: if >= 1000, must have comma separator
+        const num = parseInt(val.replace(/,/g,'').replace(/-/g,''));
+        if (num >= 1000 && !/\d{1,3}(,\d{3})+/.test(val.replace(/-/,'')))
+          resOrderFindings.push(F('warning','RES-01',`Resource Summary "${gacc}" col ${c}: "${val}" ≥ 1,000 — needs comma separator.`, val, val.replace(/-/,'').replace(/(\d)(?=(\d{3})+$)/g,'$1,')));
+      }
+    }
+  }
+  if (resOrderFindings.length) sections.push({ title: 'Resource Summary — Order & Format', findings: resOrderFindings });
+
+  // 2c. FIRES AND ACRES + TEN-YEAR AVERAGE — numeric validation
+  const faaFindings = [];
+  // Find all tables that look like F&A tables (have BIA, BLM, USFS, TOTAL columns)
+  for (const rows of allTbl) {
+    if (rows.length < 5) continue;
+    const hdr = rows[0].join(' ').toLowerCase();
+    if (!/bia|blm|usfs/i.test(hdr)) continue;
+    if (!/total/i.test(hdr)) continue;
+    // Validate all data cells are integers with proper comma format
+    for (let r = 1; r < rows.length; r++) {
+      const area = (rows[r][0]||'').trim();
+      if (!area || /total fires|total acres/i.test(area)) {
+        // Total rows — same rules
+      }
+      for (let c = 2; c < rows[r].length; c++) {
+        const val = (rows[r][c]||'').trim();
+        if (!val || val === '0') continue;
+        if (!/^\d[\d,]*$/.test(val))
+          faaFindings.push(F('error','FAA-01',`F&A table row "${area}" col ${c}: "${val}" — must be whole number, no decimals.`, val));
+        const num = parseInt(val.replace(/,/g,''));
+        if (num >= 1000 && !/\d{1,3}(,\d{3})+/.test(val))
+          faaFindings.push(F('warning','FAA-01',`F&A table row "${area}" col ${c}: "${val}" ≥ 1,000 — needs comma separator.`, val, val.replace(/(\d)(?=(\d{3})+$)/g,'$1,')));
+      }
+    }
+  }
+  // Ten-Year Average — check present and year range looks current
+  // Year range may be on the same line or next line: "Fires (2016 – 2025 as of today)"
+  const tenYearMatch = text.match(/Ten.Year Average[\s\S]{0,200}?(\d{4})\s*[–—-]\s*(\d{4})/i);
+  if (!tenYearMatch) {
+    // Only flag if Fires and Acres section exists at all
+    if (/fires and acres/i.test(text))
+      faaFindings.push(F('warning','FAA-07','Ten-Year Average table not found or year range missing.'));
+  } else {
+    const endYear = parseInt(tenYearMatch[2]);
+    const currentYear = new Date().getFullYear();
+    if (endYear < currentYear - 1)
+      faaFindings.push(F('warning','FAA-07',`Ten-Year Average year range ends ${endYear} — should end ${currentYear - 1}. Update at start of each calendar year.`, tenYearMatch[0]));
+    // Validate Ten-Year Average numeric values — fires and acres must be whole numbers with commas
+    const tyaPat = /Ten.Year Average[\s\S]*?(\d[\d,]+)\s*\n[\s\S]*?(\d[\d,]+)/i;
+    const tyaMatch = text.match(tyaPat);
+    if (tyaMatch) {
+      for (const val of [tyaMatch[1], tyaMatch[2]]) {
+        if (val && /\./.test(val))
+          faaFindings.push(F('error','FAA-07',`Ten-Year Average value "${val}" has decimal — must be whole number.`, val));
+      }
+    }
+  }
+  // FAA-03: area row order in F&A tables
+  const FAA_ORDER = ['alaska','northwest','northern california','southern california','northern rockies','great basin','southwest','rocky mountain','eastern','southern'];
+  let faaTableNum = 0;
+  let faa03Fired = false;
+  for (const rows of allTbl) {
+    if (rows.length < 5) continue;
+    const hdr = rows[0].join(' ').toLowerCase();
+    if (!/bia|blm|usfs/i.test(hdr) || !/total/i.test(hdr)) continue;
+    faaTableNum++;
+    if (faa03Fired) continue; // only report order issue once
+    const tblLabel = faaTableNum === 1 ? 'Yesterday' : faaTableNum === 2 ? 'Year-to-Date' : `Table ${faaTableNum}`;
+    // Deduplicate: each geographic area has two rows (fires + acres) — only keep first occurrence
+    const seenAreas = new Set();
+    const uniqueAreas = [];
+    for (const row of rows.slice(1)) {
+      const area = (row[0]||'').trim().toLowerCase();
+      if (!area || /^total/i.test(area)) continue;
+      if (!seenAreas.has(area)) { seenAreas.add(area); uniqueAreas.push(area); }
+    }
+    const orderedIdxs = uniqueAreas
+      .map(a => {
+        // Find the best (longest) matching FAA_ORDER entry
+        let bestIdx = -1, bestLen = 0;
+        for (let j = 0; j < FAA_ORDER.length; j++) {
+          if (a.includes(FAA_ORDER[j]) && FAA_ORDER[j].length > bestLen) {
+            bestIdx = j;
+            bestLen = FAA_ORDER[j].length;
+          }
+        }
+        return { name: a, idx: bestIdx };
+      })
+      .filter(x => x.idx >= 0);
+    for (let i = 1; i < orderedIdxs.length; i++) {
+      if (orderedIdxs[i].idx < orderedIdxs[i-1].idx) {
+        faaFindings.push(F('warning','FAA-03',
+          `F&A ${tblLabel}: "${orderedIdxs[i-1].name}" is listed before "${orderedIdxs[i].name}" — geographic areas must follow standard GACC order: AK, NW, N.CA, S.CA, N.Rockies, Gt.Basin, SW, Rocky Mtn, Eastern, Southern.`));
+        faa03Fired = true;
+        break;
+      }
+    }
+  }
+
+  // FAA-06: cumulative acres disclaimer
+  if (!/cumulative acres shown in the active incident resource summary/i.test(text))
+    faaFindings.push(F('warning','FAA-06','Cumulative acres disclaimer not found after Ten-Year Average. Required standard text.'));
+
+  // (deferred — pushed after GACC sections)
+
+
+  // Build global index of all table incidents for lookup
+  const allTableIncs = [];
+  for (const t of gaccTbls) for (const inc of t.incs) allTableIncs.push(inc);
+  const globalTblNames = allTableIncs.map(i => i.name.toLowerCase().trim());
+
+  // gaccTableMap already built above (before national totals)
+
+  for (const sec of gaccs) {
+    const gf = [];
+    const tbl = gaccTableMap.get(sec.name) || null;
+    const gText = sec.lines.join('\n');
+    const gn = sec.name;
+
+    // --- GACC stats math ---
+    const calc = calcStats(tbl, gText);
+    // Map GACC full name to abbreviation for F&A lookup
+    const GACC_NAME_TO_ABBR = {
+      'Alaska Area':'AICC','Northwest Area':'NWCC','Northern California Area':'ONCC',
+      'Southern California Area':'OSCC','Northern Rockies Area':'NRCC','Great Basin Area':'GBCC',
+      'Southwest Area':'SWCC','Rocky Mountain Area':'RMCC','Eastern Area':'EACC','Southern Area':'SACC'
+    };
+    const gaccAbbr = GACC_NAME_TO_ABBR[gn] || '';
+    const newFiresCount = (faNewFires && gaccAbbr) ? (faNewFires[gaccAbbr] ?? '?') : '?';
+    gf.push(F('info','NAT-03','Calculated GACC totals:',
+      `New fires: ${newFiresCount}\nNew large incidents: ${calc.newLarge}\nUncontained large fires: ${calc.uncontained}` +
+      (calc.cimts?`\nCIMTs committed: ${calc.cimts}`:'') + (calc.nimos?`\nNIMOs committed: ${calc.nimos}`:''),
+      '__table__'));
+    const dec = parseStats(sec.lines);
+    compareStats(dec, {newFires:typeof newFiresCount==='number'?newFiresCount:undefined,newLargeIncidents:calc.newLarge,uncontainedLargeFires:calc.uncontained,cimtsCommitted:calc.cimts,nimosCommitted:calc.nimos}, gn, gf);
+
+    // --- Narrative format checks (before table checks to match IMSR flow) ---
+    // Collect separately and sort by text position so findings follow document order
+    const narrFindings = [];
+    checkNarrFmt(gText, narrFindings);
+    // Sort by where each finding's incident appears in the GACC text
+    narrFindings.sort((a, b) => {
+      // Extract incident name from message pattern: "IncName": ...
+      const getPos = (f) => {
+        const m = f.message.match(/^"([^"]+)":/);
+        if (m) {
+          const idx = gText.indexOf(m[1]);
+          if (idx >= 0) return idx;
+        }
+        // Fallback: find context snippet in text
+        if (f.context) {
+          const snip = f.context.substring(0, 40).replace(/^\*\s+/, '');
+          const idx = gText.indexOf(snip);
+          if (idx >= 0) return idx;
+        }
+        return 99999;
+      };
+      return getPos(a) - getPos(b);
+    });
+    gf.push(...narrFindings);
+
+    // --- Narrative ↔ table match ---
+    const narrNames = sec.narrs.map(n=>n.name.toLowerCase().trim());
+
+    // Narrative incidents missing from table
+    for (const n of sec.narrs) {
+      if (!globalTblNames.includes(n.name.toLowerCase().trim())) {
+        gf.push(F('error','SEQ-09',`Narrative "${n.name}" has no matching table row.`));
+      }
+    }
+
+    // Table incidents missing from narratives (reverse check)
+    if (tbl) {
+      for (const inc of tbl.incs) {
+        const inNarr = narrNames.includes(inc.name.toLowerCase().trim());
+        if (!inNarr) {
+          const pct = inc.pct ?? 0;
+          if (pct >= 100) continue; // 100% = Bucket 6, no narrative expected
+          // Check if it's a 3rd-miss (Bucket 5) — no narrative expected but flag as info
+          const narr = getNarr(inc.name, text);
+          if (!narr && pct < 100) {
+            gf.push(F('error','SEQ-09',`Table "${inc.name}" (${pct}%) has no narrative. Missing or Bucket 5 (3rd missed 209)?`));
+          }
+        }
+      }
+    }
+
+    // For order check + bucket sort + table data, use matched table
+    if (tbl) {
+      const incs = tbl.incs;
+      const tblNames = incs.map(i=>i.name.toLowerCase().trim());
+
+      // Order check: only for incidents that appear in both narr and this table
+      const shN=narrNames.filter(n=>tblNames.includes(n)), shT=tblNames.filter(n=>narrNames.includes(n));
+      for (let i=0;i<Math.min(shN.length,shT.length);i++) {
+        if(shN[i]!==shT[i]){gf.push(F('error','SEQ-09',`Order mismatch at #${i+1}: narrative="${shN[i]}", table="${shT[i]}".`,`Narr: ${shN.join(' → ')}\nTable: ${shT.join(' → ')}`));break;}
+      }
+      // Asterisk check
+      for (const inc of incs) {
+        const nm=sec.narrs.find(n=>n.name.toLowerCase().trim()===inc.name.toLowerCase().trim());
+        if(nm&&nm.isNew!==inc.isNew) gf.push(F('error','NARR-02',`"${inc.name}" asterisk mismatch: table=${inc.isNew?'*':'no *'}, narrative=${nm.isNew?'*':'no *'}.`));
+      }
+
+      // --- Bucket sort ---
+      if (incs.length >= 2) {
+        for (const inc of incs) {
+          const narr=getNarr(inc.name,text);
+          const hasCIMT=/CIMT/i.test(narr);
+          const p=inc.pct??0, pp=inc.ppl??999;
+          const miss1=/No new information/i.test(narr)&&!/Last narrative report/i.test(narr);
+          const miss2=/Last narrative report unless new information/i.test(narr);
+          const noNarr=!narr;
+          if(hasCIMT) inc._b=1; else if(miss1) inc._b=4.1; else if(miss2) inc._b=4.2;
+          else if(noNarr&&p>=100) inc._b=6; else if(noNarr) inc._b=5;
+          else if(p>=90&&pp<100&&!hasCIMT&&p<100) inc._b=3;
+          else if(/comp/i.test(inc.ctn)&&p<100) inc._b=2.5;
+          else if(p>=100) inc._b=6; else inc._b=2;
+        }
+        const bLbl=b=>({1:'1-CIMT',2:'2-Active',2.5:'Comp',3:'3-KickOff',4.1:'4a-1stMiss',4.2:'4b-2ndMiss',5:'5-3rdMiss',6:'6-100%'}[b]||b);
+        for(let i=1;i<incs.length;i++){
+          if(incs[i]._b<incs[i-1]._b) gf.push(F('warning','SEQ-01',`Sort: "${incs[i].name}" (${bLbl(incs[i]._b)}) after "${incs[i-1].name}" (${bLbl(incs[i-1]._b)}). GACC priorities may override.`));
+        }
+      }
+
+      // --- Table data: comprehensive column-format validation ---
+      const VALID_ORIGINS = ['FS','BIA','BLM','NPS','FWS','ST','CNTY','DOW','TRI','PRI'];
+      for (const inc of incs) {
+        const r = inc.rawRow;
+        const cm = tbl.cm;
+        const nm = inc.name;
+
+        // Unit: must be XX-XXX format (2-letter state, hyphen, 2-5 alphanumeric code)
+        if (cm.unit !== undefined) {
+          const u = (r[cm.unit]||'').trim();
+          if (u && !/^[A-Z]{2}-[A-Z][A-Z0-9]{1,4}$/.test(u)) {
+            let fix = u.toUpperCase().replace(/[_\/\s]+/, '-');
+            if (/^[A-Z]{4,}$/.test(fix) && fix.length >= 4) fix = fix.substring(0,2) + '-' + fix.substring(2);
+            // Specific message based on problem type
+            const isCaseOnly = fix === u.toUpperCase().replace(/[_\/\s]+/,'-') && fix !== u;
+            const msg = isCaseOnly
+              ? `"${nm}": Unit code "${u}" — capitalize to "${fix}".`
+              : `"${nm}": Unit code wrong format.`;
+            gf.push(F('warning','TBL-02', msg, u, fix));
+          } else if (u && typeof UNIT_GACC !== 'undefined') {
+            // GACC-01: verify unit code maps to the correct GACC
+            const rawGacc = UNIT_GACC[u.toUpperCase()];
+            const expectedGacc = UNIT_GACC_OVERRIDES[u.toUpperCase()] || rawGacc;
+            const GACC_NAME_TO_ABBR2 = {
+              'Alaska Area':'AICC','Northwest Area':'NWCC','Northern California Area':'ONCC',
+              'Southern California Area':'OSCC','Northern Rockies Area':'NRCC','Great Basin Area':'GBCC',
+              'Southwest Area':'SWCC','Rocky Mountain Area':'RMCC','Eastern Area':'EACC','Southern Area':'SACC'
+            };
+            const sectionGacc = GACC_NAME_TO_ABBR2[gn] || '';
+            if (expectedGacc && sectionGacc && expectedGacc !== sectionGacc) {
+              gf.push(F('error','GACC-01',`"${nm}": Unit "${u}" belongs to ${expectedGacc}, but is listed under ${sectionGacc}.`,
+                u, `Move to ${expectedGacc} section`));
+            } else if (!expectedGacc && u.length >= 4) {
+              gf.push(F('info','GACC-01',`"${nm}": Unit "${u}" not in GACC lookup — verify assignment manually.`));
+            }
+          }
+        }
+
+        // Total Acres: positive integer, comma-separated thousands, no decimals
+        if (cm.acres !== undefined) {
+          const v = (r[cm.acres]||'').trim();
+          if (v && !/^\d{1,3}(,\d{3})*$/.test(v) && !/^\d+$/.test(v))
+            gf.push(F('error','TBL-03',`"${nm}" Total Acres "${v}" — must be integer with comma thousands (e.g., 14,374).`));
+        }
+
+        // Chge in Acres: must not be blank — integer (pos/neg), "0", or "---"
+        if (cm.chgeAcres !== undefined) {
+          const v = (r[cm.chgeAcres]||'').trim();
+          if (!v)
+            gf.push(F('error','TBL-04',`"${nm}" Chge in Acres is blank — must be integer, 0, or "---".`));
+          else if (v !== '---' && !/^-?\d{1,3}(,\d{3})*$/.test(v) && !/^-?\d+$/.test(v))
+            gf.push(F('error','TBL-04',`"${nm}" Chge in Acres "${v}" — must be integer, negative, or "---".`));
+        }
+
+        // %: integer 0-100
+        if (cm.pct !== undefined) {
+          const v = (r[cm.pct]||'').trim();
+          if (v && (!/^\d{1,3}$/.test(v) || parseInt(v) > 100 || parseInt(v) < 0))
+            gf.push(F('error','TBL-05',`"${nm}" % "${v}" — must be integer 0–100.`));
+        }
+
+        // Ctn/Comp: only "Ctn" or "Comp"
+        if (cm.ctn !== undefined) {
+          const v = (r[cm.ctn]||'').trim();
+          if (v && !/^(Ctn|Comp)$/i.test(v))
+            gf.push(F('error','TBL-06',`"${nm}" Ctn/Comp "${v}" — must be "Ctn" or "Comp".`));
+        }
+
+        // Est: M/DD, "---", or "UNK"
+        if (cm.est !== undefined) {
+          const v = (r[cm.est]||'').trim();
+          if (v && !/^\d{1,2}\/\d{1,2}$/.test(v) && v !== '---' && v !== 'UNK')
+            gf.push(F('error','TBL-07',`"${nm}" Est "${v}" — must be M/DD, "---", or "UNK".`));
+        }
+
+        // Total PPL: non-negative integer
+        if (cm.ppl !== undefined) {
+          const v = (r[cm.ppl]||'').trim();
+          if (v && !/^\d{1,3}(,\d{3})*$/.test(v) && !/^\d+$/.test(v))
+            gf.push(F('error','TBL-08',`"${nm}" Total PPL "${v}" — must be non-negative integer.`));
+        }
+
+        // Chge in PPL: must not be blank — integer (pos/neg), "0", or "---"
+        if (cm.chgePpl !== undefined) {
+          const v = (r[cm.chgePpl]||'').trim();
+          if (!v)
+            gf.push(F('error','TBL-09',`"${nm}" Chge in PPL is blank — must be integer, 0, or "---".`));
+          else if (v !== '---' && !/^-?\d{1,3}(,\d{3})*$/.test(v) && !/^-?\d+$/.test(v))
+            gf.push(F('error','TBL-09',`"${nm}" Chge in PPL "${v}" — must be integer, negative, or "---".`));
+        }
+
+        // Crw: non-negative integer
+        if (cm.crw !== undefined) {
+          const v = (r[cm.crw]||'').trim();
+          if (v && !/^\d+$/.test(v))
+            gf.push(F('error','TBL-10',`"${nm}" Crw "${v}" — must be non-negative integer.`));
+        }
+
+        // Eng: non-negative integer
+        if (cm.eng !== undefined) {
+          const v = (r[cm.eng]||'').trim();
+          if (v && !/^\d+$/.test(v))
+            gf.push(F('error','TBL-11',`"${nm}" Eng "${v}" — must be non-negative integer.`));
+        }
+
+        // Heli: non-negative integer
+        if (cm.heli !== undefined) {
+          const v = (r[cm.heli]||'').trim();
+          if (v && !/^\d+$/.test(v))
+            gf.push(F('error','TBL-12',`"${nm}" Heli "${v}" — must be non-negative integer.`));
+        }
+
+        // Strc Lost: non-negative integer, never blank
+        if (cm.strc !== undefined) {
+          const v = (r[cm.strc]||'').trim();
+          if (!v) gf.push(F('error','TBL-13',`"${nm}" Strc Lost is blank — must be 0 if none.`));
+          else if (!/^\d+$/.test(v)) gf.push(F('error','TBL-13',`"${nm}" Strc Lost "${v}" — must be non-negative integer.`));
+        }
+
+        // $$ CTD: NR, or K/M/B format, no dollar sign
+        if (cm.cost !== undefined) {
+          const v = (r[cm.cost]||'').trim();
+          if (v) checkCost(v, nm, gf);
+        }
+
+        // Origin Own: must be a known code
+        if (cm.origin !== undefined) {
+          const v = (r[cm.origin]||'').trim();
+          if (v && !VALID_ORIGINS.includes(v.toUpperCase()))
+            gf.push(F('error','TBL-15',`"${nm}" Origin Own "${v}" — must be one of: ${VALID_ORIGINS.join(', ')}.`));
+        }
+
+        // --- Cross-field logic ---
+        // 100% → Est must be "---"
+        if (inc.pct === 100 && inc.est && inc.est !== '---')
+          gf.push(F('error','TBL-07',`"${nm}" 100% but Est="${inc.est}" — should be "---".`));
+
+        // New (*) → Chge columns must be "---"
+        if (inc.isNew) {
+          if (inc.chgeAcres && inc.chgeAcres !== '---') gf.push(F('error','TBL-04',`"${nm}" new but Chge Acres="${inc.chgeAcres}" — should be "---".`));
+          if (inc.chgePpl && inc.chgePpl !== '---') gf.push(F('error','TBL-09',`"${nm}" new but Chge PPL="${inc.chgePpl}" — should be "---".`));
+        }
+
+        // Missed 209 ("No new information") → Chge columns must be "---"
+        const narr = getNarr(nm, text);
+        if (/No new information/i.test(narr)) {
+          if (inc.chgeAcres && inc.chgeAcres !== '---' && inc.chgeAcres !== '0')
+            gf.push(F('error','FALLOFF-01',`"${nm}" has "No new information" but Chge Acres="${inc.chgeAcres}" — should be "---".`));
+          if (inc.chgePpl && inc.chgePpl !== '---' && inc.chgePpl !== '0')
+            gf.push(F('error','FALLOFF-01',`"${nm}" has "No new information" but Chge PPL="${inc.chgePpl}" — should be "---".`));
+        }
+
+        // Name: no "Fire" suffix
+        if (/\bFire$/i.test(nm)) gf.push(F('error','NARR-03',`"${nm}" ends with "Fire".`));
+      }
+    }
+
+    // --- TBL-21/22/23: Unit legend validation ---
+    if (tbl && tbl.incs.length) {
+      // TBL-21: A unit code needs a legend entry only if the fire does NOT appear in any
+      // narrative in this GACC section. Check parsed narrs first, then fall back to
+      // scanning the full section text for the fire name (catches narrs the parser misses).
+      const narrNamesLC = sec.narrs.map(n => n.name.toLowerCase().trim());
+      // Build searchable text from non-table lines (exclude table rows, stats lines, headers)
+      const narrSearchText = sec.lines.filter(l =>
+        !/^\*?\s*[\w\s'-]+\s+[A-Z]{2}-[A-Z]{2,4}\s+\d/.test(l) && // table rows
+        !/^(New fires|New large|Uncontained|Large fires|CIMTs|NIMOs|Incident|Unit|Total)/i.test(l.trim()) &&
+        l.trim().length > 15
+      ).join('\n').toLowerCase();
+
+      const unitCodesNeedingLegend = new Set(tbl.incs
+        .filter(i => {
+          const nameLC = i.name.toLowerCase().trim();
+          // Fire has a parsed narrative — no legend needed
+          if (narrNamesLC.includes(nameLC)) return false;
+          // Fire name appears in section text (narrative parser missed it) — no legend needed
+          if (narrSearchText.includes(nameLC)) return false;
+          return true; // truly table-only, needs legend
+        })
+        .filter(i => (i.pct ?? 0) < 100)  // 100% contained = Bucket 6, no narrative/legend needed
+        .map(i => (i.rawRow[tbl.cm.unit] || '').trim().toUpperCase())
+        .filter(u => u && u.includes('-'))
+        .map(u => u.split('-')[1])           // strip state prefix for legend check
+        .filter(Boolean));
+
+      // Look for legend lines in the GACC text (format: "XX - Name  YY - Name" or "XX -- Name")
+      const legendLine = sec.lines.find(l => /[A-Z]{2,5}\s+[-–—]{1,2}\s+\w/.test(l) && !/^\*/.test(l.trim()));
+      if (!legendLine && unitCodesNeedingLegend.size > 0) {
+        gf.push(F('warning','TBL-21',`No unit legend found after ${gn} table. Required for table-only unit codes: ${[...unitCodesNeedingLegend].join(', ')}.`));
+      } else if (legendLine) {
+        // TBL-22: each entry should be CODE - Name (3-char code only, no state prefix)
+        const legendCodes = [...legendLine.matchAll(/\b([A-Z]{2,5})\s+[-–—]/g)].map(m => m[1]);
+        for (const code of legendCodes) {
+          if (/^[A-Z]{2}-/.test(code))
+            gf.push(F('warning','TBL-22',`Legend code "${code}" includes state prefix — use 3-char code only.`, legendLine.substring(0,80), legendLine.substring(0,80).replace(new RegExp(code), code.split('-')[1])));
+        }
+        // TBL-21: unit codes that need a legend entry but aren't in the legend
+        for (const u of unitCodesNeedingLegend) {
+          if (u.length >= 2 && !legendCodes.includes(u))
+            gf.push(F('warning','TBL-21',`Unit "${u}" has no narrative in ${gn} but is not in the legend.`));
+        }
+        // TBL-23: legend must follow last table row, before next GACC section
+        const legendIdx = sec.lines.indexOf(legendLine);
+        const lastNarrIdx = sec.lines.reduce((last, l, i) => /\bno new information\b|fire behavior|threatened|closures/i.test(l) ? i : last, -1);
+        if (legendIdx >= 0 && lastNarrIdx >= 0 && legendIdx < lastNarrIdx) {
+          gf.push(F('warning','TBL-23',`${gn}: Legend appears before narratives — must follow last table row.`));
+        }
+      }
+    }
+
+    sections.push({ title: gn, isGacc: true, findings: gf });
+  }
+
+  // 4. DEFERRED SECTIONS (pushed after GACCs to match IMSR document order)
+  if (faaFindings.length) sections.push({ title: 'Fires & Acres Tables', findings: faaFindings });
+
+  // 5. PREDICTIVE SERVICES / WEATHER — extract and check text quality
+  const psFindings = [];
+  const psStart = text.search(/Predictive Services/i);
+  if (psStart >= 0) {
+    // Extract Predictive Services text — goes from header to end of doc (or "6 Minutes")
+    const psEnd = text.indexOf('6 Minutes', psStart);
+    const psText = psEnd > psStart ? text.substring(psStart, psEnd) : text.substring(psStart);
+    if (psText.length > 50) {
+      checkTextQuality(psText, psFindings);
+    }
+  }
+  if (psFindings.length) sections.push({ title: 'Predictive Services', findings: psFindings });
+
+  // 6. GLOBAL
+  const glf = [];
+  const allNarr = gaccs.map(s=>s.lines.join('\n')).join('\n');
+  // Duplicate words
+  const dp=/\b(\w{4,})\s+\1\b/gi; let dm,dc=0;
+  while((dm=dp.exec(allNarr))&&dc<8){if(!/had had|that that/i.test(dm[0])){glf.push(F('info','SPELL',`Duplicate: "${dm[0]}".`));dc++;}}
+  if(glf.length) sections.push({ title: 'Other', findings: glf });
+
+  return sections;
+}
+
+function F(severity, ruleId, message, context, fix) {
+  return { severity, ruleId, message, context:context||'', fix:fix||'' };
+}
+
+function compareStats(dec, calc, label, f) {
+  const map = [
+    ['newFires','New fires'],
+    ['newLargeIncidents','New large incidents'],['uncontainedLargeFires','Uncontained large fires'],
+    ['largeFiresContained','Large fires contained'],['cimtsCommitted','CIMTs committed'],['nimosCommitted','NIMOs committed']
+  ];
+  for (const [k,lbl] of map) {
+    const d=dec[k], c=calc[k]; if(d===undefined||c===undefined) continue;
+    if(typeof d==='string') continue; // placeholder like "xx" — skip, user fills from NAT-02 card
+    if(d!==c) f.push(F('error','NAT-03',`"${lbl}" declared ${d}, calculated ${c}.`));
+  }
+}
+
+function checkCost(cost, name, f) {
+  if(/^\d+K$/.test(cost)||/^\d+(\.\d)?M$/.test(cost)||/^\d+(\.\d)?B$/.test(cost)) return;
+  if(/\$/.test(cost)){f.push(F('error','TBL-20',`"${name}" cost "${cost}" has $. Remove.`));return;}
+  if(/^\d[\d,]*$/.test(cost)){
+    const v=parseInt(cost.replace(/,/g,''));
+    if(v<500) f.push(F('error','TBL-17',`"${name}" cost ${cost} (<$500) = NR.`));
+    else if(v<1000) f.push(F('error','TBL-17',`"${name}" cost ${cost} ($500-999) = 1K.`));
+    else f.push(F('error','TBL-18',`"${name}" cost ${cost} — needs K/M/B suffix.`));
+  }
+}
+
+function checkNarrFmt(text, f) {
+  let m;
+  // NARR-15: numeral 1-9 mid-sentence
+  const np=/(?<=[,;]\s|\.\s|land\s)\b([1-9])\s+miles?\b/gi;
+  while((m=np.exec(text))!==null){const w=['one','two','three','four','five','six','seven','eight','nine'];f.push(F('error','NARR-15',`Numeral distance — spell out.`,m[0],m[0].replace(m[1], w[m[1]-1])));}
+  // NARR-15: spelled 10+ mid-sentence
+  const sl=/(?<=[,;]\s|land\s|on\s)\b(ten|eleven|twelve|thirteen|fourteen|fifteen|sixteen|seventeen|eighteen|nineteen|twenty[\w-]*|thirty[\w-]*|forty[\w-]*|fifty[\w-]*)\s+miles?\b/gi;
+  while((m=sl.exec(text))!==null) f.push(F('warning','NARR-15',`"${m[1]} miles" mid-sentence 10+ — use numeral.`,m[0]));
+  // NARR-16: direction abbrevs
+  const dr=/miles?\s+(NE|NW|SE|SW)\s+of\b/g;
+  while((m=dr.exec(text))!==null){const d={NE:'northeast',NW:'northwest',SE:'southeast',SW:'southwest'};f.push(F('error','NARR-16',`Direction abbreviation — spell out.`,m[0],m[0].replace(m[1],d[m[1]])));}
+  // NARR-07: parenthetical state
+  const ps=/(?:Service|Division|Department|Forestry|Forest|Bureau)\s*\([A-Z]{2}\)/g;
+  while((m=ps.exec(text))!==null) f.push(F('error','NARR-07',`Remove state: "${m[0]}".`));
+  // NARR-30: wind-driven
+  const wdr=text.match(/\bwind\s+driven\s+runs?\b/i);
+  if(wdr) f.push(F('error','NARR-30','Missing hyphen.',wdr[0],'wind-driven runs'));
+  // NARR-39/40: singular closures
+  if(/\btrail closure\b(?!s)/i.test(text)) f.push(F('error','NARR-39','"Trail closure" → "trail closures" (always plural).'));
+  if(/\barea closure\b(?!s)/i.test(text)) f.push(F('error','NARR-40','"Area closure" → "area closures" (always plural).'));
+  // NARR-38: two-sentence evac
+  if(/Evacuations\s+in\s+effect\.\s+(Area|Road|Trail)/i.test(text)) f.push(F('error','NARR-38','Two-sentence evac retired. Single sentence only.'));
+  // NARR-36: generic infrastructure
+  const ip=/\binfrastructure\s+threatened\b/gi;
+  while((m=ip.exec(text))!==null){const b=text.substring(Math.max(0,m.index-50),m.index).toLowerCase();if(!/energy|communication|railroad/.test(b)) f.push(F('error','NARR-36','Generic "infrastructure threatened" — specify type.'));}
+  // NARR-46: statement order
+  for(const line of text.split('\n')){
+    const pos=[];
+    const si=line.indexOf('Sage-grouse habitat threatened'), ri=line.indexOf('Reduction in acreage'),
+          pi=line.indexOf('Precipitation occurred'), li=line.indexOf('Last report unless significant activity occurs');
+    if(si>=0) pos.push({n:'Sage-grouse',i:si,o:1}); if(ri>=0) pos.push({n:'Reduction',i:ri,o:2});
+    if(pi>=0) pos.push({n:'Precip',i:pi,o:3}); if(li>=0) pos.push({n:'Last report',i:li,o:4});
+    if(pos.length<2) continue; pos.sort((a,b)=>a.i-b.i);
+    for(let j=1;j<pos.length;j++){if(pos[j].o<pos[j-1].o){f.push(F('error','NARR-46',`"${pos[j-1].n}" before "${pos[j].n}" — wrong order.`));break;}}
+  }
+  // NARR-28: behavior capitalization — show incident context
+  const bp=/\b(extreme|very active|active|moderate|minimal|low)\s+fire\s+behavior\b/g;
+  while((m=bp.exec(text))!==null){
+    if(m[1][0]===m[1][0].toLowerCase()){
+      // Get surrounding context to show which incident
+      const before = text.substring(Math.max(0, m.index-80), m.index);
+      const incMatch = before.match(/(?:\*\s+)?([A-Z][\w\s'-]+),/);
+      const incName = incMatch ? incMatch[1].trim() : '';
+      const prefix = incName ? `"${incName}": ` : '';
+      f.push(F('error','NARR-28',`${prefix}Fire behavior intensity not capitalized.`,m[0],m[0].replace(m[1], m[1][0].toUpperCase()+m[1].slice(1))));
+    }
+  }
+
+  // === PER-NARRATIVE-LINE VALIDATION ===
+  // Extract narrative lines (start with * or look like "Name, Org.")
+  const narrLines = text.split('\n').filter(l =>
+    ((/^\*\s*\w/.test(l) && /,\s+[A-Z][a-z]/.test(l)) ||
+     /^[A-Z][\w\s'-]+,\s+[A-Z][a-z][\w\s&'-]+[.]/.test(l)) && l.length > 30
+  );
+
+  // NARR-02b: asterisk without space — "*Big Toe" instead of "* Big Toe"
+  for (const line of text.split('\n')) {
+    const noSpace = line.match(/^\*([A-Z][\w])/);
+    if (noSpace) {
+      const snippet = line.substring(0, 60);
+      f.push(F('error','NARR-02',`Missing space after asterisk.`, snippet, snippet.replace(/^\*/, '* ')));
+    }
+  }
+
+  // PROOF-NAME: lowercase fire name in narrative
+  for (const line of text.split('\n')) {
+    // Match "word, OrgWord." pattern at start of line where fire name is lowercase
+    const lcName = line.match(/^(\*\s*)?([a-z][\w\s'-]{1,40}?),\s+[A-Z][a-z]/);
+    if (lcName && line.length > 30) {
+      const name = lcName[2].trim();
+      // Skip known lowercase patterns
+      if (/^(the|and|or|but|for|in|on|at|to|by|an|a)$/i.test(name)) continue;
+      const fixed = name.replace(/\b\w/g, c => c.toUpperCase());
+      f.push(F('error','PROOF-CAP',`Fire name "${name}" should be title case.`,
+        line.substring(0, 80), line.substring(0, 80).replace(name, fixed)));
+    }
+  }
+
+  for (const line of narrLines) {
+    const incName = line.replace(/^\*\s+/,'').split(',')[0].trim();
+    const lc = line.toLowerCase();
+    const sentences = line.match(/[^.]+\./g) || [];
+
+    // -- Duplicate phrases anywhere in line (not just consecutive) --
+    const seen = {};
+    for (const s of sentences) {
+      const key = s.trim().toLowerCase();
+      if (key.length < 15) continue;
+      if (seen[key]) {
+        f.push(F('error','NARR-01',`"${incName}": Duplicate — "${s.trim()}" appears twice.`,'','Remove the repeated statement.'));
+      }
+      seen[key] = true;
+    }
+
+    // -- Conflicting threat statements --
+    const hasNumRes = /numerous residences threatened/i.test(line);
+    const hasRes = /(?<!numerous )residences threatened/i.test(line) && !hasNumRes;
+    const hasNumStr = /numerous structures threatened/i.test(line);
+    const hasStr = /(?<!numerous )structures threatened/i.test(line) && !hasNumStr;
+
+    if (hasNumRes && hasRes)
+      f.push(F('error','NARR-31',`"${incName}": Both "Numerous residences threatened" and "Residences threatened" — pick one.`));
+    if (hasNumStr && hasStr)
+      f.push(F('error','NARR-31',`"${incName}": Both "Numerous structures threatened" and "Structures threatened" — pick one.`));
+
+    // -- Umbrella rule: if both residences AND other structures, use "Structures threatened" --
+    if ((hasRes || hasNumRes) && (hasStr || hasNumStr))
+      f.push(F('error','NARR-31',`"${incName}": Both residences and structures mentioned separately. Use umbrella term "Structures threatened."`));
+
+    // -- Multiple evacuation/closure statements (should be one sentence) --
+    const evacCount = (line.match(/evacuations in effect/gi) || []).length;
+    const closureCount = (line.match(/closures in effect/gi) || []).length;
+    if (evacCount > 1) f.push(F('error','NARR-38',`"${incName}": "Evacuations in effect" appears ${evacCount} times.`));
+    if (closureCount > 1) f.push(F('warning','NARR-37',`"${incName}": Multiple "closures in effect" statements — should be one combined sentence.`));
+
+    // -- Missing fuel type (narrative should mention fuel after location) --
+    const hasFuel = /timber|grass|brush|chaparral|slash|hardwood|dormant|southern rough|litter|logging slash|light slash|heavy slash/i.test(line);
+    const isMissed209 = /no new information/i.test(line);
+    if (!hasFuel && !isMissed209 && line.length > 60) {
+      // Show the narrative line truncated, suggest adding fuel after location
+      const shortLine = line.length > 100 ? line.substring(0, 100) + '…' : line;
+      f.push(F('warning','NARR-20',`"${incName}": No fuel type detected.`, shortLine, 'Add fuel type after location (e.g., "Timber and grass.")'));
+    }
+
+    // -- "with" but no intensity (secondary terms without primary) --
+    if (/fire behavior with/i.test(line) && !/(?:extreme|very active|active|moderate|minimal|low)\s+fire behavior/i.test(line))
+      f.push(F('error','NARR-27',`"${incName}": "fire behavior with..." missing intensity term (Extreme/Active/Moderate/etc).`));
+
+    // -- Behavior intensity present but no "fire behavior" phrasing --
+    if (/(?:extreme|very active|active|moderate|minimal|low)\s+(?:with|and|,)/i.test(line) && !/fire behavior/i.test(line))
+      f.push(F('warning','NARR-27',`"${incName}": Intensity term found but "fire behavior" phrasing missing.`));
+
+    // -- "in effect" without context --
+    const inEffectCount = (line.match(/in effect/gi) || []).length;
+    if (inEffectCount > 2)
+      f.push(F('warning','NARR-37',`"${incName}": "in effect" appears ${inEffectCount} times — check for redundant closure/evac statements.`));
+
+    // -- NARR-47: torching severity — only most severe term allowed --
+    const hasSingle = /\bsingle.tree torching\b/i.test(line);
+    const hasIsolated = /\bisolated torching\b/i.test(line);
+    const hasGroup = /\bgroup torching\b/i.test(line);
+    if (hasGroup && (hasSingle || hasIsolated))
+      f.push(F('error','NARR-47',`"${incName}": Group torching present — remove lesser torching terms (isolated, single tree).`, line.substring(0,120)));
+    else if (hasIsolated && hasSingle)
+      f.push(F('error','NARR-47',`"${incName}": Isolated torching present — remove "single tree torching".`, line.substring(0,120)));
+
+    // -- NARR-48: invalid behavior terms --
+    const VALID_BEHAVIOR_TERMS = ['torching','wind-driven runs','flanking','backing','spotting',
+      'creeping','smoldering','running','uphill runs','long-range spotting','short-range spotting',
+      'group torching','isolated torching','single tree torching'];
+    const behaviorSection = line.match(/fire behavior with ([^.]+)\./i);
+    if (behaviorSection) {
+      const terms = behaviorSection[1].split(/,\s*|\s+and\s+/).map(t => t.trim().toLowerCase()).filter(Boolean);
+      for (const term of terms) {
+        const isValid = VALID_BEHAVIOR_TERMS.some(v => term === v || term.includes(v) || v.includes(term));
+        if (!isValid)
+          f.push(F('warning','NARR-48',`"${incName}": "${term}" may not be a valid behavior term.`, behaviorSection[0]));
+      }
+    }
+
+    // -- NARR-49: "National Forest" should be abbreviated to "NF" unless it begins the name --
+    const nfPat = /(?<!\bNational Forests? in\s)\bNational Forest\b(?!\s+in\b)/g;
+    if (nfPat.test(line)) {
+      const match = line.match(/(?<!\bNational Forests? in\s)\bNational Forest\b(?!\s+in\b)/);
+      if (match) {
+        const before = line.substring(Math.max(0, match.index - 20), match.index + match[0].length + 20);
+        f.push(F('warning','NARR-49',`"${incName}": "National Forest" should be abbreviated "NF" as suffix.`, before, before.replace('National Forest', 'NF')));
+      }
+    }
+    // -- NARR-50: Missing location for new fires --
+    // New narratives (asterisk) should have a location: "X miles [dir] of [Town]" or similar
+    const isNew = /^\*/.test(line);
+    const hasLocation = /\d+\s+miles?\s+\w+\s+of\s+/i.test(line)
+      || /\b(near|outside|adjacent|within|along|north|south|east|west|northeast|northwest|southeast|southwest)\s+(of\s+)?\w/i.test(line)
+      || /\bstarted\s+on\b/i.test(line)
+      || /\b(private|federal|state|tribal|BLM|BIA|USFS|NPS)\s+(land|property|ownership)/i.test(line)
+      || /\bon\s+the\s+\w+\s+(National|Ranger|District|Reservation|Forest|Park)/i.test(line);
+    const isNoNewInfo = /no new information/i.test(line) || /last (?:narrative )?report/i.test(line);
+    if (isNew && !hasLocation && !isNoNewInfo && line.length > 60) {
+      f.push(F('warning','NARR-50',`"${incName}": New fire narrative may be missing a location (e.g., "X miles [dir] of [Town], [State]").`, line.substring(0,100)));
+    }
+
+    // -- PROOF-CAP: Lowercase letter after period (mid-narrative sentence start) --
+    const capPat = /\.\s+([a-z])/g;
+    let capM;
+    while ((capM = capPat.exec(line)) !== null) {
+      // Skip known lowercase patterns: abbreviations, units, acronyms context
+      const before = line.substring(Math.max(0, capM.index - 10), capM.index + 1);
+      if (/(?:vs|approx|est|etc|[A-Z])\.$/.test(before)) continue;
+      if (/\b\d+\.\s/.test(line.substring(capM.index - 3, capM.index + 3))) continue; // decimal/number
+      const snip = line.substring(Math.max(0, capM.index - 15), Math.min(line.length, capM.index + 20)).trim();
+      const fixed = snip.replace(/\.\s+([a-z])/, (m, c) => '. ' + c.toUpperCase());
+      f.push(F('error','PROOF-CAP',`"${incName}": Sentence should start with a capital letter.`, snip, fixed));
+    }
+
+    // -- NARR-15b: Numerals 1-9 that should be spelled out in narrative text --
+    // Broader than just "miles" — catches "2 structures", "3 engines", etc.
+    // Exclude: dates, percentages, unit codes, table-like data, acre counts, coordinates
+    const numPat = /(?<=\s|^)([1-9])\s+(structure|home|residence|building|cabin|engine|crew|helicopter|division|branch|group|day|week|hour|outbuilding|barn|shed|mile)s?\b/gi;
+    let numM;
+    while ((numM = numPat.exec(line)) !== null) {
+      const w = ['one','two','three','four','five','six','seven','eight','nine'];
+      const spelled = w[parseInt(numM[1]) - 1];
+      const snip = line.substring(Math.max(0, numM.index - 10), Math.min(line.length, numM.index + numM[0].length + 10)).trim();
+      f.push(F('warning','NARR-15',`"${incName}": Spell out single digits in narrative.`, numM[0], numM[0].replace(numM[1], spelled)));
+    }
+
+    // -- PROOF-CITY: Lowercase city/town name in location pattern --
+    // "of tahlequah, OK" → should be "Tahlequah"
+    const cityPat = /\bof\s+([a-z][a-z]+(?:\s+[a-z][a-z]+)?),\s+([A-Z]{2})\b/g;
+    let cityM;
+    while ((cityM = cityPat.exec(line)) !== null) {
+      const town = cityM[1];
+      // Skip known lowercase words that aren't city names
+      if (/^(the|and|or|but|in|on|at|to|for|by|an|a|its)$/i.test(town)) continue;
+      const fixedTown = town.replace(/\b\w/g, c => c.toUpperCase());
+      const snip = line.substring(Math.max(0, cityM.index), Math.min(line.length, cityM.index + cityM[0].length + 5)).trim();
+      f.push(F('error','PROOF-CAP',`"${incName}": City/town name should be capitalized.`, snip, snip.replace(town, fixedTown)));
+    }
+
+    // -- SPELL-FUEL: Validate fuel type words --
+    // If a word appears before known fuel suffixes and isn't recognized, flag it
+    // Skip capitalized words (likely proper nouns / fire names)
+    const fuelSuffixes = /\b(\w+)\s+(litter|brush|timber|slash|grass|chaparral|tundra|rough)\b/gi;
+    const knownFuelPrefixes = ['hardwood','softwood','dormant','green','short','tall','southern','northern',
+      'compact','closed','open','heavy','light','medium','mixed','dead','live','dry','wet','dense',
+      'sparse','cured','standing','timber','grass','annual','perennial','tropical','alpine','no','the',
+      'and','or','with','in','on','of','into','through','some','any','all','native','western','eastern',
+      'from','burned','unburned','adjacent','nearby','surrounding','fine','coarse','decayed','fresh',
+      'old','new','thick','thin','scattered','continuous','deep','surface','ground','aerial','sub',
+      'understory','overstory','canopy','crown','total','partial','urban','rural','natural','wild'];
+    let fuelM;
+    while ((fuelM = fuelSuffixes.exec(line)) !== null) {
+      const prefix = fuelM[1].toLowerCase();
+      if (knownFuelPrefixes.includes(prefix)) continue;
+      if (prefix.length < 3) continue;
+      if (/^\d+$/.test(prefix)) continue;
+      // Skip capitalized words — likely proper nouns or fire names
+      if (/^[A-Z]/.test(fuelM[1])) continue;
+      const snip = line.substring(Math.max(0, fuelM.index), Math.min(line.length, fuelM.index + fuelM[0].length + 5)).trim();
+      f.push(F('warning','SPELL',`"${incName}": "${fuelM[1]}" before "${fuelM[2]}" — possible misspelling? Verify fuel type.`, snip));
+    }
+
+    // -- NARR-21: Oxford comma --
+    const oxLine=/(?:running|spotting|torching|backing|flanking|creeping|smoldering|closures|evacuations)[^.]*,\s+and\s+/gi;
+    let oxm;
+    while((oxm=oxLine.exec(line))!==null) f.push(F('warning','NARR-21',`"${incName}": Possible Oxford comma.`,oxm[0].substring(0,80)));
+  }
+
+  // === PROOF-BREAK: Missing paragraph break between narratives ===
+  // Check 1: Two "Name, Org." patterns on the same line.
+  for (const line of text.split('\n')) {
+    if (line.length < 60) continue;
+    const narrAnchors = [];
+    const anchorRe = /(?:^|\.\s*)(\*\s+)?([A-Z0-9][\w\s''-]{1,40}?),\s+([A-Z][a-z][\w\s&''-]+?)\./g;
+    let am;
+    while ((am = anchorRe.exec(line)) !== null) {
+      const name = am[2].trim();
+      if (/^(Incident|Fire Activity|New fires|Uncontained|Large fires|CIMTs|NIMOs|GACC|Fires and)/i.test(name)) continue;
+      if (/^\d+\s+(miles?|acres?|fires?)\b/i.test(name)) continue;
+      narrAnchors.push({ name, pos: am.index });
+    }
+    if (narrAnchors.length >= 2) {
+      const names = narrAnchors.map(a => a.name);
+      f.push(F('error', 'PROOF-BREAK',
+        `Missing paragraph break — "${names[0]}" and "${names[1]}" are on the same line. Each narrative must be its own paragraph.`,
+        line.length > 120 ? line.substring(0, 120) + '…' : line));
+    }
+  }
+
+  // === TEXT QUALITY — catch everything ===
+  checkTextQuality(text, f);
+
+  // Extra blank paragraphs between GACC stats table and first narrative (NARR-BLANK)
+  // Look for 3+ consecutive newlines after "Uncontained large fires" and before first * narrative
+  const blankPat = /Uncontained large fires[^\n]*\n(\s*\n){3,}/i;
+  if (blankPat.test(text))
+    f.push(F('warning','PROOF',`Extra blank line(s) between GACC stats table and first narrative — remove extra paragraphs.`));
+}
+
+function checkTextQuality(text, f) {
+  let m;
+  const lines = text.split('\n').filter(l => l.trim().length > 10);
+
+  for (const line of lines) {
+    const lt = line.trim();
+    if (/^(Fire Activity|New fires|New large|Uncontained|Large fires|CIMTs|NIMOs|GACC|Incident Name|Unit|Total|Totals)/i.test(lt)) continue;
+    if (lt.length < 20) continue;
+    if (/^[A-Z]{2,5}[-\d]*\s+[–—-]\s+\w/.test(lt)) continue; // legend
+    if (/^(Table of |Geographic Area Fire|Table listing|Table with summary|Active Incident)/i.test(lt)) continue;
+    const isLegend = /[A-Z]{2,5}[-\d]*\s+[–—-]\s+\w.*[A-Z]{2,5}[-\d]*\s+[–—-]\s+\w/.test(line);
+
+    // Identify incident name for attribution
+    const nm = line.match(/^\*?\s*([A-Z][\w\s&'-]+?),\s+[A-Z]/);
+    const who = nm ? '"' + nm[1].trim() + '": ' : '';
+    const ctx = (s,i,len) => s.substring(Math.max(0,i-30), Math.min(s.length,i+(len||0)+30)).trim();
+
+    if (!isLegend) {
+      const dsPat = /(?<=\S) {2,}/g; let ds;
+      while ((ds=dsPat.exec(line))!==null) f.push(F('warning','PROOF',`${who}Double space.`,ctx(line,ds.index,ds[0].length),'Remove extra space.'));
+    }
+    const msp=/\.([A-Z])/g;
+    while((m=msp.exec(line))!==null){const b=line.substring(Math.max(0,m.index-3),m.index+1);if(/[A-Z]\.[A-Z]/.test(b)||/\d\./.test(b))continue;const snip=ctx(line,m.index,4);f.push(F('error','PROOF',`${who}Missing space after period.`,snip,snip.replace(/\.([A-Z])/,'. $1')));}
+    const msc=/,([A-Za-z])/g;
+    while((m=msc.exec(line))!==null){if(/\d/.test(line[m.index-1]||''))continue;const snip=ctx(line,m.index,5);f.push(F('error','PROOF',`${who}Missing space after comma.`,snip,snip.replace(/,([A-Za-z])/,', $1')));}
+    if(/\.\.(?!\.)/.test(line)){const i=line.indexOf('..');const snip=ctx(line,i,2);f.push(F('error','PROOF',`${who}Double period.`,snip,snip.replace('..','.')));}
+    if(/,,/.test(line)){const i=line.indexOf(',,');const snip=ctx(line,i,2);f.push(F('error','PROOF',`${who}Double comma.`,snip,snip.replace(',,',',')));}
+    const sbp=/ +\./g;while((m=sbp.exec(line))!==null){if(line[m.index+m[0].length]==='.')continue;f.push(F('warning','PROOF',`${who}Space before period.`,ctx(line,m.index,m[0].length)));}
+    const sbc=/ +,/g;while((m=sbc.exec(line))!==null)f.push(F('warning','PROOF',`${who}Space before comma.`,ctx(line,m.index,m[0].length)));
+    const op=(line.match(/\(/g)||[]).length,cl=(line.match(/\)/g)||[]).length;
+    if(op!==cl) f.push(F('warning','PROOF',`${who}Mismatched parentheses (${op} open, ${cl} close).`,line.substring(0,100)));
+    const stray=/[{}\[\]<>@#^~|\\]/g;while((m=stray.exec(line))!==null)f.push(F('warning','PROOF',who+'Unexpected character "'+m[0]+'".', ctx(line,m.index,1)));
+    // Tab character — only flag in narrative lines, not table data rows
+    // Table rows contain unit codes (case-insensitive match for hand-entered codes like Ok-OKS)
+    const looksLikeTableRow = /\t/.test(line) && /[A-Za-z]{2}-[A-Za-z]{2,4}/i.test(line);
+    if(/\t/.test(line) && !looksLikeTableRow) f.push(F('warning','PROOF',`${who}Tab character.`,line.substring(0,80)));
+  }
+
+  // Common IMSR term misspellings (check full text block)
+  const misspellings = [
+    [/\brecieved\b/gi, 'received'],
+    [/\brecived\b/gi, 'received'],
+    [/\breceved\b/gi, 'received'],
+    [/\boccured\b/gi, 'occurred'],
+    [/\boccuring\b/gi, 'occurring'],
+    [/\boccurance\b/gi, 'occurrence'],
+    [/\bcontainement\b/gi, 'containment'],
+    [/\bcontaned\b/gi, 'contained'],
+    [/\bcontaied\b/gi, 'contained'],
+    [/\bthreated\b/gi, 'threatened'],
+    [/\bthretened\b/gi, 'threatened'],
+    [/\bthreatned\b/gi, 'threatened'],
+    [/\bthreattened\b/gi, 'threatened'],
+    [/\bevacation\b/gi, 'evacuation'],
+    [/\bevacuaiton\b/gi, 'evacuation'],
+    [/\bevacaution\b/gi, 'evacuation'],
+    [/\bprecipiation\b/gi, 'precipitation'],
+    [/\bpreciptation\b/gi, 'precipitation'],
+    [/\bprecipitaion\b/gi, 'precipitation'],
+    [/\bsuppresion\b/gi, 'suppression'],
+    [/\bsupression\b/gi, 'suppression'],
+    [/\binfrastucture\b/gi, 'infrastructure'],
+    [/\binfrasturcture\b/gi, 'infrastructure'],
+    [/\binfrastrucutre\b/gi, 'infrastructure'],
+    [/\bresidneces\b/gi, 'residences'],
+    [/\bresidensces\b/gi, 'residences'],
+    [/\bresidances\b/gi, 'residences'],
+    [/\bresidense\b/gi, 'residence'],
+    [/\bstrucutures\b/gi, 'structures'],
+    [/\bsturctures\b/gi, 'structures'],
+    [/\bstructres\b/gi, 'structures'],
+    [/\bstuctures\b/gi, 'structures'],
+    [/\bsmolding\b/gi, 'smoldering'],
+    [/\bsmouldering\b/gi, 'smoldering'],
+    [/\btorchng\b/gi, 'torching'],
+    [/\bflankng\b/gi, 'flanking'],
+    [/\bhabiitat\b/gi, 'habitat'],
+    [/\bhabiat\b/gi, 'habitat'],
+    [/\bnorthest\b/gi, 'northeast'],
+    [/\bsouthest\b/gi, 'southeast'],
+    [/\bnorthwes\b/gi, 'northwest'],
+    [/\bsouthwes\b/gi, 'southwest'],
+    [/\bpersonel\b/gi, 'personnel'],
+    [/\bpersonell\b/gi, 'personnel'],
+    [/\bpersonal\b(?=\s+(?:committed|assigned|on\s+scene|deployed))/gi, 'personnel'],
+    [/\bhelicoptors\b/gi, 'helicopters'],
+    [/\bhelicopers\b/gi, 'helicopters'],
+    [/\bacerage\b/gi, 'acreage'],
+    [/\bacregage\b/gi, 'acreage'],
+    [/\baccurate\s+mappng\b/gi, 'accurate mapping'],
+    [/\bmanagment\b/gi, 'management'],
+    [/\bmangement\b/gi, 'management'],
+    [/\bcommited\b/gi, 'committed'],
+    [/\bcommitted\s+commited\b/gi, 'committed'],
+    [/\bcomunity\b/gi, 'community'],
+    [/\bcommunty\b/gi, 'community'],
+    [/\bcommuntiy\b/gi, 'community'],
+    [/\bvegatation\b/gi, 'vegetation'],
+    [/\bvegetaion\b/gi, 'vegetation'],
+    [/\bvegtation\b/gi, 'vegetation'],
+    [/\bacessible\b/gi, 'accessible'],
+    [/\baccessable\b/gi, 'accessible'],
+    [/\bseperate\b/gi, 'separate'],
+    [/\bseprated\b/gi, 'separated'],
+    [/\boccasionaly\b/gi, 'occasionally'],
+    [/\bneccessary\b/gi, 'necessary'],
+    [/\bneccesary\b/gi, 'necessary'],
+    [/\bimmediatly\b/gi, 'immediately'],
+    [/\bsignifcant\b/gi, 'significant'],
+    [/\bsignificent\b/gi, 'significant'],
+    [/\bsignifigant\b/gi, 'significant'],
+    [/\btempertures\b/gi, 'temperatures'],
+    [/\btempreatures\b/gi, 'temperatures'],
+    [/\bhumidty\b/gi, 'humidity'],
+    [/\bhumiditiy\b/gi, 'humidity'],
+    [/\bforecasted\b/gi, 'forecast'],
+    [/\bperimiter\b/gi, 'perimeter'],
+    [/\bperemeter\b/gi, 'perimeter'],
+    [/\bperimieter\b/gi, 'perimeter'],
+    [/\bcontainmnet\b/gi, 'containment'],
+    [/\bcontainmant\b/gi, 'containment'],
+    [/\bextinguised\b/gi, 'extinguished'],
+    [/\bmontioring\b/gi, 'monitoring'],
+    [/\bmonitiring\b/gi, 'monitoring'],
+    [/\btransfered\b/gi, 'transferred'],
+    [/\bdevistating\b/gi, 'devastating'],
+    [/\bdestroied\b/gi, 'destroyed'],
+    [/\bdestoyed\b/gi, 'destroyed'],
+    [/\bdestoryed\b/gi, 'destroyed'],
+    [/\bclosuers\b/gi, 'closures'],
+    [/\bclosurs\b/gi, 'closures'],
+    [/\bthousnad\b/gi, 'thousand'],
+    [/\blightnig\b/gi, 'lightning'],
+    [/\blightining\b/gi, 'lightning'],
+    [/\bligtning\b/gi, 'lightning'],
+    // Fuel type misspellings
+    [/\bhardwood\s+littler\b/gi, 'hardwood litter'],
+    [/\bhardwood\s+ltter\b/gi, 'hardwood litter'],
+    [/\bhardood\s+litter\b/gi, 'hardwood litter'],
+    [/\bdormat\s+brush\b/gi, 'dormant brush'],
+    [/\bdormant\s+bruch\b/gi, 'dormant brush'],
+    [/\bsouthern\s+roug\b/gi, 'southern rough'],
+    [/\bchaperral\b/gi, 'chaparral'],
+    [/\bchapparal\b/gi, 'chaparral'],
+    [/\bcharparral\b/gi, 'chaparral'],
+    [/\bsmolering\b/gi, 'smoldering'],
+    [/\bcreepng\b/gi, 'creeping'],
+    [/\bbackng\b/gi, 'backing'],
+    [/\bhardwaood\b/gi, 'hardwood'],
+    [/\bhardwod\b/gi, 'hardwood'],
+    [/\bhardwwood\b/gi, 'hardwood'],
+    [/\bhardwoo\b(?!\w)/gi, 'hardwood'],
+    [/\bsoftwod\b/gi, 'softwood'],
+    [/\bsoftwwood\b/gi, 'softwood'],
+    [/\bdomrant\b/gi, 'dormant'],
+    [/\bdormatn\b/gi, 'dormant'],
+    // Common general misspellings
+    [/\bbelive\b/gi, 'believe'],
+    [/\bbeleive\b/gi, 'believe'],
+    [/\bdefinate\b/gi, 'definite'],
+    [/\bdefinately\b/gi, 'definitely'],
+    [/\benviroment\b/gi, 'environment'],
+    [/\benvirnoment\b/gi, 'environment'],
+    [/\bgovernement\b/gi, 'government'],
+    [/\bgovrnment\b/gi, 'government'],
+    [/\bliason\b/gi, 'liaison'],
+    [/\bliaison\b/gi, 'liaison'],
+    [/\bmaintainance\b/gi, 'maintenance'],
+    [/\bmaintenence\b/gi, 'maintenance'],
+    [/\bneighborood\b/gi, 'neighborhood'],
+    [/\bneighorhood\b/gi, 'neighborhood'],
+    [/\bprescirbed\b/gi, 'prescribed'],
+    [/\bprescrbied\b/gi, 'prescribed'],
+    [/\bresoruces\b/gi, 'resources'],
+    [/\bresouces\b/gi, 'resources'],
+    [/\bresourses\b/gi, 'resources'],
+    [/\bveichle\b/gi, 'vehicle'],
+    [/\bvehilce\b/gi, 'vehicle'],
+    [/\bvechicle\b/gi, 'vehicle'],
+    [/\bwheter\b/gi, 'whether'],
+    [/\bwehther\b/gi, 'whether'],
+    [/\bbeacuse\b/gi, 'because'],
+    [/\bbecuase\b/gi, 'because'],
+    [/\bremaning\b/gi, 'remaining'],
+    [/\bremianing\b/gi, 'remaining'],
+    [/\bcompelted\b/gi, 'completed'],
+    [/\bcomplted\b/gi, 'completed'],
+    [/\baddiitonal\b/gi, 'additional'],
+    [/\baddtional\b/gi, 'additional'],
+    [/\bapproxiamtely\b/gi, 'approximately'],
+    [/\bapproximatley\b/gi, 'approximately'],
+    [/\bapproxiamately\b/gi, 'approximately'],
+    [/\bbenifit\b/gi, 'benefit'],
+    [/\bbenificial\b/gi, 'beneficial'],
+    [/\bcondtions\b/gi, 'conditions'],
+    [/\bconditons\b/gi, 'conditions'],
+    [/\bcondiitons\b/gi, 'conditions'],
+  ];
+  for (const [pat, correct] of misspellings) {
+    while ((m = pat.exec(text)) !== null) {
+      const snippet = text.substring(Math.max(0,m.index-20), Math.min(text.length,m.index+m[0].length+20)).trim();
+      // Preserve capitalization: if matched word starts with uppercase, capitalize the correction too
+      const corrected = (m[0][0] === m[0][0].toUpperCase() && m[0][0] !== m[0][0].toLowerCase())
+        ? correct[0].toUpperCase() + correct.slice(1)
+        : correct;
+      // Find incident name by scanning backward for nearest narrative header
+      const before = text.substring(Math.max(0, m.index - 500), m.index);
+      const incMatch = before.match(/(?:\*\s+)?([A-Z][\w\s&'-]+?),\s+(?:[A-Z][a-z])/g);
+      const incName = incMatch ? incMatch[incMatch.length - 1].replace(/^\*\s+/, '').split(',')[0].trim() : '';
+      const who = incName ? `"${incName}": ` : '';
+      f.push(F('error','SPELL',`${who}"${m[0]}" → "${corrected}"`,
+        snippet,
+        snippet.replace(new RegExp(m[0].replace(/[.*+?^${}()|[\]\\]/g,'\\$&'), 'i'), corrected)
+      ));
+    }
+  }
+
+  // WORD-MERGE TYPOS — catch words run together (like "Basina" = "Basin" + "a", "Glle" = garbled)
+  // Known geographic term merges: common words that get accidentally concatenated
+  const wordMerges = [
+    [/\bBasina\b/gi, 'Basin a', 'Great Basin — check surrounding word'],
+    [/\bRockiesa\b/gi, 'Rockies a', 'word merge in Predictive Services'],
+    [/\bManagingManaging\b/gi, 'Managing', 'duplicated word — delete one'],
+    [/\bFinelyFinley\b|FinleyFinely\b/gi, null, 'inconsistent place name — verify spelling'],
+    [/\b([A-Z][a-z]{2,})\1\b/g, null, 'possible duplicated word'],
+  ];
+  for (const [pat, correct, note] of wordMerges) {
+    let wm;
+    const p = new RegExp(pat.source, pat.flags);
+    while ((wm = p.exec(text)) !== null) {
+      const before = text.substring(Math.max(0, wm.index - 500), wm.index);
+      const incMatch = before.match(/(?:\*\s+)?([A-Z][\w\s&'-]+?),\s+(?:[A-Z][a-z])/g);
+      const incName = incMatch ? incMatch[incMatch.length - 1].replace(/^\*\s+/, '').split(',')[0].trim() : '';
+      const who = incName ? `"${incName}": ` : '';
+      const msg = correct ? `${who}"${wm[0]}" → "${correct}". ${note||''}` : `${who}"${wm[0]}" — ${note||'possible word merge or duplication'}.`;
+      f.push(F('error','PROOF-WM', msg, text.substring(Math.max(0,wm.index-30), Math.min(text.length,wm.index+wm[0].length+30)).trim()));
+    }
+  }
+
+  // INCONSISTENT LOCATION SPELLING — same fire referenced with different location names
+  // Extract all "X miles [dir] of [Town], [State]" location strings and look for near-dupes
+  const locPat = /\d+\s+miles?\s+\w+(?:\s+\w+)?\s+of\s+([A-Z][a-z]+(?:\s+[A-Z][a-z]+)?),\s+([A-Z]{2})/g;
+  const locMap = new Map();
+  let locM;
+  while ((locM = locPat.exec(text)) !== null) {
+    const town = locM[1], state = locM[2];
+    const key = state + '-' + town.toLowerCase().replace(/\s+/g,'');
+    const canon = locMap.get(key);
+    if (!canon) { locMap.set(key, {town, state, idx: locM.index}); }
+    else if (canon.town !== town) {
+      f.push(F('warning','PROOF-LOC',`Location spelling inconsistency: "${canon.town}" vs "${town}", ${state} — verify correct spelling.`,
+        text.substring(Math.max(0,locM.index-30), Math.min(text.length,locM.index+locM[0].length+10)).trim()));
+    }
+  }
+
+  // STANDALONE X/XX/XXX IN NARRATIVE / TABLE CONTEXT — unfilled placeholder sweep
+  const xLinePat = /(?:^|\n)[ \t]*[Xx]{1,10}[ \t]*(?:\n|$)/gm;
+  let xlm;
+  while ((xlm = xLinePat.exec(text)) !== null) {
+    f.push(F('error','HDR-01',`Unfilled placeholder found in document body — replace with actual number.`,
+      text.substring(Math.max(0,xlm.index), Math.min(text.length,xlm.index+40)).trim()));
+  }
+
+
+  // Catch things like "03/25" (leading zero) or "3-25" (hyphen instead of slash)
+  const badDate = /\b(\d{1,2})[-](\d{1,2})(?:[-/]\d{2,4})?\b/g;
+  while ((m = badDate.exec(text)) !== null) {
+    // Skip if it's a unit code like NE-NES or a range like PL 1-5
+    const before = text.substring(Math.max(0, m.index-5), m.index);
+    if (/[A-Z]-?$/.test(before)) continue;
+    if (/PL|Level/i.test(before)) continue;
+    // Skip weather number ranges: "15-35 mph", "5-18%", "10-18 mph", humidity/wind context
+    const after = text.substring(m.index + m[0].length, Math.min(text.length, m.index + m[0].length + 15));
+    const around = text.substring(Math.max(0, m.index - 30), Math.min(text.length, m.index + m[0].length + 30)).toLowerCase();
+    if (/^\s*(%|mph|knots|degrees|°)/.test(after)) continue;
+    if (/wind|gust|humidity|rh\b|temperature|temp\b|dewpoint|pressure|mph|percent/.test(around)) continue;
+    f.push(F('warning','PROOF',`Date-like pattern "${m[0]}" — IMSR dates use M/DD format (slash, no leading zeros).`,
+      text.substring(Math.max(0,m.index-15), Math.min(text.length,m.index+m[0].length+15)).trim()));
+  }
+}
+
+// --- RENDER: IMSR-ordered output ---
+function renderInfoTable(context) {
+  // NAT-02/NAT-03: column-based for independent value selection.
+  // Values in Arial 11 non-bold. Highlight just the right column to copy.
+  const lines = context.split('\n').map(l => l.trim()).filter(Boolean);
+  let labels = '', values = '';
+  for (const line of lines) {
+    const isTotal = /^Total:/i.test(line);
+    const bdr = isTotal ? 'border-top:1px solid var(--border);padding-top:4px;margin-top:3px;' : '';
+    const bold = isTotal ? 'font-weight:700;' : '';
+    const colon = line.indexOf(':');
+    if (colon > 0) {
+      const label = line.substring(0, colon).trim();
+      const value = line.substring(colon + 1).trim();
+      labels += `<div style="line-height:20px;white-space:nowrap;${bdr}${bold}">${esc(label)}</div>`;
+      values += `<div style="line-height:20px;text-align:center;font-family:Arial,sans-serif;font-size:11pt;font-weight:normal;${bdr}">${esc(value)}</div>`;
+    } else {
+      labels += `<div style="line-height:20px;font-family:Consolas,monospace;${bdr}${bold}">${esc(line)}</div>`;
+      values += `<div style="line-height:20px;${bdr}">&nbsp;</div>`;
+    }
+  }
+  return `<div style="display:flex;gap:12px;margin-top:6px;font-size:12px;max-width:400px;">
+    <div style="color:var(--text-dim);flex:1;">${labels}</div>
+    <div style="color:var(--text);min-width:40px;">${values}</div>
+  </div>`;
+}
+
+function renderPersonnelTable(context) {
+  // RES-05: column-based for independent value selection.
+  // Result column in Arial 9 bold, center aligned.
+  const lines = context.split('\n').map(l => l.trim()).filter(Boolean);
+  let leftCol = '', midCol = '', rightCol = '';
+  for (const line of lines) {
+    const isTotal = /^Total:/i.test(line);
+    const bdr = isTotal ? 'border-top:1px solid var(--border);padding-top:4px;margin-top:3px;' : '';
+    if (isTotal) {
+      const colon = line.indexOf(':');
+      const value = colon > 0 ? line.substring(colon + 1).trim() : '';
+      leftCol  += `<div style="line-height:20px;${bdr}font-weight:700;">Total</div>`;
+      midCol   += `<div style="line-height:20px;${bdr}">&nbsp;</div>`;
+      rightCol += `<div style="line-height:20px;text-align:center;font-family:Arial,sans-serif;font-size:9pt;font-weight:700;${bdr}">${esc(value)}</div>`;
+    } else {
+      const eqIdx = line.lastIndexOf('=');
+      if (eqIdx > 0) {
+        const left = line.substring(0, eqIdx).trim();
+        let right = line.substring(eqIdx + 1).trim();
+        const hasErr = right.includes('✗');
+        right = right.replace(/\s*✗\s*$/, '').trim();
+        const colon = left.indexOf(':');
+        const gacc = colon > 0 ? left.substring(0, colon).trim() : left;
+        const math = colon > 0 ? left.substring(colon + 1).trim() : '';
+        leftCol  += `<div style="line-height:20px;white-space:nowrap;${bdr}">${esc(gacc)}</div>`;
+        midCol   += `<div style="line-height:20px;white-space:nowrap;color:var(--text-dim);font-family:Consolas,monospace;${bdr}">${esc(math)} =</div>`;
+        rightCol += `<div style="line-height:20px;text-align:center;font-family:Arial,sans-serif;font-size:9pt;font-weight:700;${bdr}">${esc(right)}${hasErr ? ' <span style="color:#c0392b;">✗</span>' : ''}</div>`;
+      } else {
+        leftCol  += `<div style="line-height:20px;${bdr}">${esc(line)}</div>`;
+        midCol   += `<div style="line-height:20px;${bdr}">&nbsp;</div>`;
+        rightCol += `<div style="line-height:20px;${bdr}">&nbsp;</div>`;
+      }
+    }
+  }
+  return `<div style="display:flex;gap:8px;margin-top:6px;font-size:12px;max-width:500px;">
+    <div style="color:var(--text-dim);">${leftCol}</div>
+    <div style="flex:1;">${midCol}</div>
+    <div style="color:var(--text);min-width:30px;">${rightCol}</div>
+  </div>`;
+}
+
+function render(sections) {
+  const out=document.getElementById('output'), res=document.getElementById('results'), sum=document.getElementById('summary');
+  out.classList.remove('hidden');
+  const all=sections.flatMap(s=>s.findings);
+  const errs=all.filter(x=>x.severity==='error').length, warns=all.filter(x=>x.severity==='warning').length, infos=all.filter(x=>x.severity==='info').length;
+  sum.innerHTML=`<div class="stat"><span class="count">${all.length}</span> Total</div>
+    <div class="stat"><span class="dot err"></span><span class="count">${errs}</span> Errors</div>
+    <div class="stat"><span class="dot warn"></span><span class="count">${warns}</span> Warnings</div>
+    <div class="stat"><span class="dot info"></span><span class="count">${infos}</span> Info</div>`;
+
+  let html = '';
+  for (const sec of sections) {
+    if (!sec.findings.length) continue;
+    const cls = sec.isGacc ? 'sec-hdr gacc' : 'sec-hdr';
+    html += `<div class="${cls}">${esc(sec.title)}</div>`;
+    for (const f of sec.findings) {
+      // Bold quoted text in message to make errors pop: "word" → <b>"word"</b>
+      const msgHtml = esc(f.message).replace(/"([^"]+?)"/g, '<b>"$1"</b>');
+      html += `<div class="finding ${f.severity}"><span class="rule-id">${esc(f.ruleId)}</span> ${msgHtml}`;
+      if (f.fix === '__table__' && f.context) {
+        // Render as two-column layout (NAT-02/NAT-03)
+        html += renderInfoTable(f.context);
+      } else if (f.fix === '__personnel__' && f.context) {
+        // Render as three-column personnel math (RES-05)
+        html += renderPersonnelTable(f.context);
+      } else if (f.context && f.fix) {
+        html += `<div class="diff-row">
+          <span class="diff-before">${esc(f.context)}</span>
+          <span class="diff-arrow">→</span>
+          <span class="diff-after">${esc(f.fix)}</span>
+        </div>`;
+      } else if (f.context) {
+        html += `<span class="diff-ctx">${esc(f.context)}</span>`;
+      } else if (f.fix) {
+        html += `<span class="finding fix">→ ${esc(f.fix)}</span>`;
+      }
+      html += '</div>';
+    }
+  }
+  res.innerHTML = html || '<div style="text-align:center;padding:40px;color:var(--ok);">✓ No issues.</div>';
+
+  // Show Layer 2 container
+  const l2c = document.getElementById('l2Container');
+  l2c.classList.remove('hidden');
+  document.getElementById('l2Btn').disabled = false;
+  document.getElementById('l2Btn').textContent = 'Run Layer 2 (Claude API)';
+  document.getElementById('l2Status').textContent = '';
+  document.getElementById('l2Results').innerHTML = '';
+  document.getElementById('l2Summary').innerHTML = '';
+
+  const yestLabel = yesterdayPPL ? ' (yesterday\'s PPL loaded)' : '';
+  // Restore step2 drop zone label
+  const dz2hdr = document.querySelector('#dropZone2 h2');
+  if (dz2hdr) dz2hdr.textContent = `Drop another IMSR to re-check${yestLabel}`;
+  step = 2;
+}
+
+// === LAYER 2: Claude API Natural Language Proofreading ===
+async function runLayer2() {
+  const key = document.getElementById('apiKey').value.trim();
+  if (!key) {
+    document.getElementById('apiStatus').textContent = '⚠ Enter API key above first.';
+    document.getElementById('apiStatus').style.color = 'var(--err)';
+    return;
+  }
+  if (!lastIMSRText) {
+    document.getElementById('l2Status').textContent = '⚠ No IMSR text loaded. Run Layer 1 first.';
+    return;
+  }
+
+  const btn = document.getElementById('l2Btn');
+  const status = document.getElementById('l2Status');
+  btn.disabled = true;
+  btn.textContent = 'Running…';
+  status.textContent = 'Sending to Claude API…';
+  status.style.color = 'var(--text-dim)';
+
+  const systemPrompt = `You are an IMSR proofreader for the National Interagency Coordination Center (NICC). You check Incident Management Situation Reports for errors that regex cannot catch.
+
+Your job: find typos, misspellings, missing words, wrong words, grammatical errors, and awkward phrasing in the IMSR text below. Focus on errors a human proofreader would catch.
+
+Context — these are CORRECT terms and spellings that should NOT be flagged:
+- GACC section headers: Alaska Area, Northwest Area, Northern California Area, Southern California Area, Northern Rockies Area, Great Basin Area, Southwest Area, Rocky Mountain Area, Eastern Area, Southern Area
+- GACC codes: AICC, NWCC, ONCC, OSCC, NRCC, GBCC, SWCC, RMCC, EACC, SACC
+- Team types: CIMT, NIMOs (plural: NIMOs not NIMOS — only the S is lowercase)
+- Fire terms: Ctn, Comp, NR, UNK, CTD, PPL, Crw, Eng, Heli, Strc
+- Behavior: torching, spotting, crowning, flanking, backing, creeping, smoldering, wind-driven runs
+- Fuels: timber, grass, brush, chaparral, slash, hardwood litter, dormant brush, southern rough
+- Threat phrases: "Residences threatened." / "Numerous residences threatened." / "Structures threatened." / "Energy infrastructure threatened." / "Communication infrastructure threatened." / "Railroad infrastructure threatened." / "Sage-grouse habitat threatened."
+- Closure phrases: "Evacuations in effect." / "Area closures in effect." / "Road closures in effect." / "Trail closures in effect."
+- Special statements: "No new information." / "Last narrative report unless new information is received." / "Last report unless significant activity occurs." / "Reduction in acreage due to more accurate mapping." / "Precipitation occurred over the fire area yesterday." / "Previously reported incident."
+- Unit codes look like: CA-LFD, MT-BDF, WY-CMX (2-letter state + hyphen + 2-4 char code)
+- Cost formats: NR, 1K, 85K, 1.2M, 40M (no dollar signs)
+- Incident names are in title case, never end with "Fire"
+- Directions are fully spelled out: "northeast" not "NE"
+- Abbreviations like NF (National Forest), BLM, USFS, NPS, FWS, DOW are correct
+- Table headers like "Chge in Acres", "Chge in PPL", "$$ CTD", "Origin Own" are correct abbreviations
+- "DOW" at the end of a military unit name (e.g. "Fort Carson Army Base, DOW") is correct
+
+REFERENCE — correctly formatted narrative lines. Use these as your baseline for what "correct" looks like:
+
+* Morrill, Nebraska Forest Service. CIMT (RM Team 1). CIMT is also managing the Cottonwood incident. Fifteen miles northeast of Bridgeport, NE. Grass and dormant brush. Moderate fire behavior with running, flanking and backing. Numerous residences threatened. Evacuations and area closures in effect.
+
+* Road 203, Nebraska National Forest, USFS. CIMT (RM Team 3). Transfer of command from CIMT back to the local unit occurred yesterday. Eight miles southwest of Halsey, NE. Grass and timber. Minimal fire behavior with backing, creeping and smoldering. Numerous residences threatened.
+
+Qury, South Dakota Division of Wildland Fire. Two miles southeast of Custer, SD. Timber. Active fire behavior with uphill runs, creeping and smoldering. Structures threatened. Area, road and trail closures in effect.
+
+440, Florida Forest Service. Five miles west of Cross City, FL. Heavy slash. No new information. Last narrative report unless new information is received.
+
+* Panama, Jefferson County. Eleven miles east of Cardwell, MT. Timber, grass and brush. Minimal fire behavior with isolated torching, smoldering and creeping.
+
+Key patterns to notice in the examples above:
+- Asterisk (*) prefix = new incident. No asterisk = returning.
+- "CIMT is also managing the [Name] incident." on the primary fire.
+- Distances 1-9 spelled out, 10+ numerals. Directions spelled out lowercase.
+- Fuels: first capitalized, rest lowercase, no Oxford comma.
+- Behavior: "[Intensity] fire behavior with [terms]." Intensity capitalized, terms lowercase.
+- Threats: infrastructure types before residences/structures. "Numerous" = 100+.
+- Closures: single sentence, evacuations first, "and" before last item.
+- Special statements at end in order: sage-grouse, reduction, precipitation, last report.
+- "Previously reported incident." appears after managing org for re-entered fires.
+
+CRITICAL — things to actively look for that regex misses:
+1. WORD MERGES: Two words accidentally joined (e.g. "Basina" instead of "Basin a", "Managingthe" instead of "Managing the")
+2. INCONSISTENT PLACE NAMES: Same town spelled differently in two narratives (e.g. "Finley" vs "Finely")
+3. CAPITALIZATION ERRORS: Mid-sentence capital letters that don't belong (e.g. "also Managing the" — Managing should be lowercase)
+4. GARBLED WORDS: Strings that look like corrupted text (e.g. "Glle" — likely "Gill" or another name)
+5. UNFILLED PLACEHOLDERS: Bare "X" or "XX" in any field where a number or value is expected
+6. MISSING ARTICLES: "on private land" vs "on the private land" — check for dropped "the", "a", "an"
+7. DUPLICATE WORDS: "the the", "and and", "of of" anywhere in the text
+8. NIMOS SPELLING: Must be "NIMOs" — flag if you see "NIMOS" (all caps is wrong)
+
+DO NOT flag:
+- Formatting choices (bold, spacing, layout)
+- Stylistic preferences
+- Correct IMSR terminology listed above
+- Anything that is correct per IMSR conventions
+- Table data values or column contents
+- Abbreviations that are standard IMSR format
+
+Respond with ONLY a JSON array. No markdown, no backticks, no explanation. Each item:
+{"severity":"error|warning","location":"section or incident name","message":"description","context":"surrounding text","fix":"suggested correction"}
+
+If no issues found, respond with: []`;
+
+  // Trim IMSR text to avoid huge tokens — skip Fires and Acres tables
+  let imsrText = lastIMSRText;
+  const faIdx = imsrText.search(/Fires and Acres/i);
+  if (faIdx > 0) imsrText = imsrText.substring(0, faIdx) + '\n[Fires and Acres tables omitted]';
+
+  try {
+    const response = await fetch('https://api.anthropic.com/v1/messages', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'x-api-key': key,
+        'anthropic-version': '2023-06-01',
+        'anthropic-dangerous-direct-browser-access': 'true'
+      },
+      body: JSON.stringify({
+        model: 'claude-sonnet-4-20250514',
+        max_tokens: 2048,
+        system: systemPrompt,
+        messages: [{ role: 'user', content: 'Proofread this IMSR:\n\n' + imsrText }]
+      })
+    });
+
+    if (!response.ok) {
+      const errBody = await response.text();
+      let msg = `API error ${response.status}`;
+      try { const ej = JSON.parse(errBody); msg = ej.error?.message || msg; } catch(e) {}
+      if (response.status === 401) msg = 'Invalid API key. Check console.anthropic.com for your key.';
+      if (response.status === 429) msg = 'Rate limited. Wait a moment and try again.';
+      throw new Error(msg);
+    }
+
+    const data = await response.json();
+    status.textContent = 'Parsing response…';
+
+    // Extract text content from response
+    const textContent = data.content
+      .filter(c => c.type === 'text')
+      .map(c => c.text)
+      .join('');
+
+    // Parse JSON response
+    let findings = [];
+    try {
+      const cleaned = textContent.replace(/```json\s*|```\s*/g, '').trim();
+      findings = JSON.parse(cleaned);
+      if (!Array.isArray(findings)) findings = [];
+    } catch(e) {
+      // If JSON parsing fails, show raw response as a single finding
+      findings = [{ severity: 'warning', location: 'API Response', message: 'Could not parse structured response. Raw output shown below.', context: textContent.substring(0, 500), fix: '' }];
+    }
+
+    // Render Layer 2 findings
+    renderL2(findings, data.usage);
+
+  } catch(err) {
+    status.textContent = '✗ ' + err.message;
+    status.style.color = 'var(--err)';
+    btn.disabled = false;
+    btn.textContent = 'Retry Layer 2';
+  }
+}
+
+function renderL2(findings, usage) {
+  const btn = document.getElementById('l2Btn');
+  const status = document.getElementById('l2Status');
+  const sumEl = document.getElementById('l2Summary');
+  const resEl = document.getElementById('l2Results');
+
+  const errs = findings.filter(f => f.severity === 'error').length;
+  const warns = findings.filter(f => f.severity === 'warning').length;
+  const total = findings.length;
+
+  // Usage info
+  const inTok = usage?.input_tokens || '?';
+  const outTok = usage?.output_tokens || '?';
+  const costEst = usage ? ((usage.input_tokens * 3 + usage.output_tokens * 15) / 1e6).toFixed(4) : '?';
+
+  status.textContent = `✓ Done — ${total} finding${total!==1?'s':''} | ${inTok} in / ${outTok} out ≈ $${costEst}`;
+  status.style.color = total > 0 ? 'var(--l2)' : 'var(--ok)';
+
+  sumEl.innerHTML = `<div class="summary">
+    <div class="stat"><span class="count" style="color:var(--l2);">${total}</span> Layer 2</div>
+    <div class="stat"><span class="dot err"></span><span class="count">${errs}</span> Errors</div>
+    <div class="stat"><span class="dot warn"></span><span class="count">${warns}</span> Warnings</div>
+  </div>`;
+
+  if (total === 0) {
+    resEl.innerHTML = '<div style="text-align:center;padding:20px;color:var(--ok);">✓ Layer 2: No additional issues found.</div>';
+  } else {
+    let html = '<div class="sec-hdr" style="background:var(--l2-bg);border-left-color:var(--l2);">Layer 2 — Claude API Findings</div>';
+    for (const f of findings) {
+      const sev = f.severity === 'error' ? 'error' : 'warning';
+      html += `<div class="finding layer2" style="border-left-color:${sev==='error'?'var(--err)':'var(--warn)'};">`;
+      html += `<span class="rule-id" style="background:var(--l2);">L2</span> `;
+      if (f.location) html += `<strong>${esc(f.location)}:</strong> `;
+      html += esc(f.message).replace(/"([^"]+?)"/g, '<b>"$1"</b>');
+      if (f.context && f.fix) {
+        html += `<div class="diff-row">
+          <span class="diff-before">${esc(f.context)}</span>
+          <span class="diff-arrow">→</span>
+          <span class="diff-after">${esc(f.fix)}</span>
+        </div>`;
+      } else if (f.context) {
+        html += `<span class="diff-ctx">${esc(f.context)}</span>`;
+      } else if (f.fix) {
+        html += `<span class="finding fix">→ ${esc(f.fix)}</span>`;
+      }
+      html += '</div>';
+    }
+    resEl.innerHTML = html;
+  }
+
+  btn.disabled = false;
+  btn.textContent = 'Re-run Layer 2';
+
+  // Update main summary to include Layer 2 count
+  const mainSum = document.getElementById('summary');
+  if (!document.getElementById('l2StatBadge')) {
+    mainSum.innerHTML += `<div class="stat" id="l2StatBadge" style="border-color:var(--l2);"><span class="dot" style="background:var(--l2);"></span><span class="count">${total}</span> Layer 2</div>`;
+  } else {
+    document.getElementById('l2StatBadge').querySelector('.count').textContent = total;
+  }
+}
+
+</script>
+</body>
+</html>
