@@ -105,6 +105,7 @@
   table.imsr tr:nth-child(even) td { background: #faf9f7; }
   table.imsr td.manual { background: #f0f7ff !important; }
   table.imsr tr.ctn100 td { background: #e8f2fd !important; }
+  .narr-line.ctn100 { border-left-color: #6a9fd8; background: #e8f2fd; }
   table.imsr tr.returning-100 td { background: #fff8e1 !important; }
   .narr-line.returning-100 { border-left-color: #c8a000; background: #fffbe6; }
   .narr-line.discrep { border-left-color: #c0392b; background: #fdf0ee; }
@@ -238,6 +239,7 @@ let _btnCopy = false; // bypass copy listener during button-triggered copies
 let deletedFires = new Set(); // keys of fires manually removed by user
 let lastRptLabelOff = new Set();   // fires with kick-off label suppressed
 let lastRptForceActive = new Set(); // fires forced back to active sort
+let narrFilterState = 'all'; // persists across re-renders: 'all' or 'hide100'
 
 // Accept PDFs by MIME type OR extension — Windows drag-from-Explorer often sends empty MIME
 function isPDF(f) {
@@ -268,6 +270,8 @@ function setIMSRStatus(msg, type='loading') {
   imsrStatusEl.textContent = msg;
 }
 
+let _lastIMSRRawText = ''; // diagnostic: raw text from last IMSR PDF
+
 async function handleIMSRFile(file) {
   setIMSRStatus('Reading IMSR…');
   try {
@@ -280,12 +284,33 @@ async function handleIMSRFile(file) {
       pages.push(ct.items.map(x => x.str).join(' '));
     }
     const text = pages.join('\n');
+    _lastIMSRRawText = text;
     prevIMSR = parseIMSR(text);
-    setIMSRStatus(`✓ ${prevIMSR.size} incidents loaded from previous IMSR`, 'ok');
-    renderOutput(); // re-render with comparison data (also shows missed fires if no 209s loaded)
+    if (prevIMSR.size === 0) {
+      imsrStatusEl.className = 'imsr-status ok';
+      imsrStatusEl.innerHTML = `✓ 0 incidents loaded from previous IMSR — <a href="#" onclick="showIMSRDiagnostic();return false;" style="color:#2565ae;text-decoration:underline;font-weight:600;">show raw text</a><br><span style="font-size:11px;color:#c0392b;">If you used Export to PDF, try Print to PDF or Save as Adobe PDF instead.</span>`;
+    } else {
+      setIMSRStatus(`✓ ${prevIMSR.size} incidents loaded from previous IMSR`, 'ok');
+    }
+    renderOutput();
   } catch(e) {
     setIMSRStatus('Failed to read IMSR PDF — ' + e.message, 'err');
   }
+}
+
+function showIMSRDiagnostic() {
+  const overlay = document.createElement('div');
+  overlay.style.cssText = 'position:fixed;top:0;left:0;right:0;bottom:0;background:rgba(0,0,0,.6);z-index:9999;display:flex;align-items:center;justify-content:center;';
+  overlay.onclick = e => { if (e.target === overlay) overlay.remove(); };
+  const box = document.createElement('div');
+  box.style.cssText = 'background:#fff;border-radius:6px;padding:16px;max-width:90vw;max-height:85vh;display:flex;flex-direction:column;';
+  box.innerHTML = `<div style="font-family:'IBM Plex Mono',monospace;font-size:12px;font-weight:700;margin-bottom:8px;">
+    Raw PDF.js text (${_lastIMSRRawText.length.toLocaleString()} chars) — click outside to close
+    <button onclick="navigator.clipboard.writeText(_lastIMSRRawText).then(()=>this.textContent='Copied!')" style="margin-left:12px;font-size:11px;cursor:pointer;">Copy to clipboard</button>
+  </div>
+  <pre style="overflow:auto;flex:1;font-size:11px;line-height:1.4;white-space:pre-wrap;word-break:break-all;border:1px solid #ccc;padding:10px;background:#f8f8f6;max-height:75vh;">${_lastIMSRRawText.replace(/</g,'&lt;').replace(/>/g,'&gt;')}</pre>`;
+  overlay.appendChild(box);
+  document.body.appendChild(overlay);
 }
 
 dropZone.addEventListener('drop', e => {
@@ -6596,7 +6621,8 @@ function getColVals(f) {
     const dPpl = todayPpl - prev.ppl;
     chgeAc  = dAc.toLocaleString();
     chgePpl = dPpl.toLocaleString();
-  } else if (f.isInitial) {
+  } else if (f.isInitial || prevIMSR) {
+    // New fire: --- if Box 3 = Initial OR if prev IMSR is loaded and fire has no match
     chgeAc  = '---';
     chgePpl = '---';
   }
@@ -6668,7 +6694,7 @@ function buildNarrativeLines(incidents, cssClass='') {
     const prev = prevMatch(f);
     const isNew = !prev;
     const asterisk = isNew ? '* ' : '';
-    const lastRptBadge = (prev && prev.wasLastReport) ? '<span class="last-rpt-badge" title="Previous IMSR said: Last report unless significant activity occurs.">LAST RPT</span>' : '';
+    const lastRptBadge = (prev && prev.wasLastReport) ? '<span class="last-rpt-badge" title="Previous IMSR contained a last-report statement.">LAST RPT</span>' : '';
     const lastRptClass = (prev && prev.wasLastReport) ? ' last-rpt' : '';
 
     // Returning 100% fire — was in prev IMSR and still 100%
@@ -6694,8 +6720,11 @@ function buildNarrativeLines(incidents, cssClass='') {
       kickoffControls = labelBtn + activeBtn;
     }
 
+    // 100% contained — blue highlight matching table rows
+    const ctn100Class = is100(f) ? ' ctn100' : '';
+
     const delBtn = `<button class="narr-del" title="Remove this fire" onclick="deleteSingleFire('${f.f2}','')">✕</button>`;
-    return `<div class="narr-line ${cssClass}${lastRptClass}${ret100}${discrepClass}" data-inc="${f.f2}" data-pct="${f.f8a || 0}"><b>${asterisk}${name}</b>${lastRptBadge}${ret100Badge}${discrepBadge}, ${managingOrg}${cimtLabel}. ${sentence}${precipFlag}${kickoffControls}${delBtn}</div>`;
+    return `<div class="narr-line ${cssClass}${lastRptClass}${ret100}${discrepClass}${ctn100Class}" data-inc="${f.f2}" data-pct="${f.f8a || 0}"><b>${asterisk}${name}</b>${lastRptBadge}${ret100Badge}${discrepBadge}, ${managingOrg}${cimtLabel}. ${sentence}${precipFlag}${kickoffControls}${delBtn}</div>`;
   }).join('<div class="narr-spacer"><br></div>');
 }
 
@@ -7018,13 +7047,15 @@ function renderOutput() {
     <div class="narr-controls">
       <label for="narr-filter">Narratives:</label>
       <select id="narr-filter" onchange="applyNarrFilter(this.value)">
-        <option value="all">Show all fires</option>
-        <option value="hide100">Hide 100% contained</option>
+        <option value="all"${narrFilterState === 'all' ? ' selected' : ''}>Show all fires</option>
+        <option value="hide100"${narrFilterState === 'hide100' ? ' selected' : ''}>Hide 100% contained</option>
       </select>
     </div>
     ${gaccHtml || '<div class="block" style="color:var(--muted);font-style:italic;">No qualifying incidents.</div>'}
     ${nqHtml}
   `;
+  // Reapply narrative filter (persists across re-renders from delete, precip toggle, etc.)
+  if (narrFilterState !== 'all') applyNarrFilter(narrFilterState);
 }
 
 function buildCopyLine(f) {
@@ -7273,6 +7304,7 @@ function copyNarrLines(lines, btn, resetLabel) {
 }
 
 function applyNarrFilter(val) {
+  narrFilterState = val;
   document.querySelectorAll('.narr-line[data-pct]').forEach(el => {
     const pct = parseInt(el.dataset.pct) || 0;
     if (val === 'hide100' && pct >= 100) {
@@ -7368,7 +7400,7 @@ function buildMissedNarrLines(missed) {
       : 'No new information.';
     const tail = prevNarr ? `${prevNarr}. ${suffix}` : suffix;
     const mKey = normKey(p.name, p.unit);
-    const lastRptBadge = p.wasLastReport ? '<span class="last-rpt-badge" title="Previous IMSR said: Last report unless significant activity occurs.">LAST RPT</span>' : '';
+    const lastRptBadge = p.wasLastReport ? '<span class="last-rpt-badge" title="Previous IMSR contained a last-report statement.">LAST RPT</span>' : '';
     const lastRptClass = p.wasLastReport ? ' last-rpt' : '';
     const delBtn = `<button class="narr-del" title="Remove this fire" onclick="deleteSingleFire('','${mKey}')">✕</button>`;
     return `<div class="narr-line${lastRptClass}" style="border-left-color:${p.wasLastReport ? '#d35400' : '#9090c0'};opacity:.8;" data-missed="1" data-missed-key="${mKey}">
@@ -7445,6 +7477,9 @@ function normKey(name, unit) {
 
 // Parse the previous IMSR PDF text into a Map of normKey → {name, unit, acres, ppl, pct, narrative, missCount}
 function parseIMSR(text) {
+  // Normalize Word smart quotes to straight — Word always converts ' to ' (U+2019)
+  // which breaks regex character classes that only include ' (U+0027).
+  text = text.replace(/[\u2018\u2019]/g, "'").replace(/[\u201C\u201D]/g, '"');
   const map = new Map();
 
   // ── Step 1: extract narrative lines ──────────────────────────────────
@@ -7457,12 +7492,12 @@ function parseIMSR(text) {
     const rawName = nm[1].trim();
     if (rawName.length < 2 || /^(?:Incident|Fire Activity|New fires|Understanding|This report)/i.test(rawName)) continue;
     const fullNarr = nm[3].replace(/\s+/g, ' ').trim();
-    const missCount = /last narrative report unless new information/i.test(fullNarr) ? 3
+    const missCount = /last (?:narrative )?report unless new information/i.test(fullNarr) ? 3
       : /no new information/i.test(fullNarr) ? 2 : 1;
     // Strip: fall-off statements, kick-off statement, behavior terms and everything after
     const stripped = fullNarr
       .replace(/\.?\s*No new information\.?\s*/gi, '')
-      .replace(/\.?\s*Last narrative report unless new information is received\.?\s*/gi, '')
+      .replace(/\.?\s*Last (narrative )?report unless new information is received\.?\s*/gi, '')
       .replace(/\.?\s*Last report unless significant activity occurs\.?\s*/gi, '')
       .replace(/\.?\s*(Very Active|Extreme|Active|Moderate|Minimal|Low)\s+fire behavior[\s\S]*/i, '')
       .trim();
@@ -7552,11 +7587,11 @@ function parseIMSR(text) {
           }
           if (narrText.length > 5) {
             const fullNarr = narrText.replace(/\s+/g, ' ').trim();
-            const missCount = /last narrative report unless new information/i.test(fullNarr) ? 3
+            const missCount = /last (?:narrative )?report unless new information/i.test(fullNarr) ? 3
               : /no new information/i.test(fullNarr) ? 2 : 1;
             const stripped = fullNarr
               .replace(/\.?\s*No new information\.?\s*/gi, '')
-              .replace(/\.?\s*Last narrative report unless new information is received\.?\s*/gi, '')
+              .replace(/\.?\s*Last (narrative )?report unless new information is received\.?\s*/gi, '')
               .replace(/\.?\s*Last report unless significant activity occurs\.?\s*/gi, '')
               .replace(/\.?\s*(Very Active|Extreme|Active|Moderate|Minimal|Low)\s+fire behavior[\s\S]*/i, '')
               .trim();
@@ -7604,11 +7639,11 @@ function parseIMSR(text) {
         const truncated = entry.fullNarr.slice(0, cutM.index).replace(/[\s*]+$/, '').trim();
         entry.fullNarr = truncated;
         // Re-evaluate missCount and stripped narrative from clean text
-        entry.missCount = /last narrative report unless new information/i.test(truncated) ? 3
+        entry.missCount = /last (?:narrative )?report unless new information/i.test(truncated) ? 3
           : /no new information/i.test(truncated) ? 2 : 1;
         entry.narrative = truncated
           .replace(/\.?\s*No new information\.?\s*/gi, '')
-          .replace(/\.?\s*Last narrative report unless new information is received\.?\s*/gi, '')
+          .replace(/\.?\s*Last (narrative )?report unless new information is received\.?\s*/gi, '')
           .replace(/\.?\s*Last report unless significant activity occurs\.?\s*/gi, '')
           .replace(/\.?\s*(Very Active|Extreme|Active|Moderate|Minimal|Low)\s+fire behavior[\s\S]*/i, '')
           .trim();
@@ -7623,8 +7658,11 @@ function parseIMSR(text) {
   // ── Step 3: flag fires whose prev narrative had "Last report" ──────
   // Check each entry's own fullNarr (already truncated at fire boundaries
   // by Steps 1/2a/2b) — no raw-text vicinity scan needed.
+  // Catch all variants: "Last report unless significant activity occurs",
+  // "Last narrative report unless new information is received",
+  // "Last report unless new information is received".
   for (const [key, entry] of map) {
-    if (entry.fullNarr && /last report unless significant activity occurs/i.test(entry.fullNarr)) {
+    if (entry.fullNarr && /last (?:narrative )?report unless/i.test(entry.fullNarr)) {
       entry.wasLastReport = true;
     }
   }
@@ -7658,6 +7696,7 @@ function clearAll() {
   deletedFires.clear();
   lastRptLabelOff.clear();
   lastRptForceActive.clear();
+  narrFilterState = 'all';
   fileListEl.innerHTML = '';
   outputEl.style.display = 'none';
   outputEl.innerHTML = '';
