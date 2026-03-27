@@ -3,8 +3,9 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>IMSR Prep Tool v57</title>
+<title>IMSR Prep Tool v57.6</title>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
 <style>
   @import url('https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;600&family=IBM+Plex+Sans:wght@400;500;600&display=swap');
   :root {
@@ -31,11 +32,42 @@
   .drop-zone.imsr-zone { border-color: var(--accent2); }
   .drop-zone.imsr-zone:hover, .drop-zone.imsr-zone.drag-over { border-color: var(--accent2); background: #f0f7ff; }
   .drop-zone.imsr-zone button { background: var(--accent2); }
+  .drop-zone.map-zone { border-color: #b8960a; }
+  .drop-zone.map-zone:hover, .drop-zone.map-zone.drag-over { border-color: #b8960a; background: #fefbf0; }
+  .drop-zone.map-zone button { background: #b8960a; }
+  .map-status { font-family: 'IBM Plex Mono', monospace; font-size: 11px; margin-bottom: 4px; padding: 4px 10px; border-radius: 3px; display: none; }
+  .map-status.ok  { color: #5a4a00; background: #fef9e8; display: block; }
+  .map-status.err { color: var(--accent); background: #fff5f0; display: block; }
+  .map-status.loading { color: var(--muted); background: #f5f4f1; display: block; }
+  .narr-line.reentry { border-left-color: #b8960a; background: #fdf6d8; }
+  .narr-line.reentry:hover { background: #faf0c4; }
+  .reentry-badge { display: inline-block; font-size: 9px; font-weight: 700; color: #fff; background: #b8960a; padding: 1px 5px; border-radius: 3px; margin-left: 6px; vertical-align: middle; letter-spacing: 0.3px; cursor: help; -webkit-user-select: none; user-select: none; }
+  .reentry-stmt { color: #7a6000; font-weight: 600; }
+  table.imsr tr.reentry td { background: #fdf6d8 !important; }
+  table.imsr tr.reentry:nth-child(even) td { background: #faf0c4 !important; }
+  table.imsr tr.reentry.ctn100 td { background: #fdf6d8 !important; }
+  table.imsr tr.reentry.ctn100:nth-child(even) td { background: #faf0c4 !important; }
+  .narr-line.reentry.ctn100 { border-left-color: #b8960a; background: #fdf6d8; }
+  .gacc-sort-panel { background: var(--surface); border: 1px solid var(--border); border-radius: 4px; margin-bottom: 16px; overflow: hidden; }
+  .gacc-sort-panel .gacc-sort-header { display: flex; align-items: center; gap: 8px; padding: 6px 12px; background: #f0efe8; border-bottom: 1px solid var(--border); font-family: 'IBM Plex Mono', monospace; font-size: 10px; font-weight: 600; letter-spacing: .08em; color: var(--label); }
+  .gacc-sort-row { display: flex; align-items: center; gap: 8px; padding: 4px 12px; border-bottom: 1px solid var(--border); font-family: 'IBM Plex Mono', monospace; font-size: 11px; }
+  .gacc-sort-row:last-child { border-bottom: none; }
+  .gacc-sort-row.sort-moved { background: #fff8e8; }
+  .gacc-sort-pos { min-width: 18px; text-align: center; font-weight: 700; color: var(--label); font-size: 12px; }
+  .gacc-sort-chip { display: inline-block; padding: 2px 8px; border-radius: 3px; font-weight: 600; color: #fff; font-size: 10px; letter-spacing: .06em; min-width: 42px; text-align: center; }
+  .gacc-sort-info { font-size: 10px; color: var(--muted); flex: 1; }
+  .gacc-sort-info strong { color: var(--text); }
+  .gacc-sort-arrows .sort-btn { background: none; border: 1px solid var(--border); border-radius: 3px; padding: 0 5px; cursor: pointer; font-size: 10px; color: var(--muted); line-height: 16px; }
+  .gacc-sort-arrows .sort-btn:hover { background: var(--border); color: var(--text); }
   .imsr-status { font-family: 'IBM Plex Mono', monospace; font-size: 11px; margin-bottom: 4px; padding: 4px 10px; border-radius: 3px; display: none; }
   .imsr-status.ok  { color: var(--good); background: #f0fff4; display: block; }
   .imsr-status.err { color: var(--accent); background: #fff5f0; display: block; }
   .imsr-status.loading { color: var(--muted); background: #f5f4f1; display: block; }
-  .missed-fire .narr-line { border-left-color: #9090c0; }
+  .missed-fire .narr-line { border-left-color: #a0a098; }
+  .narr-line[data-missed] { background: #e8e7e2 !important; border-left-color: #a0a098 !important; }
+  .narr-line[data-missed]:hover { background: #dfded8 !important; }
+  table.imsr tr[data-missed-key] td { background: #e8e7e2 !important; }
+  table.imsr tr[data-missed-key]:nth-child(even) td { background: #e2e1dc !important; }
   .unit-legend { font-family: Arial, sans-serif; font-size: 9pt; color: var(--text); padding: 6px 8px; background: #faf9f7; border: 1px solid var(--border); border-top: none; border-radius: 0 0 3px 3px; margin-bottom: 16px; line-height: 1.8; }
   .unit-legend .legend-copy { float: right; font-family: 'IBM Plex Mono', monospace; font-size: 10px; font-weight: 600; background: var(--muted); color: #fff; border: none; padding: 3px 10px; border-radius: 2px; cursor: pointer; margin-top: -2px; }
   .unit-legend .legend-copy:hover { opacity: .85; }
@@ -80,8 +112,11 @@
   .narr-line:hover .narr-del { color: #c0392b; border-color: #c0392b; }
   .narr-del:hover { opacity: 1 !important; color: #c0392b; border-color: #c0392b; }
   .narr-spacer { font-size: 1px; line-height: 1px; margin: 0; padding: 0; overflow: hidden; }
-  .last-rpt-badge { display: inline-block; font-size: 9px; font-weight: 700; color: #fff; background: #d35400; padding: 1px 5px; border-radius: 3px; margin-left: 6px; vertical-align: middle; letter-spacing: 0.3px; cursor: help; -webkit-user-select: none; user-select: none; }
-  .narr-line.last-rpt { border-left-color: #d35400; background: #fef5ed; }
+  .last-rpt-badge { display: inline-block; font-size: 9px; font-weight: 700; color: #fff; background: #c0392b; padding: 1px 5px; border-radius: 3px; margin-left: 6px; vertical-align: middle; letter-spacing: 0.3px; cursor: help; -webkit-user-select: none; user-select: none; }
+  .narr-line.last-rpt { border-left-color: #c0392b; background: #fde8e5 !important; }
+  .narr-line.last-rpt:hover { background: #fad8d3 !important; }
+  table.imsr tr.last-rpt td { background: #fde8e5 !important; }
+  table.imsr tr.last-rpt:nth-child(even) td { background: #fad8d3 !important; }
   .delete-btn { background: #c0392b; color: #fff; border: none; padding: 4px 12px; border-radius: 4px; cursor: pointer; font-size: 11px; font-weight: 600; margin-left: 6px; }
   .delete-btn:hover { background: #a93226; }
   .delete-btn:disabled { background: #ccc; cursor: not-allowed; }
@@ -217,8 +252,17 @@
     <input type="file" id="imsr-file-input" accept=".pdf" style="display:none">
   </div>
 </div>
+<div class="drop-zones" style="margin-top:0;">
+  <div class="drop-zone map-zone" id="map-drop-zone">
+    <p>Drop IMSR MAP xlsx here<br><small style="color:var(--muted);">Identifies previously reported fires · Removes asterisk · Adds "Previously reported incident."</small></p>
+    <button onclick="document.getElementById('map-file-input').click()">Select MAP xlsx</button>
+    <button onclick="clearMap()" style="margin-left:8px;background:var(--muted);color:#fff;border:none;padding:8px 14px;border-radius:3px;font-family:'IBM Plex Mono',monospace;font-size:11px;font-weight:600;cursor:pointer;">Clear MAP</button>
+    <input type="file" id="map-file-input" accept=".xlsx,.xls" style="display:none">
+  </div>
+</div>
 <div class="file-list" id="file-list"></div>
 <div class="imsr-status" id="imsr-status"></div>
+<div class="map-status" id="map-status"></div>
 <div class="status" id="status"></div>
 <div class="output" id="output"></div>
 
@@ -311,6 +355,105 @@ function showIMSRDiagnostic() {
   <pre style="overflow:auto;flex:1;font-size:11px;line-height:1.4;white-space:pre-wrap;word-break:break-all;border:1px solid #ccc;padding:10px;background:#f8f8f6;max-height:75vh;">${_lastIMSRRawText.replace(/</g,'&lt;').replace(/>/g,'&gt;')}</pre>`;
   overlay.appendChild(box);
   document.body.appendChild(overlay);
+}
+
+// ── MAP DROP ZONE ─────────────────────────────────────────────────────────
+// IMSR MAP xlsx — cumulative file of every fire ever on the IMSR this season.
+// Keyed by Incident_Number. Used to detect re-entry fires (FALLOFF-08).
+let mapData = null; // Map of incident_number → { name, gacc, imt_type, ... }
+let manualGaccOrder = null; // Array of GACC keys — manual reorder override
+
+const mapDropZone  = document.getElementById('map-drop-zone');
+const mapFileInput = document.getElementById('map-file-input');
+const mapStatusEl  = document.getElementById('map-status');
+
+mapDropZone.addEventListener('dragover', e => { e.preventDefault(); mapDropZone.classList.add('drag-over'); });
+mapDropZone.addEventListener('dragleave', () => mapDropZone.classList.remove('drag-over'));
+mapDropZone.addEventListener('drop', e => {
+  e.preventDefault(); mapDropZone.classList.remove('drag-over');
+  const files = Array.from(e.dataTransfer.files).filter(f => /\.xlsx?$/i.test(f.name));
+  if (files.length) handleMapFile(files[0]);
+});
+mapFileInput.addEventListener('change', e => {
+  if (e.target.files[0]) handleMapFile(e.target.files[0]);
+  e.target.value = '';
+});
+
+function setMapStatus(msg, type='loading') {
+  mapStatusEl.className = 'map-status ' + type;
+  mapStatusEl.textContent = msg;
+}
+
+async function handleMapFile(file) {
+  setMapStatus('Reading IMSR MAP…');
+  try {
+    const buf = await file.arrayBuffer();
+    const wb = XLSX.read(buf, { type: 'array' });
+    const ws = wb.Sheets[wb.SheetNames[0]];
+    const rows = XLSX.utils.sheet_to_json(ws, { defval: '' });
+
+    if (!rows.length) {
+      setMapStatus('MAP file is empty — no data rows found.', 'err');
+      return;
+    }
+
+    // Find the Incident_Number column (flexible header matching)
+    const headers = Object.keys(rows[0]);
+    const incNumCol = headers.find(h => /incident.?number/i.test(h));
+    const incNameCol = headers.find(h => /incident.?name/i.test(h));
+    const gaccCol = headers.find(h => /^gacc$/i.test(h));
+    const imtCol = headers.find(h => /imt.?type/i.test(h));
+    const pctCol = headers.find(h => /100.?pct/i.test(h));
+    const sizeCol = headers.find(h => /incident.?size/i.test(h));
+
+    if (!incNumCol) {
+      setMapStatus('MAP file missing Incident_Number column. Found: ' + headers.join(', '), 'err');
+      return;
+    }
+
+    mapData = new Map();
+    for (const row of rows) {
+      const incNum = String(row[incNumCol] || '').trim().toUpperCase();
+      if (!incNum || !/[A-Z]{2}-[A-Z0-9]+-\d+/.test(incNum)) continue;
+      mapData.set(incNum, {
+        name: String(row[incNameCol] || '').trim(),
+        gacc: String(row[gaccCol] || '').trim(),
+        imt:  String(row[imtCol] || '').trim(),
+        pct100: String(row[pctCol] || '').trim(),
+        size: parseFloat(row[sizeCol]) || 0,
+      });
+    }
+
+    setMapStatus(`✓ ${mapData.size} incidents loaded from IMSR MAP (${file.name})`, 'ok');
+    if (allIncidents.length) renderOutput();
+  } catch(e) {
+    setMapStatus('Failed to read MAP file — ' + e.message, 'err');
+  }
+}
+
+function clearMap() {
+  mapData = null;
+  mapStatusEl.style.display = 'none';
+  if (allIncidents.length) renderOutput();
+}
+
+// Check if a fire is a re-entry: in MAP but NOT in prev IMSR
+function isReentry(f) {
+  if (!mapData) return false;
+  const incNum = (f.f2 || '').toUpperCase();
+  if (!incNum) return false;
+  // If prev IMSR already matched this fire, it's a normal returning fire — not a re-entry
+  if (prevMatch(f)) return false;
+  return mapData.has(incNum);
+}
+
+// GACC reorder
+function moveGacc(fromIdx, dir) {
+  if (!manualGaccOrder) return;
+  const toIdx = fromIdx + dir;
+  if (toIdx < 0 || toIdx >= manualGaccOrder.length) return;
+  [manualGaccOrder[fromIdx], manualGaccOrder[toIdx]] = [manualGaccOrder[toIdx], manualGaccOrder[fromIdx]];
+  renderOutput();
 }
 
 dropZone.addEventListener('drop', e => {
@@ -6610,7 +6753,8 @@ const COLS = [
 
 function getColVals(f) {
   const prev = prevMatch(f);
-  const isNew = !prev;  // true = new fire (asterisk), false = returning
+  const reentry = isReentry(f);
+  const isNew = !prev && !reentry;  // genuinely new only if not in prev IMSR AND not in MAP
 
   // Delta columns
   let chgeAc = '', chgePpl = '';
@@ -6621,6 +6765,10 @@ function getColVals(f) {
     const dPpl = todayPpl - prev.ppl;
     chgeAc  = dAc.toLocaleString();
     chgePpl = dPpl.toLocaleString();
+  } else if (reentry) {
+    // Re-entry from MAP — no prev IMSR data to diff against, show ---
+    chgeAc  = '---';
+    chgePpl = '---';
   } else if (f.isInitial || prevIMSR) {
     // New fire: --- if Box 3 = Initial OR if prev IMSR is loaded and fire has no match
     chgeAc  = '---';
@@ -6644,6 +6792,7 @@ function getColVals(f) {
     cost:    formatCost(f.f45),
     own:     fv(f.originOwn),
     _isNew:  isNew,
+    _isReentry: reentry,
   };
 }
 
@@ -6674,6 +6823,8 @@ function buildTableRows(incidents) {
     if (is100(f)) classes.push('ctn100');
     const prev = prevMatch(f);
     if (prev && prev.pct >= 100 && is100(f)) classes.push('returning-100');
+    if (prev && prev.wasLastReport) classes.push('last-rpt');
+    if (isReentry(f)) classes.push('reentry');
     const pctV = parseInt(f.f8a || 0);
     if ((f.isFinal && pctV < 100) || (!f.isFinal && pctV >= 100)) classes.push('discrep');
     const classAttr = classes.length ? ` class="${classes.join(' ')}"` : '';
@@ -6692,10 +6843,16 @@ function buildNarrativeLines(incidents, cssClass='') {
       ? `<span class="precip-flag${f._precipConfirmed ? ' confirmed' : ''}" title="Definitive precipitation detected in boxes 35/40/47" onclick="event.stopPropagation();togglePrecip(this,'${f.f2}')">🌧 ${f._precipConfirmed ? 'Precip added' : 'Add precip statement'}</span>`
       : '';
     const prev = prevMatch(f);
-    const isNew = !prev;
+    const reentry = isReentry(f);
+    const isNew = !prev && !reentry;
     const asterisk = isNew ? '* ' : '';
     const lastRptBadge = (prev && prev.wasLastReport) ? '<span class="last-rpt-badge" title="Previous IMSR contained a last-report statement.">LAST RPT</span>' : '';
     const lastRptClass = (prev && prev.wasLastReport) ? ' last-rpt' : '';
+
+    // Re-entry from MAP — FALLOFF-08 treatment
+    const reentryClass = reentry ? ' reentry' : '';
+    const reentryBadge = reentry ? '<span class="reentry-badge" title="Previously on IMSR — detected from MAP file (FALLOFF-08). No asterisk. &quot;Previously reported incident.&quot; injected.">PREV REPORTED</span>' : '';
+    const reentryStmt  = reentry ? ' <span class="reentry-stmt">Previously reported incident.</span>' : '';
 
     // Returning 100% fire — was in prev IMSR and still 100%
     const ret100 = (prev && prev.pct >= 100 && is100(f)) ? ' returning-100' : '';
@@ -6724,7 +6881,7 @@ function buildNarrativeLines(incidents, cssClass='') {
     const ctn100Class = is100(f) ? ' ctn100' : '';
 
     const delBtn = `<button class="narr-del" title="Remove this fire" onclick="deleteSingleFire('${f.f2}','')">✕</button>`;
-    return `<div class="narr-line ${cssClass}${lastRptClass}${ret100}${discrepClass}${ctn100Class}" data-inc="${f.f2}" data-pct="${f.f8a || 0}"><b>${asterisk}${name}</b>${lastRptBadge}${ret100Badge}${discrepBadge}, ${managingOrg}${cimtLabel}. ${sentence}${precipFlag}${kickoffControls}${delBtn}</div>`;
+    return `<div class="narr-line ${cssClass}${lastRptClass}${ret100}${discrepClass}${ctn100Class}${reentryClass}" data-inc="${f.f2}" data-pct="${f.f8a || 0}"><b>${asterisk}${name}</b>${lastRptBadge}${ret100Badge}${reentryBadge}${discrepBadge}, ${managingOrg}${cimtLabel}.${reentryStmt} ${sentence}${precipFlag}${kickoffControls}${delBtn}</div>`;
   }).join('<div class="narr-spacer"><br></div>');
 }
 
@@ -6804,7 +6961,7 @@ function trancheSort(incidents) {
     if (!hasCompoundTorch && /\btorching\b/i.test(raw)) { if (3 < dRank) dRank = 3; }
     const closures = (f.f34 && /closures? in effect/i.test(f.f34)) ? 0 : 1;
     const pct = parseInt(f.f8a || 0);
-    const isNew = !prevMatch(f) ? 0 : 1; // new fires first as tiebreaker
+    const isNew = (!prevMatch(f) && !isReentry(f)) ? 0 : 1; // new fires first as tiebreaker
     return [evac, numerous, hasInfra, anyThreat, bRank, dRank, closures, pct, isNew];
   }
   function bySEQ11(a, b) {
@@ -6879,13 +7036,57 @@ function renderOutput() {
   }
 
   // GACC keys: qualifying, non-qualifying, OR missed-only GACCs
-  // GACCs with any active CIMT or NIMO fire float to the top
+  // Default sort: (1) CIMT count desc, (2) uncontained qualifying count desc, (3) GACC_ORDER tiebreak
   const allGaccKeys = GACC_ORDER.filter(g => byGacc[g] || nqByGacc[g] || missedByGacc[g]);
   const hasCimtGacc = g => (byGacc[g] || []).some(f => (f.hasCIMT || f.hasNIMO) && !is100(f));
-  const gaccKeys = [
-    ...allGaccKeys.filter(g => hasCimtGacc(g)),
-    ...allGaccKeys.filter(g => !hasCimtGacc(g)),
-  ];
+  const cimtCount = g => (byGacc[g] || []).filter(f => (f.hasCIMT || f.hasNIMO) && !is100(f)).length;
+  const uncontainedCount = g => (byGacc[g] || []).filter(f => !is100(f)).length;
+
+  // Auto-sort: CIMTs desc → uncontained desc → GACC_ORDER position
+  const autoSorted = [...allGaccKeys].sort((a, b) => {
+    const cA = cimtCount(a), cB = cimtCount(b);
+    if (cA !== cB) return cB - cA;
+    const uA = uncontainedCount(a), uB = uncontainedCount(b);
+    if (uA !== uB) return uB - uA;
+    return GACC_ORDER.indexOf(a) - GACC_ORDER.indexOf(b);
+  });
+
+  // If manual order exists and still has the same GACCs, use it; otherwise reset to auto
+  if (!manualGaccOrder ||
+      manualGaccOrder.length !== autoSorted.length ||
+      !autoSorted.every(g => manualGaccOrder.includes(g))) {
+    manualGaccOrder = [...autoSorted];
+  }
+  const gaccKeys = manualGaccOrder;
+
+  // Check if manual order differs from auto
+  const isManuallyReordered = gaccKeys.some((g, i) => g !== autoSorted[i]);
+
+  // Build GACC sort panel (always shown when >1 GACC)
+  const gaccSortPanel = gaccKeys.length > 1 ? `
+    <div class="gacc-sort-panel">
+      <div class="gacc-sort-header">
+        GACC PRIORITY${isManuallyReordered ? ' <span style="color:#c87020;font-weight:400;font-size:9px;">✎ MANUAL</span>' : ''}
+        ${isManuallyReordered ? `<button onclick="manualGaccOrder=null;renderOutput();" style="background:none;border:1px solid var(--border);border-radius:3px;padding:1px 8px;font-family:'IBM Plex Mono',monospace;font-size:10px;cursor:pointer;color:var(--muted);margin-left:auto;" title="Reset to auto-sort">↺ Reset</button>` : ''}
+      </div>
+      ${gaccKeys.map((g, i) => {
+        const color = GACC_COLORS[g] || '#888';
+        const cimts = cimtCount(g);
+        const unctn = uncontainedCount(g);
+        const total = (byGacc[g] || []).length;
+        const moved = g !== autoSorted[i];
+        const cimtStr = cimts > 0 ? `<strong>${cimts}</strong> CIMT · ` : '';
+        return `<div class="gacc-sort-row${moved ? ' sort-moved' : ''}">
+          <span class="gacc-sort-pos">${i + 1}</span>
+          <span class="gacc-sort-arrows">
+            <button class="sort-btn" onclick="moveGacc(${i},-1)" title="Move up">▲</button>
+            <button class="sort-btn" onclick="moveGacc(${i},1)" title="Move down">▼</button>
+          </span>
+          <span class="gacc-sort-chip" style="background:${color};">${g}</span>
+          <span class="gacc-sort-info">${cimtStr}<strong>${unctn}</strong> uncontained · ${total} total</span>
+        </div>`;
+      }).join('')}
+    </div>` : '';
 
   // Build each GACC section (narratives + table)
   // Store byGacc on window so moveIncident can re-sort without reparse
@@ -6974,9 +7175,12 @@ function renderOutput() {
         const sentence = capitalizeSentences(parts.join('. ') + (parts.length ? '.' : ''));
         const managingOrg = (lookupUnit(f.unit) || fv(f.unit) || '').replace(/\s*\([A-Z]{2}\)$/,'') || '<span class="blank">[MANAGING ORG]</span>';
         const prev = prevMatch(f);
-        const asterisk = prev ? '' : '* ';
-        return `<div class="narr-line nq" data-inc="${f.f2}" data-pct="${f.f8a || 0}" style="opacity:.7;border-left-color:#c8a050;">
-          <b>${asterisk}${name}</b>, ${managingOrg}. ${sentence}
+        const reentry = isReentry(f);
+        const asterisk = (prev || reentry) ? '' : '* ';
+        const reentryStmt = reentry ? ' <span class="reentry-stmt">Previously reported incident.</span>' : '';
+        const reentryBadge = reentry ? '<span class="reentry-badge" title="Previously on IMSR — from MAP (FALLOFF-08)">PREV REPORTED</span>' : '';
+        return `<div class="narr-line nq${reentry ? ' reentry' : ''}" data-inc="${f.f2}" data-pct="${f.f8a || 0}" style="opacity:.7;border-left-color:${reentry ? '#b8960a' : '#c8a050'};">
+          <b>${asterisk}${name}</b>${reentryBadge}, ${managingOrg}.${reentryStmt} ${sentence}
           <span style="font-size:9px;color:#9a6010;margin-left:6px;font-style:italic;">${f._qualifyReason}</span>
         </div>`;
       }).join('');
@@ -6998,10 +7202,12 @@ function renderOutput() {
     }
 
     const cimtBadge = hasCimtGacc(gacc) ? `<span style="font-size:10px;background:#8b1a1a;color:#fff;border-radius:2px;padding:1px 5px;margin-left:6px;font-weight:600;">CIMT</span>` : '';
+    const gaccReentryCount = mapData ? incidents.concat(nqFires).filter(f => isReentry(f)).length : 0;
+    const reentryBadgeGacc = gaccReentryCount ? `<span style="font-size:10px;background:#b8960a;color:#fff;border-radius:2px;padding:1px 5px;margin-left:6px;font-weight:600;">${gaccReentryCount} PREV REPORTED</span>` : '';
     return `
       <div class="gacc-section">
         <div class="gacc-section-head" style="border-color:${color};">
-          <span class="gacc-label" style="background:${color};">${gacc}</span>${cimtBadge}
+          <span class="gacc-label" style="background:${color};">${gacc}</span>${cimtBadge}${reentryBadgeGacc}
           <span style="font-family:'IBM Plex Mono',monospace;font-size:11px;color:var(--muted);">${incidents.length} qualifying${missed.length ? ` · ${missed.length} no 209` : ''}${nqFires.length ? ` · ${nqFires.length} non-qualifying` : ''}</span>
         </div>
         <div class="block">
@@ -7034,10 +7240,13 @@ function renderOutput() {
   // Non-qualifying fires are now rendered at the bottom of each GACC section
   const nqHtml = '';
 
+  // Count re-entry fires
+  const reentryCount = mapData ? qualifying.concat(nonQualifying).filter(f => isReentry(f)).length : 0;
+
   outputEl.style.display = 'block';
   outputEl.innerHTML = `
     <div class="summary">
-      <strong>${qualifying.length}</strong> qualifying · <strong>${nonQualifying.length}</strong> non-qualifying across <strong>${gaccKeys.length}</strong> GACC${gaccKeys.length !== 1 ? 's' : ''}${deletedFires.size ? ` · <span style="color:#c0392b;font-weight:600;">${deletedFires.size} deleted</span>` : ''}
+      <strong>${qualifying.length}</strong> qualifying · <strong>${nonQualifying.length}</strong> non-qualifying across <strong>${gaccKeys.length}</strong> GACC${gaccKeys.length !== 1 ? 's' : ''}${reentryCount ? ` · <span style="color:#b8960a;font-weight:600;">${reentryCount} prev reported</span>` : ''}${deletedFires.size ? ` · <span style="color:#c0392b;font-weight:600;">${deletedFires.size} deleted</span>` : ''}
       <span style="float:right;">
         <button class="copy-btn narr" onclick="copyAllNarr(this)" style="margin-right:6px;">Copy All Narratives</button>
         <button class="copy-btn" onclick="copyAllRows(this)" style="margin-right:6px;">Copy All Rows</button>
@@ -7051,6 +7260,7 @@ function renderOutput() {
         <option value="hide100"${narrFilterState === 'hide100' ? ' selected' : ''}>Hide 100% contained</option>
       </select>
     </div>
+    ${gaccSortPanel}
     ${gaccHtml || '<div class="block" style="color:var(--muted);font-style:italic;">No qualifying incidents.</div>'}
     ${nqHtml}
   `;
@@ -7066,8 +7276,10 @@ function buildCopyLine(f) {
   const cimtLabel = f.hasNIMO ? '. NIMO (___)' : f.hasCIMT ? '. CIMT (___)' : '';
   const precip = f._precipConfirmed ? ' Precipitation occurred over the fire area yesterday.' : '';
   const prev = prevMatch(f);
-  const isNew = !prev;
+  const reentry = isReentry(f);
+  const isNew = !prev && !reentry;
   const asterisk = isNew ? '* ' : '';
+  const reentryStmt = reentry ? ' Previously reported incident.' : '';
   // NARR-46 statement order: ...ART. sage-grouse. reduction. precip. last report.
   const LAST_RPT  = 'Last report unless significant activity occurs.';
   const SAGE_GRSE = 'Sage-grouse habitat threatened.';
@@ -7082,7 +7294,7 @@ function buildCopyLine(f) {
       body = body.trimEnd().replace(/\.?$/, '') + '. ' + precip.trim();
     }
   }
-  const tail = `, ${org}${cimtLabel}. ${body}`;
+  const tail = `, ${org}${cimtLabel}.${reentryStmt} ${body}`;
   const plain = `${asterisk}${name}${tail}`;
   // Bold only the asterisk+name; rest is normal weight
   const boldPart = asterisk ? `<b>* ${name}</b>` : `<b>${name}</b>`;
@@ -7117,7 +7329,7 @@ function copyAllNarr(btn) {
       const bEl = div.querySelector('b');
       const name = bEl ? bEl.textContent.trim() : '';
       const clone = div.cloneNode(true);
-      clone.querySelectorAll('button, .last-rpt-badge, .ret100-badge, .discrep-badge').forEach(el => el.remove());
+      clone.querySelectorAll('button, .last-rpt-badge, .ret100-badge, .discrep-badge, .reentry-badge').forEach(el => el.remove());
       const fullText = clone.textContent.trim();
       const rest = name && fullText.startsWith(name) ? fullText.slice(name.length) : fullText;
       const plain  = name + rest;
@@ -7161,7 +7373,7 @@ function copyNarrFromBlock(btn) {
       const bEl = el.querySelector('b');
       const name = bEl ? bEl.textContent.trim() : '';
       const clone = el.cloneNode(true);
-      clone.querySelectorAll('button, .last-rpt-badge, .ret100-badge, .discrep-badge').forEach(n => n.remove());
+      clone.querySelectorAll('button, .last-rpt-badge, .ret100-badge, .discrep-badge, .reentry-badge').forEach(n => n.remove());
       const fullText = clone.textContent.trim();
       const rest = name && fullText.startsWith(name) ? fullText.slice(name.length) : fullText;
       const plain  = name + rest;
@@ -7249,15 +7461,17 @@ function togglePrecip(pill, incNum) {
   }
 
   const prev      = prevMatch(f);
-  const asterisk  = prev ? '' : '* ';
+  const reentry   = isReentry(f);
+  const asterisk  = (prev || reentry) ? '' : '* ';
   const managingOrg = (lookupUnit(f.unit) || fv(f.unit) || '').replace(/\s*\([A-Z]{2}\)$/,'') || '[MANAGING ORG]';
   const cimtLabel = f.hasNIMO ? '. NIMO (___)' : f.hasCIMT ? '. CIMT (___)' : '';
+  const reentryStmt = reentry ? ' <span class="reentry-stmt">Previously reported incident.</span>' : '';
   const pillHtml  = f._precipConfirmed
     ? `<span class="precip-flag confirmed" title="Click to remove precip statement" onclick="togglePrecip(this,'${incNum}')">🌧 Precip added</span>`
     : `<span class="precip-flag" title="Definitive precipitation detected in boxes 35/40/47" onclick="togglePrecip(this,'${incNum}')">🌧 Add precip statement</span>`;
 
   const delBtn = `<button class="narr-del" title="Remove this fire" onclick="deleteSingleFire('${incNum}','')">✕</button>`;
-  line.innerHTML = `<b>${asterisk}${name}</b>, ${managingOrg}${cimtLabel}. ${sentence}${pillHtml}${delBtn}`;
+  line.innerHTML = `<b>${asterisk}${name}</b>, ${managingOrg}${cimtLabel}.${reentryStmt} ${sentence}${pillHtml}${delBtn}`;
 }
 
 // Copy narrative lines with mixed bold formatting for Word
@@ -7403,7 +7617,7 @@ function buildMissedNarrLines(missed) {
     const lastRptBadge = p.wasLastReport ? '<span class="last-rpt-badge" title="Previous IMSR contained a last-report statement.">LAST RPT</span>' : '';
     const lastRptClass = p.wasLastReport ? ' last-rpt' : '';
     const delBtn = `<button class="narr-del" title="Remove this fire" onclick="deleteSingleFire('','${mKey}')">✕</button>`;
-    return `<div class="narr-line${lastRptClass}" style="border-left-color:${p.wasLastReport ? '#d35400' : '#9090c0'};opacity:.8;" data-missed="1" data-missed-key="${mKey}">
+    return `<div class="narr-line${lastRptClass}" data-missed="1" data-missed-key="${mKey}">
       <b>${name}</b>${lastRptBadge}, ${org}. ${tail}${delBtn}
     </div>`;
   }).join('<div class="narr-spacer"><br></div>');
@@ -7443,7 +7657,9 @@ function buildMissedTableRows(missed) {
       String(p.strc || 0), p.cost || 'NR', p.origin || '---'
     ];
     const tds = COLS.map((c, i) => `<td>${cols[i] || '---'}</td>`).join('');
-    return `<tr style="opacity:.7;" data-missed-key="${mKey}">${tds}</tr>`;
+    const missedClasses = [p.wasLastReport ? 'last-rpt' : ''].filter(Boolean).join(' ');
+    const missedClassAttr = missedClasses ? ` class="${missedClasses}"` : '';
+    return `<tr${missedClassAttr} data-missed-key="${mKey}">${tds}</tr>`;
   }).join('');
 }
 
@@ -7453,7 +7669,7 @@ function copyMissedNarr(btn) {
     const bEl = div.querySelector('b');
     const name = bEl ? bEl.textContent.trim() : '';
     const clone = div.cloneNode(true);
-    clone.querySelectorAll('button, .last-rpt-badge, .ret100-badge, .discrep-badge').forEach(el => el.remove());
+    clone.querySelectorAll('button, .last-rpt-badge, .ret100-badge, .discrep-badge, .reentry-badge').forEach(el => el.remove());
     const fullText = clone.textContent.trim();
     const rest = name && fullText.startsWith(name) ? fullText.slice(name.length) : fullText;
     const plain  = name + rest;
@@ -7697,6 +7913,7 @@ function clearAll() {
   lastRptLabelOff.clear();
   lastRptForceActive.clear();
   narrFilterState = 'all';
+  manualGaccOrder = null;
   fileListEl.innerHTML = '';
   outputEl.style.display = 'none';
   outputEl.innerHTML = '';
