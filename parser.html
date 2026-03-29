@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>IMSR Prep Tool v57.6</title>
+<title>IMSR Prep Tool v57.9</title>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
 <style>
@@ -39,15 +39,15 @@
   .map-status.ok  { color: #5a4a00; background: #fef9e8; display: block; }
   .map-status.err { color: var(--accent); background: #fff5f0; display: block; }
   .map-status.loading { color: var(--muted); background: #f5f4f1; display: block; }
-  .narr-line.reentry { border-left-color: #b8960a; background: #fdf6d8; }
-  .narr-line.reentry:hover { background: #faf0c4; }
+  .narr-line.reentry { border-left-color: #c0392b; background: #fde8e5; }
+  .narr-line.reentry:hover { background: #fcd5d0; }
   .reentry-badge { display: inline-block; font-size: 9px; font-weight: 700; color: #fff; background: #b8960a; padding: 1px 5px; border-radius: 3px; margin-left: 6px; vertical-align: middle; letter-spacing: 0.3px; cursor: help; -webkit-user-select: none; user-select: none; }
   .reentry-stmt { color: #7a6000; font-weight: 600; }
-  table.imsr tr.reentry td { background: #fdf6d8 !important; }
-  table.imsr tr.reentry:nth-child(even) td { background: #faf0c4 !important; }
-  table.imsr tr.reentry.ctn100 td { background: #fdf6d8 !important; }
-  table.imsr tr.reentry.ctn100:nth-child(even) td { background: #faf0c4 !important; }
-  .narr-line.reentry.ctn100 { border-left-color: #b8960a; background: #fdf6d8; }
+  table.imsr tr.reentry td { background: #fde8e5 !important; }
+  table.imsr tr.reentry:nth-child(even) td { background: #fcd5d0 !important; }
+  table.imsr tr.reentry.ctn100 td { background: #fde8e5 !important; }
+  table.imsr tr.reentry.ctn100:nth-child(even) td { background: #fcd5d0 !important; }
+  .narr-line.reentry.ctn100 { border-left-color: #c0392b; background: #fde8e5; }
   .gacc-sort-panel { background: var(--surface); border: 1px solid var(--border); border-radius: 4px; margin-bottom: 16px; overflow: hidden; }
   .gacc-sort-panel .gacc-sort-header { display: flex; align-items: center; gap: 8px; padding: 6px 12px; background: #f0efe8; border-bottom: 1px solid var(--border); font-family: 'IBM Plex Mono', monospace; font-size: 10px; font-weight: 600; letter-spacing: .08em; color: var(--label); }
   .gacc-sort-row { display: flex; align-items: center; gap: 8px; padding: 4px 12px; border-bottom: 1px solid var(--border); font-family: 'IBM Plex Mono', monospace; font-size: 11px; }
@@ -141,12 +141,15 @@
   table.imsr td.manual { background: #f0f7ff !important; }
   table.imsr tr.ctn100 td { background: #e8f2fd !important; }
   .narr-line.ctn100 { border-left-color: #6a9fd8; background: #e8f2fd; }
-  table.imsr tr.returning-100 td { background: #fff8e1 !important; }
-  .narr-line.returning-100 { border-left-color: #c8a000; background: #fffbe6; }
-  .narr-line.discrep { border-left-color: #c0392b; background: #fdf0ee; }
-  .ret100-badge { display: inline-block; font-size: 9px; font-weight: 700; color: #fff; background: #b8960a; padding: 1px 5px; border-radius: 3px; margin-left: 6px; vertical-align: middle; letter-spacing: 0.3px; cursor: help; -webkit-user-select: none; user-select: none; }
-  .discrep-badge { display: inline-block; font-size: 9px; font-weight: 700; color: #fff; background: #c0392b; padding: 1px 5px; border-radius: 3px; margin-left: 6px; vertical-align: middle; letter-spacing: 0.3px; cursor: help; -webkit-user-select: none; user-select: none; }
-  table.imsr tr.discrep td { outline: 2px solid #c0392b; outline-offset: -2px; }
+  table.imsr tr.returning-100 td { background: #fde8e5 !important; }
+  .narr-line.returning-100 { border-left-color: #c0392b; background: #fde8e5; }
+  .narr-line.discrep { border-left-color: #2471a3; background: #e8f2fd; }
+  .ret100-badge { display: inline-block; font-size: 9px; font-weight: 700; color: #fff; background: #c0392b; padding: 1px 5px; border-radius: 3px; margin-left: 6px; vertical-align: middle; letter-spacing: 0.3px; cursor: help; -webkit-user-select: none; user-select: none; }
+  .discrep-badge { display: inline-block; font-size: 9px; font-weight: 700; color: #fff; background: #2471a3; padding: 1px 5px; border-radius: 3px; margin-left: 6px; vertical-align: middle; letter-spacing: 0.3px; cursor: help; -webkit-user-select: none; user-select: none; }
+  .onedone-badge { display: inline-block; font-size: 9px; font-weight: 700; color: #fff; background: #d35400; padding: 1px 5px; border-radius: 3px; margin-left: 6px; vertical-align: middle; letter-spacing: 0.3px; cursor: help; -webkit-user-select: none; user-select: none; }
+  .narr-line.onedone { border-left-color: #c0392b !important; background: #fde8e5 !important; }
+  table.imsr tr.onedone td { background: #fde8e5 !important; }
+  table.imsr tr.discrep td { outline: 2px solid #2471a3; outline-offset: -2px; }
   table.imsr td.empty { color: var(--text); }
   table.imsr td input {
     background: transparent; border: none; outline: none;
@@ -230,12 +233,77 @@
     display: flex; justify-content: space-between; align-items: center;
     border-bottom: 2px solid var(--border); padding-bottom: 8px; margin-bottom: 14px;
   }
+
+  /* ── CIMT/NIMO Team Manager ─────────────────────────────────── */
+  .team-input {
+    font-family: 'IBM Plex Mono', monospace; font-size: 11px; font-weight: 600;
+    border: 1px dashed #999; border-radius: 3px; padding: 1px 5px;
+    width: 110px; background: #fffbe6; color: #333;
+    user-select: auto;
+  }
+  .team-input:focus { outline: 2px solid #8b1a1a; border-color: #8b1a1a; background: #fff; }
+  .team-input::placeholder { color: #aaa; font-weight: 400; }
+  .team-panel {
+    margin: 8px 0; padding: 8px 10px; background: #fdf6f0;
+    border: 1px solid #d4a574; border-radius: 6px;
+  }
+  .team-panel-head {
+    font-family: 'IBM Plex Mono', monospace; font-size: 9px; font-weight: 600;
+    color: #8b1a1a; letter-spacing: .08em; margin-bottom: 6px;
+  }
+  .team-group { margin-bottom: 8px; }
+  .team-group:last-child { margin-bottom: 0; }
+  .team-group-head { font-size: 12px; margin-bottom: 4px; }
+  .team-managed-list { margin-left: 12px; }
+  .team-managed-label { font-size: 11px; color: var(--muted); font-style: italic; }
+  .team-managed-row {
+    display: flex; align-items: center; gap: 4px;
+    font-size: 12px; padding: 2px 0;
+  }
+  .team-managed-row .sort-btn { font-size: 9px; padding: 0 4px; }
+  .team-remove {
+    background: none; border: none; color: #c0392b; cursor: pointer;
+    font-size: 13px; padding: 0 4px; font-weight: 600;
+    user-select: none;
+  }
+  .team-remove:hover { color: #e74c3c; }
+  .team-assign-row { margin-top: 4px; }
+  .team-assign-select {
+    font-family: 'IBM Plex Mono', monospace; font-size: 11px;
+    border: 1px solid #d4a574; border-radius: 3px; padding: 3px 6px;
+    background: #fff; cursor: pointer;
+  }
+  .team-tag {
+    font-family: 'IBM Plex Mono', monospace; font-size: 9px;
+    border-radius: 2px; padding: 1px 5px; margin-left: 6px;
+    user-select: none;
+  }
+  .team-tag.primary { background: #8b1a1a; color: #fff; font-weight: 600; }
+  .team-tag.managed { background: #d4a574; color: #fff; font-weight: 600; }
+  .narr-line.managed-fire {
+    border-left: 3px solid #d4a574; padding-left: 10px; margin-left: 14px;
+  }
+  .team-managed-badge {
+    font-family: 'IBM Plex Mono', monospace; font-size: 9px;
+    background: #d4a574; color: #fff; border-radius: 2px;
+    padding: 1px 5px; margin-left: 6px; font-weight: 600;
+    user-select: none;
+  }
+  .team-name-display {
+    font-family: inherit; font-size: inherit;
+    font-weight: normal;
+  }
+  .team-edit-btn {
+    font-size: 10px; cursor: pointer; color: var(--muted);
+    margin-left: 2px; user-select: none;
+  }
+  .team-edit-btn:hover { color: #8b1a1a; }
 </style>
 </head>
 <body>
 
 <header>
-  <h1>IMSR PREP TOOL <span style="float:right;font-size:11px;font-weight:400;color:var(--muted);letter-spacing:.04em;">v57.6</span></h1>
+  <h1>IMSR PREP TOOL <span style="float:right;font-size:11px;font-weight:400;color:var(--muted);letter-spacing:.04em;">v57.9</span></h1>
   <p>Drop one or more 209 PDFs — sorted by % contained, ready to paste into Word</p>
 </header>
 
@@ -285,6 +353,11 @@ let lastRptLabelOff = new Set();   // fires with kick-off label suppressed
 let lastRptForceActive = new Set(); // fires forced back to active sort
 let narrFilterState = 'all'; // persists across re-renders: 'all' or 'hide100'
 
+// ── CIMT/NIMO Team Manager ───────────────────────────────────────────
+// Each group: { teamName, teamType ('CIMT'|'NIMO'), primaryInc (incNum), managedIncs: [incNum...] }
+let teamGroups = [];
+let teamEditMode = new Set(); // incident numbers currently in team-name edit mode
+
 // Accept PDFs by MIME type OR extension — Windows drag-from-Explorer often sends empty MIME
 function isPDF(f) {
   return f.type === 'application/pdf' || f.name.toLowerCase().endsWith('.pdf');
@@ -312,6 +385,7 @@ imsrFileInput.addEventListener('change', e => {
 function setIMSRStatus(msg, type='loading') {
   imsrStatusEl.className = 'imsr-status ' + type;
   imsrStatusEl.textContent = msg;
+  imsrStatusEl.style.display = '';
 }
 
 let _lastIMSRRawText = ''; // diagnostic: raw text from last IMSR PDF
@@ -332,6 +406,7 @@ async function handleIMSRFile(file) {
     prevIMSR = parseIMSR(text);
     if (prevIMSR.size === 0) {
       imsrStatusEl.className = 'imsr-status ok';
+      imsrStatusEl.style.display = '';
       imsrStatusEl.innerHTML = `✓ 0 incidents loaded from previous IMSR — <a href="#" onclick="showIMSRDiagnostic();return false;" style="color:#2565ae;text-decoration:underline;font-weight:600;">show raw text</a><br><span style="font-size:11px;color:#c0392b;">If you used Export to PDF, try Print to PDF or Save as Adobe PDF instead.</span>`;
     } else {
       setIMSRStatus(`✓ ${prevIMSR.size} incidents loaded from previous IMSR`, 'ok');
@@ -751,6 +826,27 @@ function parseFields(text) {
   // Box 3: is this a Final report?
   f.isFinal   = /X\s+Final|Final\s+X/i.test(text);
   f.isInitial = /X\s+Initial|Initial\s+X/i.test(text);
+
+  // Box 6: Incident Start Date — used for stale one-and-done detection
+  // Strategy: try anchoring on "6. ... Start" first (clean PDFs).
+  // Fallback: bare "Date:" followed by date then "Time:" — unique to Box 6.
+  // Box 11 uses "From Date/Time:" and "To Date/Time:" so won't false match.
+  // Restrict search to first 2000 chars (Box 6 is always near top of form).
+  const topText = text.slice(0, 2000);
+  const f6raw = grab(topText,
+    /6\.\s*(?:Incident\s+)?Start\s+Date[^:]*?:\s*(\d{1,2}\/\d{1,2}\/\d{2,4})/i,
+    /6\.\s*(?:Incident\s+)?Start\s+Date[^:]*?:\s*([A-Z][a-z]{2}\s+\d{1,2},?\s+\d{4})/i,
+    /6\.\s*(?:Incident\s+)?Start[^:]*?:\s*(\d{1,2}\/\d{1,2}\/\d{2,4})/i
+  ) || grab(topText,
+    // Fallback: bare "Date:" NOT preceded by "From" or "To", followed by date then Time:
+    /(?:^|[^a-zA-Z])Date:\s*(\d{1,2}\/\d{1,2}\/\d{2,4})\s*Time:/i,
+    /(?:^|[^a-zA-Z])Date:\s*([A-Z][a-z]{2}\s+\d{1,2},?\s+\d{4})\s*Time:/i
+  );
+  f.f6 = null;
+  if (f6raw) {
+    const d = new Date(f6raw);
+    if (!isNaN(d.getTime())) f.f6 = d;
+  }
 
   // F43 containment date — '---' if Final or 100% contained, UNK if blank
   // Stop before field 44 to avoid grabbing next label as value
@@ -6832,6 +6928,12 @@ function buildTableRows(incidents) {
     if (prev && prev.pct >= 100 && is100(f)) classes.push('returning-100');
     if (prev && prev.wasLastReport) classes.push('last-rpt');
     if (isReentry(f)) classes.push('reentry');
+    // ONE & DONE: new fire, 100%, old start date
+    const isNewFire = !prev && !isReentry(f);
+    if (isNewFire && is100(f) && f.f6) {
+      const daysAgo = Math.floor((new Date() - f.f6) / 86400000);
+      if (daysAgo > 1) classes.push('onedone');
+    }
     const pctV = parseInt(f.f8a || 0);
     if ((f.isFinal && pctV < 100) || (!f.isFinal && pctV >= 100)) classes.push('discrep');
     const classAttr = classes.length ? ` class="${classes.join(' ')}"` : '';
@@ -6845,7 +6947,35 @@ function buildNarrativeLines(incidents, cssClass='') {
     const { name, parts } = buildNarrativeLine(f);
     const sentence = capitalizeSentences(parts.join('. ') + (parts.length ? '.' : ''));
     const managingOrg = (lookupUnit(f.unit) || fv(f.unit) || '').replace(/\s*\([A-Z]{2}\)$/,'') || '<span class="blank">[MANAGING ORG]</span>';
-    const cimtLabel = f.hasNIMO ? '. NIMO (___)' : f.hasCIMT ? '. CIMT (___)' : '';
+
+    // CIMT/NIMO team label — depends on team assignment status
+    let cimtLabel = '';
+    let alsoManaging = '';
+    const managedByTeam = findTeamByMember(f.f2);
+    const isPrimaryTeam = findTeamByPrimary(f.f2);
+    if (managedByTeam) {
+      // Managed fire — strip CIMT label entirely
+      cimtLabel = '';
+    } else if (f.hasCIMT || f.hasNIMO) {
+      const teamType = f.hasNIMO ? 'NIMO' : 'CIMT';
+      const teamName = isPrimaryTeam ? isPrimaryTeam.teamName : '';
+      let teamHtml;
+      if (teamName && !teamEditMode.has(f.f2)) {
+        // Show team name as selectable text + edit button
+        teamHtml = `<span class="team-name-display">${teamName}</span><span class="team-edit-btn" onclick="event.stopPropagation();editTeamName('${f.f2}');" title="Edit team name">✎</span>`;
+      } else {
+        // Show input — empty or editing
+        teamHtml = `<input class="team-input" type="text" value="${teamName.replace(/"/g,'&quot;')}" placeholder="___" data-inc="${f.f2}" data-type="${teamType}" onchange="handleTeamInput(this)" onblur="teamEditMode.delete('${f.f2}')" onclick="event.stopPropagation()">`;
+      }
+      cimtLabel = `. ${teamType} (${teamHtml})`;
+      if (isPrimaryTeam && isPrimaryTeam.managedIncs.length) {
+        alsoManaging = buildAlsoManaging(f);
+      }
+    }
+
+    // Managed fire visual class
+    const managedClass = managedByTeam ? ' managed-fire' : '';
+    const managedBadge = managedByTeam ? `<span class="team-managed-badge">▸ ${managedByTeam.teamName}</span>` : '';
     const precipFlag = f._precipDetected
       ? `<span class="precip-flag${f._precipConfirmed ? ' confirmed' : ''}" title="Definitive precipitation detected in boxes 35/40/47" onclick="event.stopPropagation();togglePrecip(this,'${f.f2}')">🌧 ${f._precipConfirmed ? 'Precip added' : 'Add precip statement'}</span>`
       : '';
@@ -6853,7 +6983,7 @@ function buildNarrativeLines(incidents, cssClass='') {
     const reentry = isReentry(f);
     const isNew = !prev && !reentry;
     const asterisk = isNew ? '* ' : '';
-    const lastRptBadge = (prev && prev.wasLastReport) ? '<span class="last-rpt-badge" title="Previous IMSR contained a last-report statement.">LAST RPT</span>' : '';
+    const lastRptBadge = (prev && prev.wasLastReport) ? '<span class="last-rpt-badge" title="Previous IMSR contained a last-report statement.">LAST RPT ON PREVIOUS IMSR</span>' : '';
     const lastRptClass = (prev && prev.wasLastReport) ? ' last-rpt' : '';
 
     // Re-entry from MAP — FALLOFF-08 treatment
@@ -6863,13 +6993,23 @@ function buildNarrativeLines(incidents, cssClass='') {
 
     // Returning 100% fire — was in prev IMSR and still 100%
     const ret100 = (prev && prev.pct >= 100 && is100(f)) ? ' returning-100' : '';
-    const ret100Badge = (prev && prev.pct >= 100 && is100(f)) ? '<span class="ret100-badge" title="Returning fire still at 100% contained — was 100% in previous IMSR">RET 100%</span>' : '';
+    const ret100Badge = (prev && prev.pct >= 100 && is100(f)) ? '<span class="ret100-badge" title="Returning fire still at 100% contained — was 100% in previous IMSR">RETURNING 100% · NO CHANGE</span>' : '';
 
     // Box 3 vs Box 8a discrepancy
     const pctVal = parseInt(f.f8a || 0);
     const box3Discrep = (f.isFinal && pctVal < 100) || (!f.isFinal && pctVal >= 100);
     const discrepClass = box3Discrep ? ' discrep' : '';
-    const discrepBadge = box3Discrep ? `<span class="discrep-badge" title="${f.isFinal ? 'Box 3 = Final but % contained is ' + pctVal + '%' : 'Box 8a = ' + pctVal + '% but Box 3 is not Final'}">BOX 3/8a ✗</span>` : '';
+    const discrepBadge = box3Discrep ? `<span class="discrep-badge" title="${f.isFinal ? 'Box 3 = Final but % contained is ' + pctVal + '%' : 'Box 8a = ' + pctVal + '% but Box 3 is not Final'}">FINAL vs % MISMATCH</span>` : '';
+
+    // ONE & DONE: new fire, 100% contained, start date is old
+    let onedoneClass = '', onedoneBadge = '';
+    if (isNew && is100(f) && f.f6) {
+      const daysAgo = Math.floor((new Date() - f.f6) / 86400000);
+      if (daysAgo > 1) {
+        onedoneClass = ' onedone';
+        onedoneBadge = `<span class="onedone-badge" title="New fire at 100% — Box 6 start date is ${daysAgo} days ago. Likely missed reporting window. Consider removing.">ONE &amp; DONE · ${daysAgo}d ago</span>`;
+      }
+    }
 
     // Kick-off controls: toggle label and/or move to active
     let kickoffControls = '';
@@ -6888,7 +7028,7 @@ function buildNarrativeLines(incidents, cssClass='') {
     const ctn100Class = is100(f) ? ' ctn100' : '';
 
     const delBtn = `<button class="narr-del" title="Remove this fire" onclick="deleteSingleFire('${f.f2}','')">✕</button>`;
-    return `<div class="narr-line ${cssClass}${lastRptClass}${ret100}${discrepClass}${ctn100Class}${reentryClass}" data-inc="${f.f2}" data-pct="${f.f8a || 0}"><b>${asterisk}${name}</b>${lastRptBadge}${ret100Badge}${reentryBadge}${discrepBadge}, ${managingOrg}${cimtLabel}.${reentryStmt} ${sentence}${precipFlag}${kickoffControls}${delBtn}</div>`;
+    return `<div class="narr-line ${cssClass}${lastRptClass}${ret100}${discrepClass}${ctn100Class}${onedoneClass}${reentryClass}${managedClass}" data-inc="${f.f2}" data-pct="${f.f8a || 0}"><b>${asterisk}${name}</b>${lastRptBadge}${ret100Badge}${reentryBadge}${discrepBadge}${onedoneBadge}${managedBadge}, ${managingOrg}${cimtLabel}.${alsoManaging}${reentryStmt} ${sentence}${precipFlag}${kickoffControls}${delBtn}</div>`;
   }).join('<div class="narr-spacer"><br></div>');
 }
 
@@ -6996,6 +7136,104 @@ function moveIncident(gacc, fromIdx, dir) {
   if (toIdx < 0 || toIdx >= order.length) return;
   [order[fromIdx], order[toIdx]] = [order[toIdx], order[fromIdx]];
   renderOutput();
+}
+
+// ── CIMT/NIMO TEAM MANAGEMENT ────────────────────────────────────────
+
+function findTeamByPrimary(incNum) {
+  return teamGroups.find(g => g.primaryInc === incNum);
+}
+function findTeamByMember(incNum) {
+  return teamGroups.find(g => g.managedIncs.includes(incNum));
+}
+function findTeamForFire(incNum) {
+  return findTeamByPrimary(incNum) || findTeamByMember(incNum);
+}
+
+function handleTeamInput(el) {
+  const incNum = el.dataset.inc;
+  const teamType = el.dataset.type || 'CIMT';
+  const name = el.value.trim();
+  let group = findTeamByPrimary(incNum);
+  if (name) {
+    if (!group) {
+      group = { teamName: name, teamType, primaryInc: incNum, managedIncs: [] };
+      teamGroups.push(group);
+    } else {
+      group.teamName = name;
+    }
+  } else if (group) {
+    // Cleared name — dissolve group
+    teamGroups = teamGroups.filter(g => g.primaryInc !== incNum);
+  }
+  teamEditMode.delete(incNum); // exit edit mode — show as selectable text
+  renderOutput();
+}
+
+function assignToTeam(incNum, primaryInc) {
+  unassignFromTeam(incNum);
+  const group = findTeamByPrimary(primaryInc);
+  if (group) group.managedIncs.push(incNum);
+  renderOutput();
+}
+
+function unassignFromTeam(incNum) {
+  teamGroups.forEach(g => {
+    g.managedIncs = g.managedIncs.filter(i => i !== incNum);
+  });
+}
+
+function editTeamName(incNum) {
+  teamEditMode.add(incNum);
+  renderOutput();
+  setTimeout(() => {
+    const inp = document.querySelector(`.team-input[data-inc="${incNum}"]`);
+    if (inp) { inp.focus(); inp.select(); }
+  }, 50);
+}
+
+function moveInTeam(primaryInc, idx, dir) {
+  const group = findTeamByPrimary(primaryInc);
+  if (!group) return;
+  const arr = group.managedIncs;
+  const newIdx = idx + dir;
+  if (newIdx < 0 || newIdx >= arr.length) return;
+  [arr[idx], arr[newIdx]] = [arr[newIdx], arr[idx]];
+  renderOutput();
+}
+
+// Reorder incidents: managed fires stack directly under their primary
+function applyTeamGrouping(incidents) {
+  const managedSet = new Set();
+  teamGroups.forEach(g => g.managedIncs.forEach(inc => managedSet.add(inc)));
+  const result = [];
+  for (const f of incidents) {
+    if (managedSet.has(f.f2)) continue; // skip — inserted after primary
+    result.push(f);
+    const group = findTeamByPrimary(f.f2);
+    if (group) {
+      for (const managedInc of group.managedIncs) {
+        const mf = incidents.find(i => i.f2 === managedInc);
+        if (mf) result.push(mf);
+      }
+    }
+  }
+  return result;
+}
+
+// Build "CIMT is also managing the Minor and Cottonwood incidents." sentence
+function buildAlsoManaging(f) {
+  const group = findTeamByPrimary(f.f2);
+  if (!group || !group.managedIncs.length) return '';
+  const teamType = group.teamType || 'CIMT';
+  const names = group.managedIncs.map(inc => {
+    const mf = allIncidents.find(i => i.f2 === inc);
+    return mf ? normalizeName(mf.f1 || '') : '';
+  }).filter(n => n);
+  if (!names.length) return '';
+  const list = names.length === 1 ? names[0]
+    : names.slice(0, -1).join(', ') + ' and ' + names[names.length - 1];
+  return ` ${teamType} is also managing the ${list} incident${names.length > 1 ? 's' : ''}.`;
 }
 
 function renderOutput() {
@@ -7113,6 +7351,9 @@ function renderOutput() {
     }
     activeInc = manualOrder[gacc].map(i => activeInc[i]);
 
+    // Apply team grouping — managed fires stack under primary
+    activeInc = applyTeamGrouping(activeInc);
+
     // Apply manual sort order to lastRptInc — separate order key
     const lrKey = gacc + '_lr';
     if (!manualOrder[lrKey] || manualOrder[lrKey].length !== lastRptInc.length) {
@@ -7120,19 +7361,72 @@ function renderOutput() {
     }
     const sortedLastRpt = manualOrder[lrKey].map(i => lastRptInc[i]);
 
-    // Build sort panel for activeInc
-    const sortPanel = activeInc.length > 1 ? `
+    // Build sort panel for activeInc (shows base order, before grouping)
+    const baseSortInc = manualOrder[gacc].map(i => (byGacc[gacc] || []).filter(f => !isLastReport(f) && !is100(f))[i]);
+    const sortPanel = baseSortInc.length > 1 ? `
       <div class="sort-panel">
-        ${activeInc.map((f, i) => {
+        ${baseSortInc.map((f, i) => {
+          if (!f) return '';
           const pct = parseInt(f.f8a) || 0;
           const moved = manualOrder[gacc][i] !== i;
           const name = (f.f1 || f._filename || '?').slice(0, 40);
+          const tg = findTeamByPrimary(f.f2);
+          const tm = findTeamByMember(f.f2);
+          const teamTag = tg ? `<span class="team-tag primary">${tg.teamType} (${tg.teamName})</span>`
+            : tm ? `<span class="team-tag managed">▸ ${tm.teamName}</span>` : '';
           return `<div class="sort-row${moved ? ' sort-moved' : ''}">
             <button class="sort-btn" onclick="moveIncident('${gacc}',${i},-1)" title="Move up">▲</button>
             <button class="sort-btn" onclick="moveIncident('${gacc}',${i},1)" title="Move down">▼</button>
             <span class="sort-name">${name}${moved ? ' ✎' : ''}</span>
+            ${teamTag}
             <span class="sort-pct">${pct}%</span>
           </div>`;
+        }).join('')}
+      </div>` : '';
+
+    // Build team manager panel — shows when any CIMT/NIMO team exists in this GACC
+    const gaccTeams = teamGroups.filter(g => {
+      const pf = activeInc.find(i => i.f2 === g.primaryInc);
+      return pf && g.teamName;
+    });
+    const teamPanel = gaccTeams.length ? `
+      <div class="team-panel">
+        <div class="team-panel-head">TEAM MANAGER</div>
+        ${gaccTeams.map(g => {
+          const pf = activeInc.find(i => i.f2 === g.primaryInc);
+          const pName = pf ? normalizeName(pf.f1 || '') : '?';
+          // Available fires: active in this GACC, not primary, not managed by ANY team
+          const available = activeInc.filter(f =>
+            f.f2 !== g.primaryInc && !findTeamForFire(f.f2)
+          );
+          const managedFires = g.managedIncs.map(inc => activeInc.find(i => i.f2 === inc)).filter(Boolean);
+          return `
+            <div class="team-group">
+              <div class="team-group-head">
+                <strong>${g.teamType} (${g.teamName})</strong> — Primary: <strong>${pName}</strong>
+              </div>
+              ${managedFires.length ? `<div class="team-managed-list">
+                <span class="team-managed-label">Also managing:</span>
+                ${managedFires.map((mf, mi) => {
+                  const mName = normalizeName(mf.f1 || '');
+                  return `<div class="team-managed-row">
+                    <button class="sort-btn" onclick="moveInTeam('${g.primaryInc}',${mi},-1)" title="Move up">▲</button>
+                    <button class="sort-btn" onclick="moveInTeam('${g.primaryInc}',${mi},1)" title="Move down">▼</button>
+                    <span>${mName}</span>
+                    <button class="team-remove" onclick="unassignFromTeam('${mf.f2}');renderOutput();" title="Remove from team">✕</button>
+                  </div>`;
+                }).join('')}
+              </div>` : ''}
+              ${available.length ? `<div class="team-assign-row">
+                <select class="team-assign-select" onchange="if(this.value){assignToTeam(this.value,'${g.primaryInc}');this.value='';}">
+                  <option value="">+ Assign fire to ${g.teamName}…</option>
+                  ${available.map(af => {
+                    const afName = normalizeName(af.f1 || '');
+                    return `<option value="${af.f2}">${afName}</option>`;
+                  }).join('')}
+                </select>
+              </div>` : ''}
+            </div>`;
         }).join('')}
       </div>` : '';
 
@@ -7186,6 +7480,7 @@ function renderOutput() {
             <button class="copy-btn narr" onclick="copyNarrFromBlock(this)">Copy Narratives</button>
           </div>
           ${sortPanel}
+          ${teamPanel}
           ${lrSortPanel}
           ${narrLines}
         </div>
@@ -7273,7 +7568,24 @@ function buildCopyLine(f) {
   const { name, parts } = buildNarrativeLine(f);
   const sentence = capitalizeSentences(parts.join('. ') + (parts.length ? '.' : ''));
   const org = (lookupUnit(f.unit) || fv(f.unit) || '').replace(/\s*\([A-Z]{2}\)$/,'') || '[MANAGING ORG]';
-  const cimtLabel = f.hasNIMO ? '. NIMO (___)' : f.hasCIMT ? '. CIMT (___)' : '';
+
+  // Team-aware CIMT/NIMO label for copy output
+  let cimtLabel = '';
+  let alsoManaging = '';
+  const managedByTeam = findTeamByMember(f.f2);
+  const isPrimaryTeam = findTeamByPrimary(f.f2);
+  if (managedByTeam) {
+    // Managed fire — no CIMT label in copy
+    cimtLabel = '';
+  } else if (f.hasCIMT || f.hasNIMO) {
+    const teamType = f.hasNIMO ? 'NIMO' : 'CIMT';
+    const teamName = isPrimaryTeam ? isPrimaryTeam.teamName : '___';
+    cimtLabel = `. ${teamType} (${teamName})`;
+    if (isPrimaryTeam && isPrimaryTeam.managedIncs.length) {
+      alsoManaging = buildAlsoManaging(f);
+    }
+  }
+
   const precip = f._precipConfirmed ? ' Precipitation occurred over the fire area yesterday.' : '';
   const prev = prevMatch(f);
   const reentry = isReentry(f);
@@ -7294,7 +7606,7 @@ function buildCopyLine(f) {
       body = body.trimEnd().replace(/\.?$/, '') + '. ' + precip.trim();
     }
   }
-  const tail = `, ${org}${cimtLabel}.${reentryStmt} ${body}`;
+  const tail = `, ${org}${cimtLabel}.${alsoManaging}${reentryStmt} ${body}`;
   const plain = `${asterisk}${name}${tail}`;
   // Bold only the asterisk+name; rest is normal weight
   const boldPart = asterisk ? `<b>* ${name}</b>` : `<b>${name}</b>`;
@@ -7339,7 +7651,7 @@ function copyAllNarr(btn) {
       const bEl = div.querySelector('b');
       const name = bEl ? bEl.textContent.trim() : '';
       const clone = div.cloneNode(true);
-      clone.querySelectorAll('button, .last-rpt-badge, .ret100-badge, .discrep-badge, .reentry-badge').forEach(el => el.remove());
+      clone.querySelectorAll('button, .last-rpt-badge, .ret100-badge, .discrep-badge, .reentry-badge, .onedone-badge').forEach(el => el.remove());
       const fullText = clone.textContent.trim();
       const rest = name && fullText.startsWith(name) ? fullText.slice(name.length) : fullText;
       const plain  = name + rest;
@@ -7383,7 +7695,7 @@ function copyNarrFromBlock(btn) {
       const bEl = el.querySelector('b');
       const name = bEl ? bEl.textContent.trim() : '';
       const clone = el.cloneNode(true);
-      clone.querySelectorAll('button, .last-rpt-badge, .ret100-badge, .discrep-badge, .reentry-badge').forEach(n => n.remove());
+      clone.querySelectorAll('button, .last-rpt-badge, .ret100-badge, .discrep-badge, .reentry-badge, .onedone-badge').forEach(n => n.remove());
       const fullText = clone.textContent.trim();
       const rest = name && fullText.startsWith(name) ? fullText.slice(name.length) : fullText;
       const plain  = name + rest;
@@ -7474,14 +7786,36 @@ function togglePrecip(pill, incNum) {
   const reentry   = isReentry(f);
   const asterisk  = (prev || reentry) ? '' : '* ';
   const managingOrg = (lookupUnit(f.unit) || fv(f.unit) || '').replace(/\s*\([A-Z]{2}\)$/,'') || '[MANAGING ORG]';
-  const cimtLabel = f.hasNIMO ? '. NIMO (___)' : f.hasCIMT ? '. CIMT (___)' : '';
+
+  // Team-aware CIMT/NIMO label
+  let cimtLabel = '';
+  let alsoManaging = '';
+  const managedByTeam = findTeamByMember(f.f2);
+  const isPrimaryTeam = findTeamByPrimary(f.f2);
+  if (managedByTeam) {
+    cimtLabel = '';
+  } else if (f.hasCIMT || f.hasNIMO) {
+    const teamType = f.hasNIMO ? 'NIMO' : 'CIMT';
+    const teamName = isPrimaryTeam ? isPrimaryTeam.teamName : '';
+    let teamHtml;
+    if (teamName && !teamEditMode.has(f.f2)) {
+      teamHtml = `<span class="team-name-display">${teamName}</span><span class="team-edit-btn" onclick="event.stopPropagation();editTeamName('${f.f2}');" title="Edit team name">✎</span>`;
+    } else {
+      teamHtml = `<input class="team-input" type="text" value="${teamName.replace(/"/g,'&quot;')}" placeholder="___" data-inc="${f.f2}" data-type="${teamType}" onchange="handleTeamInput(this)" onblur="teamEditMode.delete('${f.f2}')" onclick="event.stopPropagation()">`;
+    }
+    cimtLabel = `. ${teamType} (${teamHtml})`;
+    if (isPrimaryTeam && isPrimaryTeam.managedIncs.length) {
+      alsoManaging = buildAlsoManaging(f);
+    }
+  }
+
   const reentryStmt = reentry ? ' <span class="reentry-stmt">Previously reported incident.</span>' : '';
   const pillHtml  = f._precipConfirmed
     ? `<span class="precip-flag confirmed" title="Click to remove precip statement" onclick="togglePrecip(this,'${incNum}')">🌧 Precip added</span>`
     : `<span class="precip-flag" title="Definitive precipitation detected in boxes 35/40/47" onclick="togglePrecip(this,'${incNum}')">🌧 Add precip statement</span>`;
 
   const delBtn = `<button class="narr-del" title="Remove this fire" onclick="deleteSingleFire('${incNum}','')">✕</button>`;
-  line.innerHTML = `<b>${asterisk}${name}</b>, ${managingOrg}${cimtLabel}.${reentryStmt} ${sentence}${pillHtml}${delBtn}`;
+  line.innerHTML = `<b>${asterisk}${name}</b>, ${managingOrg}${cimtLabel}.${alsoManaging}${reentryStmt} ${sentence}${pillHtml}${delBtn}`;
 }
 
 // Copy narrative lines with mixed bold formatting for Word
@@ -7624,7 +7958,7 @@ function buildMissedNarrLines(missed) {
       : 'No new information.';
     const tail = prevNarr ? `${prevNarr}. ${suffix}` : suffix;
     const mKey = normKey(p.name, p.unit);
-    const lastRptBadge = p.wasLastReport ? '<span class="last-rpt-badge" title="Previous IMSR contained a last-report statement.">LAST RPT</span>' : '';
+    const lastRptBadge = p.wasLastReport ? '<span class="last-rpt-badge" title="Previous IMSR contained a last-report statement.">LAST RPT ON PREVIOUS IMSR</span>' : '';
     const lastRptClass = p.wasLastReport ? ' last-rpt' : '';
     const delBtn = `<button class="narr-del" title="Remove this fire" onclick="deleteSingleFire('','${mKey}')">✕</button>`;
     return `<div class="narr-line${lastRptClass}" data-missed="1" data-missed-key="${mKey}">
@@ -7679,7 +8013,7 @@ function copyMissedNarr(btn) {
     const bEl = div.querySelector('b');
     const name = bEl ? bEl.textContent.trim() : '';
     const clone = div.cloneNode(true);
-    clone.querySelectorAll('button, .last-rpt-badge, .ret100-badge, .discrep-badge, .reentry-badge').forEach(el => el.remove());
+    clone.querySelectorAll('button, .last-rpt-badge, .ret100-badge, .discrep-badge, .reentry-badge, .onedone-badge').forEach(el => el.remove());
     const fullText = clone.textContent.trim();
     const rest = name && fullText.startsWith(name) ? fullText.slice(name.length) : fullText;
     const plain  = name + rest;
@@ -7706,6 +8040,24 @@ function parseIMSR(text) {
   // Normalize Word smart quotes to straight — Word always converts ' to ' (U+2019)
   // which breaks regex character classes that only include ' (U+0027).
   text = text.replace(/[\u2018\u2019]/g, "'").replace(/[\u201C\u201D]/g, '"');
+
+  // ── Pre-process: strip garbled IMSR table headers ────────────────────
+  // PDF.js extracts vertically-oriented column labels as single-character
+  // fragments: "Incident Name Unit A T c o r t e a s l ..." instead of
+  // clean header text. ROW_RE requires an OWN-code anchor before each
+  // data row; the first row after a garbled header has no anchor, so it
+  // is silently dropped (Bell, Shady Grove, Ashby, Unified, White Hollow
+  // all lost on the 3/27/2026 IMSR).
+  // Fix: match from "Incident Name Unit" through "$$ CTD", then consume
+  // garbled 1-3 char fragments AND/OR clean "Origin Own" text. Handles
+  // both garbled headers (short fragments) and clean headers (full words).
+  // Without the explicit Origin/Own consumption, clean headers leave
+  // "Origin Own" prefixed to the first fire name (e.g. "Origin Own Unified").
+  text = text.replace(
+    /Incident\s+Name\s+Unit\b[^$]*\$[\$\s]*CTD\b(?:\s+[A-Za-z]{1,3}(?=\s))*(?:\s+Origin)?(?:\s+Own)?/g,
+    'Own'
+  );
+
   const map = new Map();
 
   // ── Step 1: extract narrative lines ──────────────────────────────────
@@ -7922,6 +8274,8 @@ function clearAll() {
   deletedFires.clear();
   lastRptLabelOff.clear();
   lastRptForceActive.clear();
+  teamGroups = [];
+  teamEditMode.clear();
   narrFilterState = 'all';
   manualGaccOrder = null;
   fileListEl.innerHTML = '';
