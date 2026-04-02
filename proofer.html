@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>IMSR Proofer v5.2</title>
+<title>IMSR Proofer v5.4</title>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/mammoth/1.6.0/mammoth.browser.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
 <style>
@@ -73,7 +73,7 @@ body { font-family: 'Segoe UI', system-ui, sans-serif; background: var(--bg); co
 </style>
 </head>
 <body>
-<div class="header"><h1>IMSR PROOFER</h1><span class="tag">LAYER 1</span><span class="tag" style="background:rgba(22,131,158,0.4);">LAYER 2</span><span class="ver">v5.2</span></div>
+<div class="header"><h1>IMSR PROOFER</h1><span class="tag">LAYER 1</span><span class="tag" style="background:rgba(22,131,158,0.4);">LAYER 2</span><span class="ver">v5.4</span></div>
 <div class="container">
 
   <!-- STEP 1: Yesterday's IMSR (file only — for personnel math) -->
@@ -652,17 +652,12 @@ function parseStats(lines) {
   return s;
 }
 
-function calcStats(tbl, gaccText) {
+function calcStats(tbl) {
   const incs = tbl ? tbl.incs : [];
-  const newLarge = incs.filter(i=>i.isNew).length;
-  const uncontained = incs.filter(i=>(i.pct===null||i.pct<100)&&!/comp/i.test(i.ctn)).length;
-  const contained100 = incs.filter(i=>i.pct===100).length;
-  const cimtRaw = (gaccText.match(/\bCIMT\b/g)||[]).length;
-  const alsoM = (gaccText.match(/CIMT is also managing/gi)||[]).length;
-  const xfer = (gaccText.match(/Transfer of command/gi)||[]).length;
-  const cimts = Math.max(0, cimtRaw - alsoM - xfer);
-  const nimos = (gaccText.match(/\bNIMO\b/gi)||[]).length;
-  return { newLarge, uncontained, contained100, cimts, nimos };
+  const newLarge    = incs.filter(i => i.isNew).length;
+  const uncontained = incs.filter(i => typeof i.pct === 'number' && i.pct < 100).length;
+  const contained100 = incs.filter(i => i.pct === 100).length;
+  return { newLarge, uncontained, contained100 };
 }
 
 // --- ANALYZE: returns ordered section array ---
@@ -788,12 +783,12 @@ function analyze(text, html) {
     }
   }
   // Calculate national totals using deduplicated table assignments
-  let tNewFires=0,tNewLarge=0,tUncontained=0,tContained=0,tCIMTs=0,tNIMOs=0;
+  let tNewFires=0,tNewLarge=0,tUncontained=0,tContained=0;
   if (faNewFires) { for (const g of Object.values(faNewFires)) tNewFires += g; }
   for (const sec of gaccs) {
     const tbl = gaccTableMap.get(sec.name) || null;
-    const c=calcStats(tbl,sec.lines.join('\n'));
-    tNewLarge+=c.newLarge; tUncontained+=c.uncontained; tContained+=c.contained100; tCIMTs+=c.cimts; tNIMOs+=c.nimos;
+    const c=calcStats(tbl);
+    tNewLarge+=c.newLarge; tUncontained+=c.uncontained; tContained+=c.contained100;
   }
   const natDec = parseStats(natBlock.split('\n'));
   // Initial attack activity = new fires total from F&A Yesterday table
@@ -802,9 +797,9 @@ function analyze(text, html) {
   const iaAdj = natDec.iaAdj ? natDec.iaAdj[0].toUpperCase() + natDec.iaAdj.slice(1).toLowerCase() : '';
   const iaLabel = iaAdj ? `${iaAdj} (${iaCount} fires)` : (faNewFires ? `${tNewFires} fires` : '?');
   natFindings.push(F('info','NAT-02','Calculated national totals:',
-    `Initial attack activity: ${iaLabel}\nNew large incidents: ${tNewLarge}\nLarge fires contained: ${tContained}\nUncontained large fires: ${tUncontained}\nCIMTs committed: ${tCIMTs}\nNIMOs committed: ${tNIMOs}`,
+    `Initial attack activity: ${iaLabel}\nNew large incidents: ${tNewLarge}\nLarge fires contained: ${tContained}\nUncontained large fires: ${tUncontained}`,
     '__table__'));
-  compareStats(natDec, {newLargeIncidents:tNewLarge,uncontainedLargeFires:tUncontained,largeFiresContained:tContained,cimtsCommitted:tCIMTs,nimosCommitted:tNIMOs}, 'National', natFindings);
+  compareStats(natDec, {newLargeIncidents:tNewLarge,uncontainedLargeFires:tUncontained,largeFiresContained:tContained}, 'National', natFindings);
   // Initial attack adjective check
   const iaCheckCount = natDec.iaCount ?? (faNewFires ? tNewFires : undefined);
   if (natDec.iaAdj && iaCheckCount !== undefined) {
@@ -867,7 +862,7 @@ function analyze(text, html) {
               `${gacc} Change in Personnel: declared ${declaredChg}, calculated ${calcChg} (today ${todayPpl} − yesterday ${yestPpl}).`,
               '', `Should be ${calcChg}.`));
           }
-          calcLines.push(`${gacc}: ${yestPpl} → ${todayPpl} = ${calcChg}`);
+          calcLines.push(`${gacc}: ${yestPpl} → ${todayPpl} = ${calcChg}${declaredChg !== calcChg ? ' ✗' : ''}`);
         }
         resFindings.push(F('info','RES-05','Change in Personnel calculated (today − yesterday):',
           calcLines.join('\n') + `\n\nTotal: ${totalCalcChg}`,
@@ -1020,7 +1015,7 @@ function analyze(text, html) {
     const gn = sec.name;
 
     // --- GACC stats math ---
-    const calc = calcStats(tbl, gText);
+    const calc = calcStats(tbl);
     // Map GACC full name to abbreviation for F&A lookup
     const GACC_NAME_TO_ABBR = {
       'Alaska Area':'AICC','Northwest Area':'NWCC','Northern California Area':'ONCC',
@@ -1030,11 +1025,10 @@ function analyze(text, html) {
     const gaccAbbr = GACC_NAME_TO_ABBR[gn] || '';
     const newFiresCount = (faNewFires && gaccAbbr) ? (faNewFires[gaccAbbr] ?? '?') : '?';
     gf.push(F('info','NAT-03','Calculated GACC totals:',
-      `New fires: ${newFiresCount}\nNew large incidents: ${calc.newLarge}\nUncontained large fires: ${calc.uncontained}` +
-      (calc.cimts?`\nCIMTs committed: ${calc.cimts}`:'') + (calc.nimos?`\nNIMOs committed: ${calc.nimos}`:''),
+      `New fires: ${newFiresCount}\nNew large incidents: ${calc.newLarge}\nUncontained large fires: ${calc.uncontained}`,
       '__table__'));
     const dec = parseStats(sec.lines);
-    compareStats(dec, {newFires:typeof newFiresCount==='number'?newFiresCount:undefined,newLargeIncidents:calc.newLarge,uncontainedLargeFires:calc.uncontained,cimtsCommitted:calc.cimts,nimosCommitted:calc.nimos}, gn, gf);
+    compareStats(dec, {newFires:typeof newFiresCount==='number'?newFiresCount:undefined,newLargeIncidents:calc.newLarge,uncontainedLargeFires:calc.uncontained}, gn, gf);
 
     // --- Narrative format checks (before table checks to match IMSR flow) ---
     // Collect separately and sort by text position so findings follow document order
@@ -1103,26 +1097,6 @@ function analyze(text, html) {
         if(nm&&nm.isNew!==inc.isNew) gf.push(F('error','NARR-02',`"${inc.name}" asterisk mismatch: table=${inc.isNew?'*':'no *'}, narrative=${nm.isNew?'*':'no *'}.`));
       }
 
-      // PROOF-STATE: narrative location state vs unit code state prefix
-      for (const inc of incs) {
-        const unitCode = (inc.unit || '').trim().toUpperCase();
-        if (!unitCode || !unitCode.includes('-')) continue;
-        const unitState = unitCode.slice(0, 2);
-        const narr = getNarr(inc.name, text);
-        if (!narr || /no new information/i.test(narr)) continue;
-        // Extract state abbreviation from location: "of Town, ST" or "of Town, ST."
-        const locMatch = narr.match(/\b(?:of|near)\s+[\w\s'-]+,\s+([A-Z]{2})\b/);
-        if (locMatch) {
-          const narrState = locMatch[1];
-          // Skip if location state IS a valid state abbrev (not "NF", "NE" etc used as other abbreviations)
-          if (narrState !== unitState && /^(A[KLRZ]|C[AOT]|D[CE]|FL|GA|HI|I[ADLN]|K[SY]|LA|M[ADEINOST]|N[CDEHJMVY]|O[HKR]|PA|RI|S[CD]|T[NX]|UT|V[AT]|W[AIVY])$/.test(narrState)) {
-            gf.push(F('warning','PROOF-02',
-              `"${inc.name}": Narrative location says "${narrState}" but table unit is "${unitCode}" (${unitState}). Possible wrong narrative pasted.`,
-              (narr.length > 120 ? narr.substring(0, 120) + '…' : narr)));
-          }
-        }
-      }
-
       // --- Bucket sort ---
       if (incs.length >= 2) {
         for (const inc of incs) {
@@ -1163,14 +1137,7 @@ function analyze(text, html) {
               ? `"${nm}": Unit code "${u}" — capitalize to "${fix}".`
               : `"${nm}": Unit code wrong format.`;
             gf.push(F('warning','TBL-02', msg, u, fix));
-          } else if (u) {
-            // TBL-02b: state prefix must be a valid US state/territory abbreviation
-            const VALID_STATES = new Set(['AL','AK','AZ','AR','CA','CO','CT','DE','FL','GA','HI','ID','IL','IN','IA','KS','KY','LA','ME','MD','MA','MI','MN','MS','MO','MT','NE','NV','NH','NJ','NM','NY','NC','ND','OH','OK','OR','PA','RI','SC','SD','TN','TX','UT','VT','VA','WA','WV','WI','WY','DC','PR','VI','GU','AS','MP']);
-            const stPrefix = u.substring(0, 2);
-            if (!VALID_STATES.has(stPrefix))
-              gf.push(F('error','TBL-02',`"${nm}": Unit code "${u}" — prefix "${stPrefix}" is not a valid state abbreviation.`, u));
-          }
-          if (u && typeof UNIT_GACC !== 'undefined') {
+          } else if (u && typeof UNIT_GACC !== 'undefined') {
             // GACC-01: verify unit code maps to the correct GACC
             const rawGacc = UNIT_GACC[u.toUpperCase()];
             const expectedGacc = UNIT_GACC_OVERRIDES[u.toUpperCase()] || rawGacc;
@@ -1279,9 +1246,7 @@ function analyze(text, html) {
         // Origin Own: must be a known code
         if (cm.origin !== undefined) {
           const v = (r[cm.origin]||'').trim();
-          if (!v)
-            gf.push(F('error','TBL-15',`"${nm}" Origin Own is blank — must be one of: ${VALID_ORIGINS.join(', ')}.`));
-          else if (!VALID_ORIGINS.includes(v.toUpperCase()))
+          if (v && !VALID_ORIGINS.includes(v.toUpperCase()))
             gf.push(F('error','TBL-15',`"${nm}" Origin Own "${v}" — must be one of: ${VALID_ORIGINS.join(', ')}.`));
         }
 
@@ -1323,18 +1288,6 @@ function analyze(text, html) {
         l.trim().length > 15
       ).join('\n').toLowerCase();
 
-      // Units already "explained" by a fire that has a narrative — no legend needed for these
-      const explainedUnits = new Set(tbl.incs
-        .filter(i => {
-          const nameLC = i.name.toLowerCase().trim();
-          return narrNamesLC.includes(nameLC) || narrSearchText.includes(nameLC);
-        })
-        .map(i => {
-          const u = (i.rawRow[tbl.cm.unit] || '').trim().toUpperCase();
-          return (u && u.includes('-')) ? u.split('-')[1] : '';
-        })
-        .filter(Boolean));
-
       const unitCodesNeedingLegend = new Set(tbl.incs
         .filter(i => {
           const nameLC = i.name.toLowerCase().trim();
@@ -1344,16 +1297,16 @@ function analyze(text, html) {
           if (narrSearchText.includes(nameLC)) return false;
           return true; // truly table-only, needs legend
         })
-        // 100% fires are table-only (no narrative) — they are the primary legend candidates
+        .filter(i => (i.pct ?? 0) < 100)  // 100% contained = Bucket 6, no narrative/legend needed
         .map(i => (i.rawRow[tbl.cm.unit] || '').trim().toUpperCase())
         .filter(u => u && u.includes('-'))
         .map(u => u.split('-')[1])           // strip state prefix for legend check
-        .filter(u => u && !explainedUnits.has(u)));  // skip units already named in a narrative
+        .filter(Boolean));
 
       // Look for legend lines in the GACC text (format: "XX - Name  YY - Name" or "XX -- Name")
       const legendLine = sec.lines.find(l => /[A-Z]{2,5}\s+[-–—]{1,2}\s+\w/.test(l) && !/^\*/.test(l.trim()));
       if (!legendLine && unitCodesNeedingLegend.size > 0) {
-        gf.push(F('error','TBL-21',`No unit legend found after ${gn} table. Required for table-only unit codes: ${[...unitCodesNeedingLegend].join(', ')}.`));
+        gf.push(F('warning','TBL-21',`No unit legend found after ${gn} table. Required for table-only unit codes: ${[...unitCodesNeedingLegend].join(', ')}.`));
       } else if (legendLine) {
         // TBL-22: each entry should be CODE - Name (3-char code only, no state prefix)
         const legendCodes = [...legendLine.matchAll(/\b([A-Z]{2,5})\s+[-–—]/g)].map(m => m[1]);
@@ -1364,12 +1317,7 @@ function analyze(text, html) {
         // TBL-21: unit codes that need a legend entry but aren't in the legend
         for (const u of unitCodesNeedingLegend) {
           if (u.length >= 2 && !legendCodes.includes(u))
-            gf.push(F('error','TBL-21',`Unit "${u}" has no narrative in ${gn} but is not in the legend.`));
-        }
-        // TBL-24: legend entries that are unnecessary (unit already named in a narrative)
-        for (const code of legendCodes) {
-          if (explainedUnits.has(code))
-            gf.push(F('error','TBL-25',`Legend entry "${code}" is unnecessary — unit already named in a narrative. Remove from legend.`));
+            gf.push(F('warning','TBL-21',`Unit "${u}" has no narrative in ${gn} but is not in the legend.`));
         }
         // TBL-23: legend must follow last table row, before next GACC section
         const legendIdx = sec.lines.indexOf(legendLine);
@@ -1511,7 +1459,7 @@ function checkNarrFmt(text, f) {
       // Skip known lowercase patterns
       if (/^(the|and|or|but|for|in|on|at|to|by|an|a)$/i.test(name)) continue;
       const fixed = name.replace(/\b\w/g, c => c.toUpperCase());
-      f.push(F('error','PROOF-04',`Fire name "${name}" should be title case.`,
+      f.push(F('error','PROOF-CAP',`Fire name "${name}" should be title case.`,
         line.substring(0, 80), line.substring(0, 80).replace(name, fixed)));
     }
   }
@@ -1617,7 +1565,7 @@ function checkNarrFmt(text, f) {
       || /\bon\s+the\s+\w+\s+(National|Ranger|District|Reservation|Forest|Park)/i.test(line);
     const isNoNewInfo = /no new information/i.test(line) || /last (?:narrative )?report/i.test(line);
     if (isNew && !hasLocation && !isNoNewInfo && line.length > 60) {
-      f.push(F('warning','NARR-51',`"${incName}": New fire narrative may be missing a location (e.g., "X miles [dir] of [Town], [State]").`, line.substring(0,100)));
+      f.push(F('warning','NARR-50',`"${incName}": New fire narrative may be missing a location (e.g., "X miles [dir] of [Town], [State]").`, line.substring(0,100)));
     }
 
     // -- PROOF-CAP: Lowercase letter after period (mid-narrative sentence start) --
@@ -1630,7 +1578,7 @@ function checkNarrFmt(text, f) {
       if (/\b\d+\.\s/.test(line.substring(capM.index - 3, capM.index + 3))) continue; // decimal/number
       const snip = line.substring(Math.max(0, capM.index - 15), Math.min(line.length, capM.index + 20)).trim();
       const fixed = snip.replace(/\.\s+([a-z])/, (m, c) => '. ' + c.toUpperCase());
-      f.push(F('error','PROOF-04',`"${incName}": Sentence should start with a capital letter.`, snip, fixed));
+      f.push(F('error','PROOF-CAP',`"${incName}": Sentence should start with a capital letter.`, snip, fixed));
     }
 
     // -- NARR-15b: Numerals 1-9 that should be spelled out in narrative text --
@@ -1655,7 +1603,7 @@ function checkNarrFmt(text, f) {
       if (/^(the|and|or|but|in|on|at|to|for|by|an|a|its)$/i.test(town)) continue;
       const fixedTown = town.replace(/\b\w/g, c => c.toUpperCase());
       const snip = line.substring(Math.max(0, cityM.index), Math.min(line.length, cityM.index + cityM[0].length + 5)).trim();
-      f.push(F('error','PROOF-04',`"${incName}": City/town name should be capitalized.`, snip, snip.replace(town, fixedTown)));
+      f.push(F('error','PROOF-CAP',`"${incName}": City/town name should be capitalized.`, snip, snip.replace(town, fixedTown)));
     }
 
     // -- SPELL-FUEL: Validate fuel type words --
@@ -1681,38 +1629,10 @@ function checkNarrFmt(text, f) {
       f.push(F('warning','SPELL',`"${incName}": "${fuelM[1]}" before "${fuelM[2]}" — possible misspelling? Verify fuel type.`, snip));
     }
 
-    // -- NARR-52: CIMT team name validation --
-    // Empty parentheses: "CIMT ()." or "CIMT ( )."
-    if (/\bCIMT\s*\(\s*\)/.test(line))
-      f.push(F('error','NARR-52',`"${incName}": CIMT has empty parentheses — team name is missing.`,
-        (line.match(/CIMT\s*\(\s*\)[^.]*\.?/)||[line.substring(0,80)])[0]));
-    // Missing parentheses entirely: "CIMT" followed by something other than "(", "is also", "back to"
-    // e.g. "CIMT Five miles south..." or "CIMT. Five miles..."
-    else if (/\bCIMT\b/.test(line) && !/\bCIMT\s*\(/.test(line) && !/\bCIMT\s+is\s+also/i.test(line) && !/\bfrom\s+CIMT\b/i.test(line)) {
-      const cimtSnip = (line.match(/CIMT[^.]{0,60}\.?/)||[line.substring(0,80)])[0];
-      f.push(F('error','NARR-52',`"${incName}": CIMT missing team name — should be "CIMT (Team Name)."`, cimtSnip));
-    }
-
     // -- NARR-21: Oxford comma --
     const oxLine=/(?:running|spotting|torching|backing|flanking|creeping|smoldering|closures|evacuations)[^.]*,\s+and\s+/gi;
     let oxm;
     while((oxm=oxLine.exec(line))!==null) f.push(F('warning','NARR-21',`"${incName}": Possible Oxford comma.`,oxm[0].substring(0,80)));
-
-    // -- PROOF-TRUNC: Truncated narrative (cut off mid-paste) --
-    const trimmed = line.replace(/\s+$/,'');
-    if (!isNoNewInfo && trimmed.length > 30) {
-      // Doesn't end with a period
-      if (!/\.\s*$/.test(trimmed)) {
-        const tail = trimmed.slice(-40);
-        // Ends with comma, conjunction, preposition, or mid-word
-        if (/[,;]\s*$/.test(trimmed))
-          f.push(F('error','PROOF-01',`"${incName}": Narrative appears cut off — ends with comma/semicolon.`, '…' + tail));
-        else if (/\b(and|or|with|in|of|the|a|an|to|from|by|for|at|on|is|are|was)\s*$/i.test(trimmed))
-          f.push(F('error','PROOF-01',`"${incName}": Narrative appears cut off — ends mid-sentence.`, '…' + tail));
-        else if (!/[.!?)"]\s*$/.test(trimmed))
-          f.push(F('warning','PROOF-01',`"${incName}": Narrative does not end with a period.`, '…' + tail));
-      }
-    }
   }
 
   // === PROOF-BREAK: Missing paragraph break between narratives ===
@@ -1730,7 +1650,7 @@ function checkNarrFmt(text, f) {
     }
     if (narrAnchors.length >= 2) {
       const names = narrAnchors.map(a => a.name);
-      f.push(F('error', 'PROOF-03',
+      f.push(F('error', 'PROOF-BREAK',
         `Missing paragraph break — "${names[0]}" and "${names[1]}" are on the same line. Each narrative must be its own paragraph.`,
         line.length > 120 ? line.substring(0, 120) + '…' : line));
     }
@@ -2073,12 +1993,14 @@ function renderPersonnelTable(context) {
       if (eqIdx > 0) {
         const left = line.substring(0, eqIdx).trim();
         let right = line.substring(eqIdx + 1).trim();
+        const hasErr = right.includes('✗');
+        right = right.replace(/\s*✗\s*$/, '').trim();
         const colon = left.indexOf(':');
         const gacc = colon > 0 ? left.substring(0, colon).trim() : left;
         const math = colon > 0 ? left.substring(colon + 1).trim() : '';
         leftCol  += `<div style="line-height:20px;white-space:nowrap;${bdr}">${esc(gacc)}</div>`;
         midCol   += `<div style="line-height:20px;white-space:nowrap;color:var(--text-dim);font-family:Consolas,monospace;${bdr}">${esc(math)} =</div>`;
-        rightCol += `<div style="line-height:20px;text-align:center;font-family:Arial,sans-serif;font-size:9pt;font-weight:700;${bdr}">${esc(right)}</div>`;
+        rightCol += `<div style="line-height:20px;text-align:center;font-family:Arial,sans-serif;font-size:9pt;font-weight:700;${bdr}">${esc(right)}${hasErr ? ' <span style="color:#c0392b;">✗</span>' : ''}</div>`;
       } else {
         leftCol  += `<div style="line-height:20px;${bdr}">${esc(line)}</div>`;
         midCol   += `<div style="line-height:20px;${bdr}">&nbsp;</div>`;
