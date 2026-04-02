@@ -84,6 +84,9 @@
   .file-list span { display: inline-block; background: #e8e4dc; border-radius: 2px; padding: 2px 7px; margin: 2px 3px 2px 0; color: var(--label); }
   .file-list span.deleted { background: #c0392b; color: #fff; cursor: pointer; font-weight: 600; }
   .file-list span.deleted:hover { background: #e74c3c; }
+  .file-list span.prev-label { background: none; color: var(--muted); font-style: italic; padding: 2px 4px; font-size: 10px; }
+  .file-list span.prev-fire { background: #dde8f5; color: #2565ae; }
+  .file-list span.prev-fire.deleted { background: #c0392b; color: #fff; cursor: pointer; font-weight: 600; }
 
   .status { font-family: 'IBM Plex Mono', monospace; font-size: 11px; margin-bottom: 16px; display: none; padding: 6px 10px; border-radius: 3px; }
   .status.ok { color: var(--good); background: #f0fff4; display: block; }
@@ -150,6 +153,26 @@
   .ret100-badge { display: inline-block; font-size: 9px; font-weight: 700; color: #fff; background: #c0392b; padding: 1px 5px; border-radius: 3px; margin-left: 6px; vertical-align: middle; letter-spacing: 0.3px; cursor: help; -webkit-user-select: none; user-select: none; }
   .discrep-badge { display: inline-block; font-size: 9px; font-weight: 700; color: #fff; background: #2471a3; padding: 1px 5px; border-radius: 3px; margin-left: 6px; vertical-align: middle; letter-spacing: 0.3px; cursor: help; -webkit-user-select: none; user-select: none; }
   .stale-badge { display: inline-block; font-size: 9px; font-weight: 700; color: #fff; background: #d35400; padding: 1px 5px; border-radius: 3px; margin-left: 6px; vertical-align: middle; letter-spacing: 0.3px; cursor: help; -webkit-user-select: none; user-select: none; }
+  .miss-badge { display: inline-block; font-size: 9px; font-weight: 700; color: #fff; background: #7d6b5a; padding: 1px 5px; border-radius: 3px; margin-right: 5px; vertical-align: middle; letter-spacing: 0.3px; cursor: help; -webkit-user-select: none; user-select: none; }
+  .miss-badge.critical { background: #c0392b; }
+  .miss-badge.remove { background: #c0392b; animation: pulse-red 1.2s infinite; }
+  @keyframes pulse-red { 0%,100% { opacity:1; } 50% { opacity:0.6; } }
+  /* Removed Incidents Panel */
+  .removed-panel { margin-top: 24px; border: 2px solid #c0392b; border-radius: 6px; background: #fdf5f5; }
+  .removed-panel-header { display: flex; align-items: center; justify-content: space-between; padding: 10px 14px; background: #c0392b; color: #fff; border-radius: 4px 4px 0 0; cursor: pointer; font-weight: 700; font-size: 13px; }
+  .removed-panel-header span { font-size: 11px; font-weight: 400; opacity: 0.85; }
+  .removed-panel-body { padding: 10px 14px; }
+  .removed-fire-row { display: flex; align-items: center; gap: 10px; padding: 6px 8px; border-bottom: 1px solid #f0d8d8; font-size: 12px; }
+  .removed-fire-row:last-child { border-bottom: none; }
+  .removed-fire-name { font-weight: 700; min-width: 160px; }
+  .removed-fire-meta { color: #666; flex: 1; }
+  .removed-status-badge { display: inline-block; font-size: 9px; font-weight: 700; color: #fff; background: #c0392b; padding: 1px 5px; border-radius: 3px; }
+  .removed-threshold-badge { display: inline-block; font-size: 9px; font-weight: 700; color: #fff; background: #e67e22; padding: 1px 5px; border-radius: 3px; margin-left: 4px; }
+  .readd-btn { font-size: 11px; font-weight: 600; padding: 3px 10px; background: #1a6b1a; color: #fff; border: none; border-radius: 4px; cursor: pointer; white-space: nowrap; }
+  .readd-btn:hover { background: #145214; }
+  .reincluded-badge { display: inline-block; font-size: 9px; font-weight: 700; color: #fff; background: #e67e22; padding: 1px 6px; border-radius: 3px; margin-left: 6px; vertical-align: middle; letter-spacing: 0.3px; cursor: help; -webkit-user-select: none; user-select: none; }
+  .narr-line.reincluded { border-left-color: #e67e22 !important; background: #fef5ec !important; }
+  .narr-line.reincluded:hover { background: #fdebd0 !important; }
   .narr-line.stale { border-left-color: #c0392b !important; background: #fde8e5 !important; }
   table.imsr tr.stale td { background: #fde8e5 !important; }
   table.imsr tr.discrep td { outline: 2px solid #2471a3; outline-offset: -2px; }
@@ -184,6 +207,7 @@
   .narr-line[draggable="true"] { cursor: grab; }
   .narr-line.narr-dragging { opacity: 0.3; }
   .narr-line.narr-drag-over { box-shadow: 0 -2px 0 0 #2565ae; }
+  .narr-line.narr-drag-over-bottom { box-shadow: 0 2px 0 0 #2565ae; }
   .name-edit-btn { cursor: pointer; color: var(--muted); font-size: 11px; margin-left: 3px; opacity: 0.4; }
   .name-edit-btn:hover { opacity: 1; color: #2565ae; }
   .name-edit-input { font-family: inherit; font-size: inherit; font-weight: 700; border: 1px solid #2565ae; border-radius: 3px; padding: 1px 4px; outline: none; min-width: 120px; }
@@ -387,11 +411,13 @@ const fileListEl = document.getElementById('file-list');
 
 // Store all parsed incidents
 let allIncidents = [];
+let removedIncidents = []; // Fires with MAP Status KO/KO!/DR/N that have a 209 but don't meet re-inclusion criteria
 // Previous IMSR data for comparison: Map of normKey → {name, unit, acres, ppl, pct}
 let prevIMSR = null;
 let templateDocxBytes = null; // Raw .docx bytes for IMSR generation template
 let _btnCopy = false; // bypass copy listener during button-triggered copies
 let deletedFires = new Set(); // keys of fires manually removed by user
+let deletedPrevFires = new Set(); // keys of prev-IMSR-only fires removed by user
 let lastRptLabelOff = new Set();   // fires with kick-off label suppressed
 let lastRptForceActive = new Set(); // fires forced back to active sort
 let narrFilterState = 'all'; // persists across re-renders: 'all' or 'hide100'
@@ -548,7 +574,8 @@ function showIMSRDiagnostic() {
 // ── MAP DROP ZONE ─────────────────────────────────────────────────────────
 // IMSR MAP xlsx — cumulative file of every fire ever on the IMSR this season.
 // Keyed by Incident_Number. Used to detect re-entry fires (FALLOFF-08).
-let mapData = null; // Map of incident_number → { name, gacc, imt_type, ... }
+let mapData = null;       // Map of incident_number → { name, gacc, imt_type, ... }
+let mapDataByName = null; // Map of normalized name → mapData entry (for missed fire lookups)
 let manualGaccOrder = null; // Array of GACC keys — manual reorder override
 
 const mapDropZone  = document.getElementById('map-drop-zone');
@@ -574,6 +601,99 @@ function setMapStatus(msg, type='loading') {
   mapStatusEl.style.display = '';
 }
 
+// Advance a fire's MAP status by N missed IMSR dates.
+// Terminal statuses (KO/KO!/DR/N) don't advance further.
+// KOS fires become KO after any absence. A fires that disappear become KO!
+function advanceStatus(status, steps) {
+  if (steps <= 0) return status;
+  if (['KO','KO!','DR','N'].includes(status)) return status;
+  if (status === 'KOS') return 'KO';   // soft flag → confirmed KO after any absence
+  if (status === 'A')   return 'KO!';  // gone without warning day
+  const prog = {'M1':'M2','M2':'M3','M3':'M4','M4':'M5','M5':'DR'};
+  let s = status;
+  for (let i = 0; i < steps; i++) {
+    s = prog[s] || 'DR';
+    if (s === 'DR') break;
+  }
+  return s;
+}
+
+// ── MAP STATUS GATE ──────────────────────────────────────────────────────
+// Separates fires with MAP Status KO/KO!/DR/N into removedIncidents.
+// Called after PDFs load AND after MAP Master loads — whichever comes second
+// is what actually activates the gate. Safe to call multiple times.
+function reapplyMapGate() {
+  // Merge any previously removed fires back into allIncidents first,
+  // so we always gate against the full set of loaded 209s.
+  for (const f of removedIncidents) {
+    delete f._removedStatus;
+    delete f._acresDelta;
+    delete f._strcDelta;
+    delete f._cimtAdded;
+    delete f._meetsThreshold;
+    delete f._mapLastSize;
+    delete f._mapLastPct;
+    delete f._mapDate;
+    allIncidents.push(f);
+  }
+  // Also merge back any reincluded fires that were previously auto-moved
+  // (reapplyMapGate will re-evaluate them against current mapData)
+  allIncidents.forEach(f => {
+    delete f._reincluded;
+    delete f._reinclusionReason;
+  });
+  removedIncidents = [];
+
+  if (!mapData) return; // No MAP loaded — all fires stay in main display
+
+  const REMOVED_STATUSES = new Set(['KO','KO!','DR','N']);
+  const kept = [];
+  for (const f of allIncidents) {
+    const incNum = (f.f2 || '').toUpperCase();
+    const entry  = mapData.get(incNum);
+    if (!entry || !REMOVED_STATUSES.has(entry.status)) {
+      kept.push(f);
+      continue;
+    }
+    const currentAcres   = parseInt((f.f7 || '').replace(/,/g,'')) || 0;
+    const acresDelta     = currentAcres - (entry.size || 0);
+    const currentStrc    = (f.resDestroyed || 0) + (f.strDestroyed || 0);
+    const strcDelta      = currentStrc - (entry.strcLost || 0);
+    const cimtAdded      = !!(f.hasCIMT || f.hasNIMO);
+    const fatalityReport = !!f.fatalThisPeriod;
+    const meetsThreshold = cimtAdded || acresDelta >= 1000 || strcDelta > 0 || fatalityReport;
+
+    // Build reason string for badge
+    const reasons = [];
+    if (cimtAdded)          reasons.push('CIMT assigned');
+    if (acresDelta >= 1000) reasons.push(`+${acresDelta.toLocaleString()} ac growth`);
+    if (strcDelta > 0)      reasons.push(`+${strcDelta} structure${strcDelta !== 1 ? 's' : ''} lost`);
+    if (fatalityReport)     reasons.push('Fatality reported');
+
+    if (meetsThreshold) {
+      // Auto-move to main display — fire meets re-inclusion criteria
+      f._reincluded        = true;
+      f._reinclusionReason = reasons.join(' · ');
+      f._removedStatus     = entry.status;
+      f._mapLastSize       = entry.size;
+      f._mapLastPct        = entry.lastPct;
+      f._mapDate           = entry.mapDate;
+      kept.push(f);
+    } else {
+      f._removedStatus  = entry.status;
+      f._acresDelta     = acresDelta;
+      f._strcDelta      = strcDelta;
+      f._cimtAdded      = cimtAdded;
+      f._meetsThreshold = false;
+      f._mapLastSize    = entry.size;
+      f._mapLastPct     = entry.lastPct;
+      f._mapDate        = entry.mapDate;
+      removedIncidents.push(f);
+    }
+  }
+  allIncidents = kept;
+}
+
 async function handleMapFiles(files) {
   // Sort by filename so later dates overwrite earlier for same incident
   files.sort((a, b) => a.name.localeCompare(b.name));
@@ -596,7 +716,9 @@ async function handleMapFiles(files) {
       const imtCol = headers.find(h => /imt.?type/i.test(h));
       const pctCol = headers.find(h => /100.?pct/i.test(h));
       const sizeCol = headers.find(h => /incident.?size/i.test(h));
-      const mapDateCol = headers.find(h => /map.?date/i.test(h));
+      const mapDateCol  = headers.find(h => /map.?date/i.test(h));
+      const statusCol   = headers.find(h => /^status$/i.test(h));
+      const strcLostCol = headers.find(h => /strc.?lost/i.test(h));
       if (!incNumCol) { console.warn('MAP file missing Incident_Number:', file.name); continue; }
 
       for (const row of rows) {
@@ -621,12 +743,15 @@ async function handleMapFiles(files) {
         // Keep the entry with the most recent MAP_Date (append-only file, later rows win)
         if (!existingEntry || !existingEntry.mapDate || (mapDate && mapDate >= existingEntry.mapDate)) {
           mapData.set(incNum, {
-            name: String(row[incNameCol] || '').trim(),
-            gacc: String(row[gaccCol] || '').trim(),
-            imt:  String(row[imtCol] || '').trim(),
-            pct100: String(row[pctCol] || '').trim(),
-            size: newSize,
-            mapDate: mapDate,
+            name:     String(row[incNameCol] || '').trim(),
+            gacc:     String(row[gaccCol]    || '').trim(),
+            imt:      String(row[imtCol]     || '').trim(),
+            pct100:   String(row[pctCol]     || '').trim(),
+            size:     newSize,
+            mapDate:  mapDate,
+            status:   statusCol   ? String(row[statusCol]   || '').trim() : '',
+            strcLost: strcLostCol ? (parseInt(row[strcLostCol]) || 0)      : 0,
+            lastPct:  pctCol      ? (row[pctCol] === 'c' || row[pctCol] === 'C' ? 100 : null) : null,
           });
         }
         rowsAdded++;
@@ -647,12 +772,41 @@ async function handleMapFiles(files) {
     const fmt = d => `${d.getMonth()+1}/${d.getDate()}`;
     dateRange = ` · ${fmt(minD)}–${fmt(maxD)}`;
   }
+
+  // ── STATUS ADVANCEMENT ───────────────────────────────────────────────
+  // The master only writes rows for dates when a fire appeared in the IMSR.
+  // Once absent, status freezes. Advance each fire's status by counting
+  // how many MAP dates in the master came AFTER its last appearance.
+  // This correctly promotes M2→DR, KOS→KO, etc. without waiting for the
+  // script to write exit-status rows.
+  const allMapDates = [...new Set(allDates)].sort((a, b) => a - b);
+  for (const [incNum, entry] of mapData) {
+    if (!entry.mapDate || !entry.status) continue;
+    const datesAfter = allMapDates.filter(d => d > entry.mapDate).length;
+    if (datesAfter > 0) {
+      entry.status = advanceStatus(entry.status, datesAfter);
+    }
+  }
+
+  // Build name-based reverse lookup for missed fire miss-count display
+  // Missed fires from prevIMSR don't have incident numbers — match by normalized name
+  mapDataByName = new Map();
+  for (const [incNum, entry] of mapData) {
+    if (!entry.name) continue;
+    const normN = entry.name.toLowerCase().replace(/[^a-z0-9]/g,'');
+    if (!mapDataByName.has(normN)) mapDataByName.set(normN, entry);
+  }
   setMapStatus(`✓ ${mapData.size} incidents loaded from IMSR MAP${plural}${dateRange}`, 'ok');
-  if (allIncidents.length) renderOutput();
+  if (allIncidents.length) {
+    reapplyMapGate();
+    updateFileList();
+    renderOutput();
+  }
 }
 
 function clearMap() {
   mapData = null;
+  mapDataByName = null;
   mapStatusEl.style.display = 'none';
   if (allIncidents.length) renderOutput();
 }
@@ -957,13 +1111,15 @@ async function handleFiles(files) {
     return pa - pb;
   });
 
+  reapplyMapGate();
   updateFileList();
   renderOutput();
   setStatus(`✓ ${allIncidents.length} incident${allIncidents.length !== 1 ? 's' : ''} loaded — sorted by threat → behavior → % contained`, 'ok');
 }
 
 function updateFileList() {
-  fileListEl.innerHTML = allIncidents.map(f => {
+  // Row 1: 209-loaded fires
+  const tags209 = allIncidents.map(f => {
     const key = normKey(f.f1, f.unit);
     const isDel = deletedFires.has(key);
     if (isDel) {
@@ -971,10 +1127,38 @@ function updateFileList() {
     }
     return `<span>${f.f1 || f._filename}</span>`;
   }).join('');
+
+  // Row 2: prev IMSR fires with no matching 209
+  let tagsPrev = '';
+  if (prevIMSR && prevIMSR.size > 0) {
+    const matchedKeys = new Set(allIncidents.map(f => normKey(f.f1, f.unit)));
+    for (const f of allIncidents) {
+      const pm = prevMatch(f);
+      if (pm) matchedKeys.add(normKey(pm.name, pm.unit));
+    }
+    const unmatched = [...prevIMSR.entries()].filter(([k]) => !matchedKeys.has(k));
+    if (unmatched.length) {
+      const prevTags = unmatched.map(([key, v]) => {
+        const isDel = deletedPrevFires.has(key);
+        if (isDel) {
+          return `<span class="prev-fire deleted" onclick="restorePrevFire('${key.replace(/'/g,"\\'")}')" title="Click to restore from prev IMSR">${v.name}</span>`;
+        }
+        return `<span class="prev-fire" title="From previous IMSR — no 209 loaded yet">${v.name}</span>`;
+      }).join('');
+      tagsPrev = `<br><span class="prev-label">prev IMSR (no 209):</span>${prevTags}`;
+    }
+  }
+
+  fileListEl.innerHTML = tags209 + tagsPrev;
 }
 
 function restoreFire(key) {
   deletedFires.delete(key);
+  renderOutput();
+}
+
+function restorePrevFire(key) {
+  deletedPrevFires.delete(key);
   renderOutput();
 }
 
@@ -1107,6 +1291,13 @@ function parseFields(text) {
     f.f1 = incM2 ? incM2[1].trim() : '';
   }
 
+  // Clean separator characters from fire names:
+  // " - " and " – " (space-dash-space) are separators, not part of the name
+  // " ? " can appear from encoding corruption
+  if (f.f1) {
+    f.f1 = f.f1.replace(/\s+[-–—]\s+/g, ' ').replace(/\s*\?\s*/g, ' ').replace(/\s{2,}/g, ' ').trim();
+  }
+
   f.f2 = grab(text, /([A-Z]{2}-[A-Z0-9]+-\S+)/);
   f.unit = f.f2 ? f.f2.split('-').slice(0, 2).join('-') : '';
   f.originOwn = deriveOwn(f.f2);
@@ -1233,6 +1424,23 @@ function parseFields(text) {
   const box40 = grabBlock(text, /40\.\s*[\s\S]{0,200}?:\s*/i, /41\.|Narrative:/i);
   const box41 = grabBlock(text, /41\.\s*[\s\S]{0,200}?:\s*/i, /42\.|Narrative:/i);
   const box47 = grabBlock(text, /47\.\s*[\s\S]{0,200}?:\s*/i, /48\.|Narrative:/i);
+
+  // Box 31D / 32D — fatalities this reporting period
+  // Format: "D. Fatalities  [prev total]  [this period]  [total to date]"
+  // We want "this reporting period" column (second number after label)
+  function parseFatalityRow(label, searchText) {
+    const m = searchText.match(new RegExp(label + '[\\s\\S]{0,30}?D\\.\\s*Fatalities\\s+(\\d+)\\s+(\\d+)', 'i'));
+    if (m) return parseInt(m[2]) || 0;
+    // Alternate: just scan for "D. Fatalities" with two numbers nearby
+    const m2 = searchText.match(/D\.\s*Fatalities\s+(\d+)\s+(\d+)/i);
+    if (m2) return parseInt(m2[2]) || 0;
+    return 0;
+  }
+  const box31block = grabBlock(text, /31\.\s*Public Status/i, /32\.\s*Responder/i);
+  const box32block = grabBlock(text, /32\.\s*Responder Status/i, /33\.|Narrative:/i);
+  const civilianFatal  = parseFatalityRow('31', box31block);
+  const responderFatal = parseFatalityRow('32', box32block);
+  f.fatalThisPeriod = (civilianFatal + responderFatal) > 0;
 
   const infraScanText = [box30,box33,box35,box36,box38,box40,box41,box47].join(' ');
   f._infra = detectInfrastructure(infraScanText);
@@ -7365,6 +7573,12 @@ function buildNarrativeLines(incidents, cssClass='', dragKey='') {
     const ret100 = (prev && prev.pct >= 100 && is100(f)) ? ' returning-100' : '';
     const ret100Badge = (prev && prev.pct >= 100 && is100(f)) ? '<span class="ret100-badge" title="Returning fire still at 100% contained — was 100% in previous IMSR">RETURNING 100% · NO CHANGE</span>' : '';
 
+    // REINCLUSION — fire was KO/DR/N but meets re-inclusion criteria (auto-moved from Removed panel)
+    const reincludedClass = f._reincluded ? ' reincluded' : '';
+    const reincludedBadge = f._reincluded
+      ? `<span class="reincluded-badge" title="Previously removed — auto-re-included: ${f._reinclusionReason}">REINCLUSION · ${f._reinclusionReason}</span>`
+      : '';
+
     // Box 3 vs Box 8a discrepancy — use original % if FINAL override was applied
     const pctVal = parseInt(f.f8a || 0);
     const origPct = f._originalPct ? parseInt(f._originalPct) : pctVal;
@@ -7415,7 +7629,7 @@ function buildNarrativeLines(incidents, cssClass='', dragKey='') {
     }
 
     const delBtn = `<button class="narr-del" title="Remove this fire" onclick="deleteSingleFire('${f.f2}','')">✕</button>`;
-    return `<div class="narr-line ${cssClass}${lastRptClass}${ret100}${discrepClass}${ctn100Class}${staleClass}${reentryClass}${managedClass}" data-inc="${f.f2}" data-pct="${f.f8a || 0}"${dragAttrs}>${gripHtml}${nameHtml}${lastRptBadge}${ret100Badge}${reentryBadge}${discrepBadge}${staleBadge}${managedBadge}, ${managingOrg}${cimtLabel}.${alsoManaging}${reentryStmt} ${sentence}${precipFlag}${kickoffControls}${delBtn}</div>`;
+    return `<div class="narr-line ${cssClass}${lastRptClass}${ret100}${discrepClass}${ctn100Class}${staleClass}${reentryClass}${managedClass}${reincludedClass}" data-inc="${f.f2}" data-pct="${f.f8a || 0}"${dragAttrs}>${gripHtml}${nameHtml}${lastRptBadge}${ret100Badge}${reentryBadge}${reincludedBadge}${discrepBadge}${staleBadge}${managedBadge}, ${managingOrg}${cimtLabel}.${alsoManaging}${reentryStmt} ${sentence}${precipFlag}${kickoffControls}${delBtn}</div>`;
   }).join('<div class="narr-spacer"><br></div>');
 }
 
@@ -7543,8 +7757,12 @@ function narrDragOver(e) {
   e.dataTransfer.dropEffect = 'move';
   const row = e.target.closest('.narr-line[data-drag-key]');
   if (!row || row.dataset.dragKey !== _narrDragKey) return;
-  document.querySelectorAll('.narr-drag-over').forEach(r => r.classList.remove('narr-drag-over'));
-  row.classList.add('narr-drag-over');
+  document.querySelectorAll('.narr-drag-over, .narr-drag-over-bottom').forEach(r => {
+    r.classList.remove('narr-drag-over', 'narr-drag-over-bottom');
+  });
+  // Show insert-before indicator (top half) or insert-after indicator (bottom half)
+  const rect = row.getBoundingClientRect();
+  row.classList.add(e.clientY < rect.top + rect.height / 2 ? 'narr-drag-over' : 'narr-drag-over-bottom');
 }
 
 function narrDrop(e) {
@@ -7556,18 +7774,28 @@ function narrDrop(e) {
   const order = manualOrder[_narrDragKey];
   if (!order) return;
   const fromIdx = order.indexOf(_narrDragF2);
-  const toIdx = order.indexOf(toF2);
+  const toIdx   = order.indexOf(toF2);
   if (fromIdx < 0 || toIdx < 0) return;
+
+  // Position-aware insertion:
+  // Drop on top half of target → insert BEFORE target
+  // Drop on bottom half of target → insert AFTER target
+  const rect = row.getBoundingClientRect();
+  const insertAfter = e.clientY >= rect.top + rect.height / 2;
+
   order.splice(fromIdx, 1);
-  order.splice(toIdx, 0, _narrDragF2);
+  // After removing fromIdx, all indices above it shift down by 1
+  const adjustedTo = toIdx > fromIdx ? toIdx - 1 : toIdx;
+  const insertAt   = insertAfter ? adjustedTo + 1 : adjustedTo;
+  order.splice(Math.max(0, Math.min(insertAt, order.length)), 0, _narrDragF2);
   renderOutput();
 }
 
 function narrDragEnd(e) {
   _narrDragKey = null;
-  _narrDragF2 = null;
-  document.querySelectorAll('.narr-dragging, .narr-drag-over').forEach(el => {
-    el.classList.remove('narr-dragging', 'narr-drag-over');
+  _narrDragF2  = null;
+  document.querySelectorAll('.narr-dragging, .narr-drag-over, .narr-drag-over-bottom').forEach(el => {
+    el.classList.remove('narr-dragging', 'narr-drag-over', 'narr-drag-over-bottom');
   });
 }
 
@@ -7701,7 +7929,7 @@ function renderOutput() {
     if (nameEdited.has(f.f2)) return; // analyst edited this session
     if (mapData) {
       const mapEntry = mapData.get(f.f2);
-      if (mapEntry && mapEntry.name) { f.f1 = mapEntry.name.replace(/\s*[-?]\s*/g, ' ').replace(/\s{2,}/g, ' ').trim(); return; }
+      if (mapEntry && mapEntry.name) { f.f1 = mapEntry.name.replace(/\s*[-–—?]\s*/g, ' ').replace(/\s{2,}/g, ' ').trim(); return; }
     }
     const prev = prevMatch(f);
     if (prev && prev.name) f.f1 = prev.name;
@@ -7783,6 +8011,32 @@ function renderOutput() {
       if (p.pct >= 100) continue;
       if (matchedKeys.has(key)) continue;
       if (deletedFires.has(key)) continue;
+      if (deletedPrevFires.has(key)) continue;
+      // FALLOFF-04: if this fire is at its 6th miss, auto-move to Removed Incidents panel
+      const missCount = getMissCount(p);
+      if (missCount >= 6) {
+        // Build a synthetic fire object for the Removed Incidents panel
+        const synth = {
+          f1: p.name, f2: null, f7: p.acres ? p.acres.toLocaleString() : '0',
+          f8a: String(p.pct || 0),
+          resDestroyed: 0, strDestroyed: 0, hasCIMT: false, hasNIMO: false,
+          _removedStatus: 'DR',
+          _acresDelta: 0, _strcDelta: 0, _cimtAdded: false, _meetsThreshold: false,
+          _mapLastSize: p.acres || 0, _mapLastPct: null, _mapDate: null,
+          _fromMissed: true, // flag so Re-add routes back to prevIMSR track
+          _missedKey: key,
+        };
+        // Try to get MAP date for the "Dropped" display
+        if (mapDataByName) {
+          const normN = (p.name||'').toLowerCase().replace(/[^a-z0-9]/g,'');
+          const me = mapDataByName.get(normN);
+          if (me) { synth._mapDate = me.mapDate; synth._mapLastSize = me.size || p.acres || 0; }
+        }
+        if (!removedIncidents.find(r => r.f1 === p.name)) {
+          removedIncidents.push(synth);
+        }
+        continue; // do not add to missedByGacc
+      }
       const unitCode = (p.unit || '').toUpperCase().replace(/-\d+$/, '');
       const gacc = UNIT_GACC_OVERRIDE[unitCode] || STATE_TO_GACC[(p.unit || '').slice(0,2).toUpperCase()] || 'UNKNOWN';
       (missedByGacc[gacc] = missedByGacc[gacc] || []).push(p);
@@ -8028,11 +8282,13 @@ function renderOutput() {
 
   // Count re-entry fires
   const reentryCount = mapData ? qualifying.concat(nonQualifying).filter(f => isReentry(f)).length : 0;
+  const removedCount = removedIncidents.length;
+  const removedThresholdCount = removedIncidents.filter(f => f._meetsThreshold).length;
 
   outputEl.style.display = 'block';
   outputEl.innerHTML = `
     <div class="summary">
-      <strong>${qualifying.length}</strong> qualifying · <strong>${nonQualifying.length}</strong> non-qualifying across <strong>${gaccKeys.length}</strong> GACC${gaccKeys.length !== 1 ? 's' : ''}${reentryCount ? ` · <span style="color:#b8960a;font-weight:600;">${reentryCount} dropped</span>` : ''}${deletedFires.size ? ` · <span style="color:#c0392b;font-weight:600;">${deletedFires.size} deleted</span>` : ''}
+      <strong>${qualifying.length}</strong> qualifying · <strong>${nonQualifying.length}</strong> non-qualifying across <strong>${gaccKeys.length}</strong> GACC${gaccKeys.length !== 1 ? 's' : ''}${reentryCount ? ` · <span style="color:#b8960a;font-weight:600;">${reentryCount} dropped</span>` : ''}${removedCount ? ` · <span style="color:#c0392b;font-weight:600;cursor:pointer;" onclick="document.getElementById('removed-panel').scrollIntoView({behavior:'smooth'})">${removedCount} removed${removedThresholdCount ? ` (${removedThresholdCount} flagged)` : ''}</span>` : ''}${deletedFires.size ? ` · <span style="color:#c0392b;font-weight:600;">${deletedFires.size} deleted</span>` : ''}
       <span style="float:right;">
         <button class="copy-btn" onclick="generateIMSR()" style="background:${templateDocxBytes ? '#1a6b1a' : '#888'};margin-right:6px;" title="${templateDocxBytes ? 'Generate complete IMSR .docx from template' : 'Drop a .docx (not PDF) in the previous IMSR zone first'}">⬇ Generate IMSR${templateDocxBytes ? '' : ' (need .docx)'}${autoSitData ? ' ✓' : ''}</button>
         <button class="copy-btn narr" onclick="copyAllNarr(this)" style="margin-right:6px;">Copy All Narratives</button>
@@ -8053,6 +8309,109 @@ function renderOutput() {
   `;
   // Reapply narrative filter (persists across re-renders from delete, precip toggle, etc.)
   if (narrFilterState !== 'all') applyNarrFilter(narrFilterState);
+
+  // ── REMOVED INCIDENTS PANEL ──────────────────────────────────────────
+  // Fires with MAP Status KO/KO!/DR/N that submitted a 209 today.
+  // Threshold-meeting fires flagged in orange — analyst should consider re-adding.
+  let removedPanelEl = document.getElementById('removed-panel');
+  if (!removedPanelEl) {
+    removedPanelEl = document.createElement('div');
+    removedPanelEl.id = 'removed-panel';
+    outputEl.parentNode.insertBefore(removedPanelEl, outputEl.nextSibling);
+  }
+  if (removedIncidents.length === 0) {
+    removedPanelEl.style.display = 'none';
+    removedPanelEl.innerHTML = '';
+  } else {
+    removedPanelEl.style.display = 'block';
+    removedPanelEl.className = 'removed-panel';
+    const flaggedCount = removedIncidents.filter(f => f._meetsThreshold).length;
+
+    // Sort removed incidents:
+    // 1. Threshold met (re-inclusion criteria) → top
+    // 2. Highest acre growth descending
+    // 3. % containment decrease (most decreased first = lowest curPct - lastPct)
+    // 4. Most recently dropped (mapDate descending)
+    const sortedRemoved = [...removedIncidents].sort((a, b) => {
+      // Threshold fires first
+      if (a._meetsThreshold !== b._meetsThreshold) return a._meetsThreshold ? -1 : 1;
+      // Acre growth descending
+      const aDelta = a._acresDelta || 0, bDelta = b._acresDelta || 0;
+      if (bDelta !== aDelta) return bDelta - aDelta;
+      // % containment decrease — compute delta where available
+      const aCurPct = parseInt(a.f8a) || 0, bCurPct = parseInt(b.f8a) || 0;
+      const aLastPct = a._mapLastPct !== null ? a._mapLastPct : aCurPct;
+      const bLastPct = b._mapLastPct !== null ? b._mapLastPct : bCurPct;
+      const aPctDelta = aCurPct - aLastPct, bPctDelta = bCurPct - bLastPct;
+      if (aPctDelta !== bPctDelta) return aPctDelta - bPctDelta; // most decreased (negative) first
+      // Most recently dropped descending
+      const aDate = a._mapDate instanceof Date ? a._mapDate.getTime() : 0;
+      const bDate = b._mapDate instanceof Date ? b._mapDate.getTime() : 0;
+      return bDate - aDate;
+    });
+
+    const rowsHtml = sortedRemoved.map(f => {
+      const statusLabel = {'KO':'Kicked Off','KO!':'Kicked Off (no warning day)','DR':'Dropped (missed 209s)','N':'Natural (100% contained)'}[f._removedStatus] || f._removedStatus;
+      const mapEntry = mapData ? mapData.get((f.f2||'').toUpperCase()) : null;
+      const gacc     = (mapEntry || {}).gacc || '';
+
+      // Dropped date + days ago
+      const mapDateObj = f._mapDate instanceof Date ? f._mapDate : null;
+      let droppedStr = 'Previously removed';
+      if (mapDateObj) {
+        const daysAgo = Math.floor((Date.now() - mapDateObj) / 86400000);
+        droppedStr = `Dropped: ${mapDateObj.getMonth()+1}/${mapDateObj.getDate()} (${daysAgo}d ago)`;
+      }
+
+      // Last IMSR acreage + pct
+      const lastAcres   = f._mapLastSize || 0;
+      const lastPct     = f._mapLastPct;
+      const lastAcreStr = lastAcres > 0 ? lastAcres.toLocaleString() + ' ac' : '—';
+      const lastPctStr  = lastPct !== null ? ` · ${lastPct}%` : '';
+      const lastIMSR    = `Last IMSR: ${lastAcreStr}${lastPctStr}`;
+
+      // Current 209 acreage + pct
+      const curAcres = parseInt((f.f7 || '').replace(/,/g,'')) || 0;
+      const curPct   = parseInt(f.f8a) || 0;
+      const cur209   = `Current 209: ${curAcres.toLocaleString()} ac · ${curPct}%`;
+
+      // Acre delta
+      const acreDelta    = f._acresDelta;
+      const acreDeltaStr = acreDelta > 0 ? `+${acreDelta.toLocaleString()} ac`
+                         : acreDelta < 0 ? `${acreDelta.toLocaleString()} ac`
+                         : 'No acre change';
+
+      // Pct delta — only shown if we have last known pct
+      let pctDeltaStr = '';
+      if (lastPct !== null) {
+        const pctDelta = curPct - lastPct;
+        pctDeltaStr = pctDelta === 0 ? ' · No containment change'
+                    : ` · ${pctDelta > 0 ? '+' : ''}${pctDelta}% containment`;
+      }
+
+      const reasons = [];
+      if (f._cimtAdded)          reasons.push('CIMT assigned');
+      if (f._acresDelta >= 1000) reasons.push(`+${f._acresDelta.toLocaleString()} ac growth`);
+      if (f._strcDelta > 0)      reasons.push(`+${f._strcDelta} structure${f._strcDelta!==1?'s':''} lost`);
+      const thresholdHtml = f._meetsThreshold
+        ? reasons.map(r => `<span class="removed-threshold-badge">⚑ ${r}</span>`).join(' ')
+        : '';
+
+      return `<div class="removed-fire-row">
+        <div class="removed-fire-name">${f.f1 || f.f2}</div>
+        <span class="removed-status-badge" title="${statusLabel}">${f._removedStatus}</span>
+        ${thresholdHtml}
+        <div class="removed-fire-meta">${gacc ? gacc+' · ' : ''}${droppedStr} · ${lastIMSR} · ${cur209} · ${acreDeltaStr}${pctDeltaStr}</div>
+        <button class="readd-btn" onclick="reAddFire('${f.f2 || f.f1}')" title="Re-add to main display. Fire gets Previously reported treatment.">↑ Re-add to IMSR</button>
+      </div>`;
+    }).join('');
+    removedPanelEl.innerHTML = `
+      <div class="removed-panel-header" onclick="this.nextElementSibling.style.display=this.nextElementSibling.style.display==='none'?'block':'none'">
+        ⚠ Removed Incidents — ${removedIncidents.length} fire${removedIncidents.length!==1?'s':''} with 209s excluded from IMSR
+        <span>${flaggedCount ? `${flaggedCount} meet re-inclusion criteria — review` : 'None meet re-inclusion criteria'}</span>
+      </div>
+      <div class="removed-panel-body">${rowsHtml}</div>`;
+  }
 
   // Update PL panel — show only for active GACCs
   const plPanel = document.getElementById('pl-panel');
@@ -8131,8 +8490,11 @@ function deleteSingleFire(incNum, missedKey) {
     if (f) deletedFires.add(normKey(f.f1, f.unit));
   }
   if (missedKey) {
-    deletedFires.add(missedKey);
+    // Missed fires (prev IMSR only, no 209) go into deletedPrevFires
+    // so they appear as red restore tags in the prev IMSR row
+    deletedPrevFires.add(missedKey);
   }
+  updateFileList();
   renderOutput();
 }
 
@@ -8162,7 +8524,7 @@ function copyAllNarr(btn) {
       const bEl = div.querySelector('b');
       const name = bEl ? bEl.textContent.trim() : '';
       const clone = div.cloneNode(true);
-      clone.querySelectorAll('button, .last-rpt-badge, .ret100-badge, .discrep-badge, .reentry-badge, .stale-badge').forEach(el => el.remove());
+      clone.querySelectorAll('button, .last-rpt-badge, .ret100-badge, .discrep-badge, .reentry-badge, .stale-badge, .miss-badge, .reincluded-badge').forEach(el => el.remove());
       const fullText = clone.textContent.trim();
       const rest = name && fullText.startsWith(name) ? fullText.slice(name.length) : fullText;
       const plain  = name + rest;
@@ -8206,7 +8568,7 @@ function copyNarrFromBlock(btn) {
       const bEl = el.querySelector('b');
       const name = bEl ? bEl.textContent.trim() : '';
       const clone = el.cloneNode(true);
-      clone.querySelectorAll('button, .last-rpt-badge, .ret100-badge, .discrep-badge, .reentry-badge, .stale-badge').forEach(n => n.remove());
+      clone.querySelectorAll('button, .last-rpt-badge, .ret100-badge, .discrep-badge, .reentry-badge, .stale-badge, .miss-badge, .reincluded-badge').forEach(n => n.remove());
       const fullText = clone.textContent.trim();
       const rest = name && fullText.startsWith(name) ? fullText.slice(name.length) : fullText;
       const plain  = name + rest;
@@ -8457,6 +8819,35 @@ async function fetchFromNIFC() {
 
 // ── MISSED FIRES ─────────────────────────────────────────────────────────
 
+// Compute today's effective miss count for a missed fire.
+// Tries MAP Master name lookup first (accurate M1-M5); falls back to
+// prevIMSR missCount + 1 (can only reach M3 from text markers).
+function getMissCount(p) {
+  if (mapDataByName) {
+    const normN = (p.name || '').toLowerCase().replace(/[^a-z0-9]/g,'');
+    const entry = mapDataByName.get(normN);
+    if (entry && entry.status) {
+      const m = entry.status.match(/^M(\d)$/);
+      if (m) return parseInt(m[1]) + 1; // advance by 1 for today's miss
+      if (entry.status === 'DR') return 6; // MAP says already dropped
+    }
+  }
+  // Fallback: prevIMSR text-derived count + 1 for today
+  return Math.min((p.missCount || 1) + 1, 5);
+}
+
+// Build a miss badge HTML string for display in missed fire lines.
+// Does NOT copy to IMSR .docx — parser UI only.
+function missBadgeHtml(missCount) {
+  if (missCount >= 6) {
+    return `<span class="miss-badge remove" title="FALLOFF-04: 6th consecutive miss — remove from IMSR">REMOVE</span>`;
+  }
+  if (missCount === 5) {
+    return `<span class="miss-badge critical" title="Miss 5 of 6 — one more miss triggers automatic removal">M5</span>`;
+  }
+  return `<span class="miss-badge" title="Miss ${missCount} of 6">M${missCount}</span>`;
+}
+
 // Build narr lines for missed fires (no 209 received) — inline in main narrative block
 function buildMissedNarrLines(missed) {
   return missed.map(p => {
@@ -8465,15 +8856,17 @@ function buildMissedNarrLines(missed) {
     const org  = (lookupUnit(p.unit) || unit || '').replace(/\s*\([A-Z]{2}\)$/, '') || '[MANAGING ORG]';
     const prevNarr = (p.narrative || '').trim();
     const suffix = p.missCount >= 2
-      ? 'No new information. Last report unless new information is received.'
+      ? 'No new information. Last narrative report unless new information is received.'
       : 'No new information.';
     const tail = prevNarr ? `${prevNarr}. ${suffix}` : suffix;
     const mKey = normKey(p.name, p.unit);
     const lastRptBadge = p.wasLastReport ? '<span class="last-rpt-badge" title="Previous IMSR contained a last-report statement.">LAST RPT ON PREVIOUS IMSR</span>' : '';
     const lastRptClass = p.wasLastReport ? ' last-rpt' : '';
     const delBtn = `<button class="narr-del" title="Remove this fire" onclick="deleteSingleFire('','${mKey}')">✕</button>`;
+    const missCount = getMissCount(p);
+    const mBadge = missBadgeHtml(missCount);
     return `<div class="narr-line${lastRptClass}" data-missed="1" data-missed-key="${mKey}">
-      <b>${name}</b>${lastRptBadge}, ${org}. ${tail}${delBtn}
+      ${mBadge}<b>${name}</b>${lastRptBadge}, ${org}. ${tail}${delBtn}
     </div>`;
   }).join('<div class="narr-spacer"><br></div>');
 }
@@ -8511,7 +8904,15 @@ function buildMissedTableRows(missed) {
       String(p.crw || 0), String(p.eng || 0), String(p.heli || 0),
       String(p.strc || 0), p.cost || 'NR', p.origin || '---'
     ];
-    const tds = COLS.map((c, i) => `<td>${cols[i] || '---'}</td>`).join('');
+    const tds = COLS.map((c, i) => {
+      // Prepend miss badge to the Incident Name cell (col 0) — display only, not copied
+      if (i === 0) {
+        const missCount = getMissCount(p);
+        const mBadge = missBadgeHtml(missCount);
+        return `<td>${mBadge}${cols[0] || '---'}</td>`;
+      }
+      return `<td>${cols[i] || '---'}</td>`;
+    }).join('');
     const missedClasses = [p.wasLastReport ? 'last-rpt' : ''].filter(Boolean).join(' ');
     const missedClassAttr = missedClasses ? ` class="${missedClasses}"` : '';
     return `<tr${missedClassAttr} data-missed-key="${mKey}">${tds}</tr>`;
@@ -8524,7 +8925,7 @@ function copyMissedNarr(btn) {
     const bEl = div.querySelector('b');
     const name = bEl ? bEl.textContent.trim() : '';
     const clone = div.cloneNode(true);
-    clone.querySelectorAll('button, .last-rpt-badge, .ret100-badge, .discrep-badge, .reentry-badge, .stale-badge').forEach(el => el.remove());
+    clone.querySelectorAll('button, .last-rpt-badge, .ret100-badge, .discrep-badge, .reentry-badge, .stale-badge, .miss-badge, .reincluded-badge').forEach(el => el.remove());
     const fullText = clone.textContent.trim();
     const rest = name && fullText.startsWith(name) ? fullText.slice(name.length) : fullText;
     const plain  = name + rest;
@@ -9895,7 +10296,9 @@ async function saveIMSR() {
 
 function clearAll() {
   allIncidents = [];
+  removedIncidents = [];
   deletedFires.clear();
+  deletedPrevFires.clear();
   lastRptLabelOff.clear();
   lastRptForceActive.clear();
   teamGroups = [];
@@ -9906,6 +10309,7 @@ function clearAll() {
   templateDocxBytes = null;
   autoSitData = null;
   mapData = null;
+  mapDataByName = null;
   mapStatusEl.style.display = 'none';
   nationalPL = '';
   gaccPLs = {};
@@ -9916,6 +10320,38 @@ function clearAll() {
   outputEl.style.display = 'none';
   outputEl.innerHTML = '';
   statusEl.style.display = 'none';
+  const removedPanelEl = document.getElementById('removed-panel');
+  if (removedPanelEl) { removedPanelEl.style.display = 'none'; removedPanelEl.innerHTML = ''; }
+}
+
+// Re-add a fire from the Removed Incidents panel back into the main display.
+// Analyst confirms the decision. Fire gets "Previously reported incident." treatment.
+function reAddFire(incNum) {
+  const idx = removedIncidents.findIndex(f => f.f2 === incNum || f.f1 === incNum);
+  if (idx < 0) return;
+  const f = removedIncidents.splice(idx, 1)[0];
+
+  if (f._fromMissed) {
+    // FALLOFF-04 fire — came from prevIMSR missed track, not a 209 fire
+    // Restore by removing from deletedPrevFires so it re-appears in missedByGacc
+    if (f._missedKey) deletedPrevFires.delete(f._missedKey);
+    // Override getMissCount to show M5 (one below removal threshold)
+    // by routing it back through the missed fire path
+    renderOutput();
+    return;
+  }
+
+  // Normal 209-loaded fire re-add
+  delete f._removedStatus;
+  delete f._acresDelta;
+  delete f._strcDelta;
+  delete f._cimtAdded;
+  delete f._meetsThreshold;
+  delete f._mapLastSize;
+  delete f._mapLastPct;
+  delete f._mapDate;
+  allIncidents.push(f);
+  renderOutput();
 }
 
 function clearIMSR() {
