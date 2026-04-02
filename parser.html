@@ -3,9 +3,10 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>IMSR Prep Tool v57.9</title>
+<title>IMSR Prep Tool v58.9</title>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
 <style>
   @import url('https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;600&family=IBM+Plex+Sans:wght@400;500;600&display=swap');
   :root {
@@ -81,6 +82,8 @@
 
   .file-list { font-family: 'IBM Plex Mono', monospace; font-size: 11px; color: var(--muted); margin-bottom: 16px; min-height: 18px; }
   .file-list span { display: inline-block; background: #e8e4dc; border-radius: 2px; padding: 2px 7px; margin: 2px 3px 2px 0; color: var(--label); }
+  .file-list span.deleted { background: #c0392b; color: #fff; cursor: pointer; font-weight: 600; }
+  .file-list span.deleted:hover { background: #e74c3c; }
 
   .status { font-family: 'IBM Plex Mono', monospace; font-size: 11px; margin-bottom: 16px; display: none; padding: 6px 10px; border-radius: 3px; }
   .status.ok { color: var(--good); background: #f0fff4; display: block; }
@@ -146,9 +149,9 @@
   .narr-line.discrep { border-left-color: #2471a3; background: #e8f2fd; }
   .ret100-badge { display: inline-block; font-size: 9px; font-weight: 700; color: #fff; background: #c0392b; padding: 1px 5px; border-radius: 3px; margin-left: 6px; vertical-align: middle; letter-spacing: 0.3px; cursor: help; -webkit-user-select: none; user-select: none; }
   .discrep-badge { display: inline-block; font-size: 9px; font-weight: 700; color: #fff; background: #2471a3; padding: 1px 5px; border-radius: 3px; margin-left: 6px; vertical-align: middle; letter-spacing: 0.3px; cursor: help; -webkit-user-select: none; user-select: none; }
-  .onedone-badge { display: inline-block; font-size: 9px; font-weight: 700; color: #fff; background: #d35400; padding: 1px 5px; border-radius: 3px; margin-left: 6px; vertical-align: middle; letter-spacing: 0.3px; cursor: help; -webkit-user-select: none; user-select: none; }
-  .narr-line.onedone { border-left-color: #c0392b !important; background: #fde8e5 !important; }
-  table.imsr tr.onedone td { background: #fde8e5 !important; }
+  .stale-badge { display: inline-block; font-size: 9px; font-weight: 700; color: #fff; background: #d35400; padding: 1px 5px; border-radius: 3px; margin-left: 6px; vertical-align: middle; letter-spacing: 0.3px; cursor: help; -webkit-user-select: none; user-select: none; }
+  .narr-line.stale { border-left-color: #c0392b !important; background: #fde8e5 !important; }
+  table.imsr tr.stale td { background: #fde8e5 !important; }
   table.imsr tr.discrep td { outline: 2px solid #2471a3; outline-offset: -2px; }
   table.imsr td.empty { color: var(--text); }
   table.imsr td input {
@@ -177,6 +180,13 @@
   .sort-pct  { min-width: 30px; text-align: right; color: var(--muted); }
   .sort-btn  { background: none; border: 1px solid var(--border); border-radius: 3px; padding: 0 5px; cursor: pointer; font-size: 10px; color: var(--muted); line-height: 16px; }
   .sort-btn:hover { background: var(--border); color: var(--text); }
+  .narr-grip { cursor: grab; color: var(--muted); font-size: 13px; line-height: 14px; user-select: none; margin-right: 4px; }
+  .narr-line[draggable="true"] { cursor: grab; }
+  .narr-line.narr-dragging { opacity: 0.3; }
+  .narr-line.narr-drag-over { box-shadow: 0 -2px 0 0 #2565ae; }
+  .name-edit-btn { cursor: pointer; color: var(--muted); font-size: 11px; margin-left: 3px; opacity: 0.4; }
+  .name-edit-btn:hover { opacity: 1; color: #2565ae; }
+  .name-edit-input { font-family: inherit; font-size: inherit; font-weight: 700; border: 1px solid #2565ae; border-radius: 3px; padding: 1px 4px; outline: none; min-width: 120px; }
   .sort-lock { font-size: 10px; opacity: .5; }
   .summary { font-family: 'IBM Plex Mono', monospace; font-size: 11px; color: var(--label); margin-bottom: 14px; }
   .narr-controls { display: flex; align-items: center; gap: 12px; margin-bottom: 14px; font-family: 'IBM Plex Mono', monospace; font-size: 11px; color: var(--label); }
@@ -298,12 +308,26 @@
     margin-left: 2px; user-select: none;
   }
   .team-edit-btn:hover { color: #8b1a1a; }
+  .drop-zone.autosit-zone { border-color: #2a7d2a; }
+  .drop-zone.autosit-zone:hover, .drop-zone.autosit-zone.drag-over { border-color: #2a7d2a; background: #f0faf0; }
+  .drop-zone.autosit-zone button { background: #2a7d2a; }
+  .pl-panel { background: var(--surface); border: 1px solid var(--border); border-radius: 6px; padding: 10px 14px; margin-bottom: 8px; font-family: 'IBM Plex Mono', monospace; }
+  .pl-panel .pl-title { font-size: 11px; font-weight: 600; color: var(--muted); letter-spacing: .04em; margin-bottom: 8px; }
+  .pl-panel .pl-row { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; margin-bottom: 4px; }
+  .pl-panel .pl-row:last-child { margin-bottom: 0; }
+  .pl-panel label { font-size: 11px; font-weight: 600; color: var(--text); min-width: 80px; }
+  .pl-panel select { font-family: inherit; font-size: 11px; padding: 2px 4px; border: 1px solid var(--border); border-radius: 3px; background: #fff; min-width: 36px; }
+  .pl-panel .gacc-pl { font-size: 10px; color: var(--muted); display: inline-flex; align-items: center; gap: 2px; }
+  .autosit-status { font-family: 'IBM Plex Mono', monospace; font-size: 12px; padding: 8px 12px; margin-bottom: 8px; border-radius: 4px; display: none; }
+  .autosit-status.ok  { color: #1a5c1a; background: #f0fff4; display: block; }
+  .autosit-status.err { color: var(--accent); background: #fff5f0; display: block; }
+  .autosit-status.loading { color: var(--muted); background: var(--surface); display: block; }
 </style>
 </head>
 <body>
 
 <header>
-  <h1>IMSR PREP TOOL <span style="float:right;font-size:11px;font-weight:400;color:var(--muted);letter-spacing:.04em;">v57.9</span></h1>
+  <h1>IMSR PREP TOOL <span style="float:right;font-size:11px;font-weight:400;color:var(--muted);letter-spacing:.04em;">v58.9</span></h1>
   <p>Drop one or more 209 PDFs — sorted by % contained, ready to paste into Word</p>
 </header>
 
@@ -314,23 +338,41 @@
     <input type="file" id="file-input" accept=".pdf" multiple>
   </div>
   <div class="drop-zone imsr-zone" id="imsr-drop-zone">
-    <p>Drop previous IMSR PDF here for comparison<br><small style="color:var(--muted);">Removes asterisks on returning fires · Calculates Chge in Acres &amp; PPL</small></p>
-    <button onclick="document.getElementById('imsr-file-input').click()">Select IMSR PDF</button>
+    <p>Drop previous IMSR (PDF or .docx) here for comparison<br><small style="color:var(--muted);">Removes asterisks on returning fires · Calculates Chge in Acres &amp; PPL · .docx also serves as formatting template for Generate IMSR</small></p>
+    <button onclick="document.getElementById('imsr-file-input').click()">Select IMSR (PDF or .docx)</button>
     <button onclick="clearIMSR()" style="margin-left:8px;background:var(--muted);color:#fff;border:none;padding:8px 14px;border-radius:3px;font-family:'IBM Plex Mono',monospace;font-size:11px;font-weight:600;cursor:pointer;">Clear IMSR</button>
-    <input type="file" id="imsr-file-input" accept=".pdf" style="display:none">
+    <input type="file" id="imsr-file-input" accept=".pdf,.docx" style="display:none">
   </div>
 </div>
 <div class="drop-zones" style="margin-top:0;">
   <div class="drop-zone map-zone" id="map-drop-zone">
-    <p>Drop IMSR MAP xlsx here<br><small style="color:var(--muted);">Identifies previously reported fires · Removes asterisk · Adds "Previously reported incident."</small></p>
+    <p>Drop IMSR MAP xlsx here<br><small style="color:var(--muted);">Identifies previously reported fires · Shows days since last IMSR appearance + acres change</small></p>
     <button onclick="document.getElementById('map-file-input').click()">Select MAP xlsx</button>
     <button onclick="clearMap()" style="margin-left:8px;background:var(--muted);color:#fff;border:none;padding:8px 14px;border-radius:3px;font-family:'IBM Plex Mono',monospace;font-size:11px;font-weight:600;cursor:pointer;">Clear MAP</button>
-    <input type="file" id="map-file-input" accept=".xlsx,.xls" style="display:none">
+    <input type="file" id="map-file-input" accept=".xlsx,.xls" multiple style="display:none">
+  </div>
+  <div class="drop-zone autosit-zone" id="autosit-drop-zone">
+    <p>Drop AutoSIT or F&A Report xlsx here<br><small style="color:var(--muted);">Resource Summary · F&A Yesterday · F&A YTD · Fills tables in generated .docx</small></p>
+    <button onclick="document.getElementById('autosit-file-input').click()">Select AutoSIT xlsx</button>
+    <button onclick="clearAutoSit()" style="margin-left:8px;background:var(--muted);color:#fff;border:none;padding:8px 14px;border-radius:3px;font-family:'IBM Plex Mono',monospace;font-size:11px;font-weight:600;cursor:pointer;">Clear</button>
+    <input type="file" id="autosit-file-input" accept=".xlsx,.xls" style="display:none">
   </div>
 </div>
 <div class="file-list" id="file-list"></div>
 <div class="imsr-status" id="imsr-status"></div>
 <div class="map-status" id="map-status"></div>
+<div class="autosit-status" id="autosit-status"></div>
+<div class="pl-panel" id="pl-panel" style="display:none;">
+  <div class="pl-title">PREPAREDNESS LEVELS</div>
+  <div class="pl-row">
+    <label>National PL:</label>
+    <select id="pl-national" onchange="nationalPL=this.value;">
+      <option value="">—</option>
+      <option value="1">1</option><option value="2">2</option><option value="3">3</option><option value="4">4</option><option value="5">5</option>
+    </select>
+  </div>
+  <div class="pl-row" id="gacc-pl-row"></div>
+</div>
 <div class="status" id="status"></div>
 <div class="output" id="output"></div>
 
@@ -347,15 +389,23 @@ const fileListEl = document.getElementById('file-list');
 let allIncidents = [];
 // Previous IMSR data for comparison: Map of normKey → {name, unit, acres, ppl, pct}
 let prevIMSR = null;
+let templateDocxBytes = null; // Raw .docx bytes for IMSR generation template
 let _btnCopy = false; // bypass copy listener during button-triggered copies
 let deletedFires = new Set(); // keys of fires manually removed by user
 let lastRptLabelOff = new Set();   // fires with kick-off label suppressed
 let lastRptForceActive = new Set(); // fires forced back to active sort
 let narrFilterState = 'all'; // persists across re-renders: 'all' or 'hide100'
+const nameEdited = new Set();   // fires manually renamed by analyst this session
+
+// ── AutoSIT / F&A Report Data ───────────────────────────────────────
+let autoSitData = null; // { resSummary: {AICC:{inc,acres,crews,eng,heli,ppl},...}, faYesterday: [{area,fires:[],acres:[]},...], faYTD: [...], iaTotal: N }
+let nationalPL = '';
+let gaccPLs = {};
 
 // ── CIMT/NIMO Team Manager ───────────────────────────────────────────
 // Each group: { teamName, teamType ('CIMT'|'NIMO'), primaryInc (incNum), managedIncs: [incNum...] }
 let teamGroups = [];
+let _teamsAutoPopulated = false;
 let teamEditMode = new Set(); // incident numbers currently in team-name edit mode
 
 // Accept PDFs by MIME type OR extension — Windows drag-from-Explorer often sends empty MIME
@@ -374,7 +424,7 @@ imsrDropZone.addEventListener('dragover', e => { e.preventDefault(); imsrDropZon
 imsrDropZone.addEventListener('dragleave', () => imsrDropZone.classList.remove('drag-over'));
 imsrDropZone.addEventListener('drop', e => {
   e.preventDefault(); imsrDropZone.classList.remove('drag-over');
-  const files = Array.from(e.dataTransfer.files).filter(isPDF);
+  const files = Array.from(e.dataTransfer.files).filter(f => isPDF(f) || /\.docx$/i.test(f.name));
   if (files.length) handleIMSRFile(files[0]);
 });
 imsrFileInput.addEventListener('change', e => {
@@ -390,30 +440,93 @@ function setIMSRStatus(msg, type='loading') {
 
 let _lastIMSRRawText = ''; // diagnostic: raw text from last IMSR PDF
 
+// Extract PL values from previous IMSR text and set dropdowns
+function extractPLsFromIMSR(text) {
+  // National PL: "National Preparedness Level 3" or "Preparedness Level 3"
+  const natMatch = text.match(/Preparedness\s+Level\s+(\d)/i);
+  if (natMatch) {
+    nationalPL = natMatch[1];
+    const natSel = document.getElementById('pl-national');
+    if (natSel) natSel.value = nationalPL;
+  }
+  // Per-GACC PLs: "Northern Rockies Area (PL 2)" or "Northern Rockies Area  (PL 2)" etc.
+  // Reverse mapping: full area name → GACC abbreviation
+  const NAME_TO_GACC = {};
+  for (const [abbr, name] of Object.entries(GACC_FULL_NAMES)) {
+    NAME_TO_GACC[name] = abbr;
+  }
+  // Search line by line for area names followed by PL on the same line
+  const lines = text.split('\n');
+  for (const line of lines) {
+    // Check each known area name
+    for (const [areaName, gacc] of Object.entries(NAME_TO_GACC)) {
+      if (line.includes(areaName)) {
+        // Look for PL pattern anywhere on this line after the area name
+        const plMatch = line.match(/\bPL\s*(\d)\b/i);
+        if (plMatch) {
+          gaccPLs[gacc] = plMatch[1];
+        }
+      }
+    }
+  }
+  console.log('extractPLsFromIMSR: national=', nationalPL, 'gacc=', JSON.stringify(gaccPLs));
+}
+
 async function handleIMSRFile(file) {
   setIMSRStatus('Reading IMSR…');
   try {
     const buf = await file.arrayBuffer();
-    const pdf = await pdfjsLib.getDocument({ data: buf }).promise;
-    const pages = [];
-    for (let i = 1; i <= pdf.numPages; i++) {
-      const page = await pdf.getPage(i);
-      const ct = await page.getTextContent();
-      pages.push(ct.items.map(x => x.str).join(' '));
-    }
-    const text = pages.join('\n');
-    _lastIMSRRawText = text;
-    prevIMSR = parseIMSR(text);
-    if (prevIMSR.size === 0) {
-      imsrStatusEl.className = 'imsr-status ok';
-      imsrStatusEl.style.display = '';
-      imsrStatusEl.innerHTML = `✓ 0 incidents loaded from previous IMSR — <a href="#" onclick="showIMSRDiagnostic();return false;" style="color:#2565ae;text-decoration:underline;font-weight:600;">show raw text</a><br><span style="font-size:11px;color:#c0392b;">If you used Export to PDF, try Print to PDF or Save as Adobe PDF instead.</span>`;
+
+    if (/\.docx$/i.test(file.name)) {
+      // ── .docx path: extract text via JSZip, store bytes as template ──
+      templateDocxBytes = new Uint8Array(buf);
+      const zip = await JSZip.loadAsync(buf);
+      const docXml = await zip.file('word/document.xml').async('string');
+      // Merge split runs: Word fragments text across <w:r> elements
+      const merged = mergeDocxRuns(docXml);
+      // Extract all <w:t> text content
+      const text = merged.replace(/<w:br[^>]*w:type="page"[^>]*\/?>/gi, '\n')
+        .replace(/<\/w:p>/gi, '\n')
+        .replace(/<[^>]+>/g, '')
+        .replace(/&amp;/g, '&').replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&quot;/g, '"').replace(/&#x2019;/g, "'").replace(/&#x201[CD];/g, '"')
+        .replace(/\r/g, '');
+      _lastIMSRRawText = text;
+      prevIMSR = parseIMSR(text);
+      extractPLsFromIMSR(text);
+      if (prevIMSR.size === 0) {
+        imsrStatusEl.className = 'imsr-status ok';
+        imsrStatusEl.style.display = '';
+        imsrStatusEl.innerHTML = `✓ 0 incidents loaded from previous IMSR (.docx) — <a href="#" onclick="showIMSRDiagnostic();return false;" style="color:#2565ae;text-decoration:underline;font-weight:600;">show raw text</a>`;
+      } else {
+        setIMSRStatus(`✓ ${prevIMSR.size} incidents loaded from previous IMSR · .docx template stored (${file.name})`, 'ok');
+      }
+      renderOutput();
+
     } else {
-      setIMSRStatus(`✓ ${prevIMSR.size} incidents loaded from previous IMSR`, 'ok');
+      // ── PDF path (original) ──
+      templateDocxBytes = null; // no template from PDF
+      const pdf = await pdfjsLib.getDocument({ data: buf }).promise;
+      const pages = [];
+      for (let i = 1; i <= pdf.numPages; i++) {
+        const page = await pdf.getPage(i);
+        const ct = await page.getTextContent();
+        pages.push(ct.items.map(x => x.str).join(' '));
+      }
+      const text = pages.join('\n');
+      _lastIMSRRawText = text;
+      prevIMSR = parseIMSR(text);
+      extractPLsFromIMSR(text);
+      if (prevIMSR.size === 0) {
+        imsrStatusEl.className = 'imsr-status ok';
+        imsrStatusEl.style.display = '';
+        imsrStatusEl.innerHTML = `✓ 0 incidents loaded from previous IMSR — <a href="#" onclick="showIMSRDiagnostic();return false;" style="color:#2565ae;text-decoration:underline;font-weight:600;">show raw text</a><br><span style="font-size:11px;color:#c0392b;">If you used Export to PDF, try Print to PDF or Save as Adobe PDF instead.</span>`;
+      } else {
+        setIMSRStatus(`✓ ${prevIMSR.size} incidents loaded from previous IMSR`, 'ok');
+      }
+      renderOutput();
     }
-    renderOutput();
   } catch(e) {
-    setIMSRStatus('Failed to read IMSR PDF — ' + e.message, 'err');
+    setIMSRStatus('Failed to read IMSR — ' + e.message, 'err');
   }
 }
 
@@ -447,63 +560,95 @@ mapDropZone.addEventListener('dragleave', () => mapDropZone.classList.remove('dr
 mapDropZone.addEventListener('drop', e => {
   e.preventDefault(); mapDropZone.classList.remove('drag-over');
   const files = Array.from(e.dataTransfer.files).filter(f => /\.xlsx?$/i.test(f.name));
-  if (files.length) handleMapFile(files[0]);
+  if (files.length) handleMapFiles(files);
 });
 mapFileInput.addEventListener('change', e => {
-  if (e.target.files[0]) handleMapFile(e.target.files[0]);
+  const files = Array.from(e.target.files).filter(f => /\.xlsx?$/i.test(f.name));
+  if (files.length) handleMapFiles(files);
   e.target.value = '';
 });
 
 function setMapStatus(msg, type='loading') {
   mapStatusEl.className = 'map-status ' + type;
   mapStatusEl.textContent = msg;
+  mapStatusEl.style.display = '';
 }
 
-async function handleMapFile(file) {
-  setMapStatus('Reading IMSR MAP…');
-  try {
-    const buf = await file.arrayBuffer();
-    const wb = XLSX.read(buf, { type: 'array' });
-    const ws = wb.Sheets[wb.SheetNames[0]];
-    const rows = XLSX.utils.sheet_to_json(ws, { defval: '' });
+async function handleMapFiles(files) {
+  // Sort by filename so later dates overwrite earlier for same incident
+  files.sort((a, b) => a.name.localeCompare(b.name));
+  if (!mapData) mapData = new Map();
+  let filesLoaded = 0, rowsAdded = 0;
 
-    if (!rows.length) {
-      setMapStatus('MAP file is empty — no data rows found.', 'err');
-      return;
+  for (const file of files) {
+    setMapStatus(`Reading IMSR MAP (${filesLoaded + 1}/${files.length})…`);
+    try {
+      const buf = await file.arrayBuffer();
+      const wb = XLSX.read(buf, { type: 'array' });
+      const ws = wb.Sheets[wb.SheetNames[0]];
+      const rows = XLSX.utils.sheet_to_json(ws, { defval: '' });
+      if (!rows.length) continue;
+
+      const headers = Object.keys(rows[0]);
+      const incNumCol = headers.find(h => /incident.?number/i.test(h));
+      const incNameCol = headers.find(h => /incident.?name/i.test(h));
+      const gaccCol = headers.find(h => /^gacc$/i.test(h));
+      const imtCol = headers.find(h => /imt.?type/i.test(h));
+      const pctCol = headers.find(h => /100.?pct/i.test(h));
+      const sizeCol = headers.find(h => /incident.?size/i.test(h));
+      const mapDateCol = headers.find(h => /map.?date/i.test(h));
+      if (!incNumCol) { console.warn('MAP file missing Incident_Number:', file.name); continue; }
+
+      for (const row of rows) {
+        const incNum = String(row[incNumCol] || '').trim().toUpperCase();
+        if (!incNum || !/[A-Z]{2}-[A-Z0-9]+-\S/.test(incNum)) continue;
+        // Parse MAP_Date — MM/DD/YYYY string or Excel serial
+        let mapDate = null;
+        if (mapDateCol) {
+          const raw = row[mapDateCol];
+          if (raw instanceof Date) {
+            mapDate = raw;
+          } else if (typeof raw === 'number') {
+            // Excel serial date
+            mapDate = new Date((raw - 25569) * 86400000);
+          } else if (typeof raw === 'string' && raw.trim()) {
+            const m = raw.trim().match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})$/);
+            if (m) mapDate = new Date(+m[3], +m[1] - 1, +m[2]);
+          }
+        }
+        const existingEntry = mapData.get(incNum);
+        const newSize = parseFloat(row[sizeCol]) || 0;
+        // Keep the entry with the most recent MAP_Date (append-only file, later rows win)
+        if (!existingEntry || !existingEntry.mapDate || (mapDate && mapDate >= existingEntry.mapDate)) {
+          mapData.set(incNum, {
+            name: String(row[incNameCol] || '').trim(),
+            gacc: String(row[gaccCol] || '').trim(),
+            imt:  String(row[imtCol] || '').trim(),
+            pct100: String(row[pctCol] || '').trim(),
+            size: newSize,
+            mapDate: mapDate,
+          });
+        }
+        rowsAdded++;
+      }
+      filesLoaded++;
+    } catch(e) {
+      console.warn('Failed to read MAP file', file.name, e);
     }
-
-    // Find the Incident_Number column (flexible header matching)
-    const headers = Object.keys(rows[0]);
-    const incNumCol = headers.find(h => /incident.?number/i.test(h));
-    const incNameCol = headers.find(h => /incident.?name/i.test(h));
-    const gaccCol = headers.find(h => /^gacc$/i.test(h));
-    const imtCol = headers.find(h => /imt.?type/i.test(h));
-    const pctCol = headers.find(h => /100.?pct/i.test(h));
-    const sizeCol = headers.find(h => /incident.?size/i.test(h));
-
-    if (!incNumCol) {
-      setMapStatus('MAP file missing Incident_Number column. Found: ' + headers.join(', '), 'err');
-      return;
-    }
-
-    mapData = new Map();
-    for (const row of rows) {
-      const incNum = String(row[incNumCol] || '').trim().toUpperCase();
-      if (!incNum || !/[A-Z]{2}-[A-Z0-9]+-\d+/.test(incNum)) continue;
-      mapData.set(incNum, {
-        name: String(row[incNameCol] || '').trim(),
-        gacc: String(row[gaccCol] || '').trim(),
-        imt:  String(row[imtCol] || '').trim(),
-        pct100: String(row[pctCol] || '').trim(),
-        size: parseFloat(row[sizeCol]) || 0,
-      });
-    }
-
-    setMapStatus(`✓ ${mapData.size} incidents loaded from IMSR MAP (${file.name})`, 'ok');
-    if (allIncidents.length) renderOutput();
-  } catch(e) {
-    setMapStatus('Failed to read MAP file — ' + e.message, 'err');
   }
+
+  const plural = filesLoaded > 1 ? ` across ${filesLoaded} files` : ` (${files[0].name})`;
+  // Compute date range from loaded MAP data
+  let dateRange = '';
+  const allDates = [...mapData.values()].map(e => e.mapDate).filter(Boolean);
+  if (allDates.length) {
+    const minD = new Date(Math.min(...allDates));
+    const maxD = new Date(Math.max(...allDates));
+    const fmt = d => `${d.getMonth()+1}/${d.getDate()}`;
+    dateRange = ` · ${fmt(minD)}–${fmt(maxD)}`;
+  }
+  setMapStatus(`✓ ${mapData.size} incidents loaded from IMSR MAP${plural}${dateRange}`, 'ok');
+  if (allIncidents.length) renderOutput();
 }
 
 function clearMap() {
@@ -522,12 +667,200 @@ function isReentry(f) {
   return mapData.has(incNum);
 }
 
-// FUTURE: getReentryInfo() — acres delta + "Dropped N days ago" badge
-// Requires two MAP columns not yet available:
-//   Last_IMSR_Date — stamped by Python script each run on active fires
-//   Incident_Size  — already present, but unreliable without date context
-// When both exist: compare MAP acres to today's 209 Box 7, show delta
-// and days since last appearance. FALLOFF-07 threshold = 1,000 ac growth.
+// Get re-entry context: days since last IMSR appearance + acres delta
+function getReentryInfo(f) {
+  if (!mapData) return null;
+  const incNum = (f.f2 || '').toUpperCase();
+  if (!incNum) return null;
+  const entry = mapData.get(incNum);
+  if (!entry) return null;
+  const currentAcres = parseFloat(f.f7) || 0;
+  const mapAcres = entry.size || 0;
+  const acresDelta = currentAcres - mapAcres;
+  let daysAgo = null;
+  if (entry.mapDate) {
+    const today = new Date();
+    today.setHours(0,0,0,0);
+    const lastDate = new Date(entry.mapDate);
+    lastDate.setHours(0,0,0,0);
+    daysAgo = Math.max(0, Math.round((today - lastDate) / 86400000));
+  }
+  return { daysAgo, acresDelta, mapAcres, currentAcres };
+}
+
+// ── AutoSIT / F&A Report Drop Zone ──────────────────────────────────
+const autoSitDropZone = document.getElementById('autosit-drop-zone');
+const autoSitStatusEl = document.getElementById('autosit-status');
+const autoSitFileInput = document.getElementById('autosit-file-input');
+
+autoSitDropZone.addEventListener('dragover', e => { e.preventDefault(); autoSitDropZone.classList.add('drag-over'); });
+autoSitDropZone.addEventListener('dragleave', () => autoSitDropZone.classList.remove('drag-over'));
+autoSitDropZone.addEventListener('drop', e => {
+  e.preventDefault(); autoSitDropZone.classList.remove('drag-over');
+  const files = Array.from(e.dataTransfer.files).filter(f => /\.xlsx?$/i.test(f.name));
+  if (files.length) handleAutoSitFile(files[0]);
+});
+autoSitFileInput.addEventListener('change', e => {
+  if (e.target.files[0]) handleAutoSitFile(e.target.files[0]);
+  e.target.value = '';
+});
+
+function setAutoSitStatus(msg, type='loading') {
+  autoSitStatusEl.className = 'autosit-status ' + type;
+  autoSitStatusEl.style.display = 'block';
+  autoSitStatusEl.textContent = msg;
+}
+
+// F&A area names → GACC abbreviation mapping
+const FA_AREA_TO_GACC = {
+  'Alaska': 'AICC', 'Northwest': 'NWCC', 'Northern California': 'ONCC',
+  'Southern California': 'OSCC', 'Northern Rockies': 'NRCC', 'Great Basin': 'GBCC',
+  'Southwest': 'SWCC', 'Rocky Mountain': 'RMCC', 'Eastern': 'EACC', 'Southern': 'SACC'
+};
+const FA_AREA_ORDER = ['Alaska','Northwest','Northern California','Southern California','Northern Rockies','Great Basin','Southwest','Rocky Mountain','Eastern','Southern'];
+
+// Parse F&A table from a sheet starting at a given row
+// Returns { rows: [{area, gacc, fires:[bia,blm,fws,nps,stot,usfs,total], acres:[...]}], totalFires:[...], totalAcres:[...] }
+function parseFASheet(ws, startRow) {
+  const result = { rows: [], totalFires: [], totalAcres: [] };
+  const COLS = {C:0, D:1, E:2, F:3, G:4, H:5, I:6}; // BIA,BLM,FWS,NPS,ST/OT,USFS,TOTAL
+
+  for (let r = startRow; r < startRow + 50; r++) {
+    const aVal = String(ws[XLSX.utils.encode_cell({r:r-1,c:0})]?.v || '');
+    const bVal = String(ws[XLSX.utils.encode_cell({r:r-1,c:1})]?.v || '').toUpperCase().trim();
+    if (/^TOTAL FIRES/i.test(aVal)) {
+      for (const [col, idx] of Object.entries(COLS)) {
+        const cell = ws[XLSX.utils.encode_cell({r:r-1, c:col.charCodeAt(0)-65})];
+        result.totalFires[idx] = Math.round(Number(cell?.v || 0));
+      }
+      // Next row = TOTAL ACRES
+      const nextR = r + 1;
+      for (const [col, idx] of Object.entries(COLS)) {
+        const cell = ws[XLSX.utils.encode_cell({r:nextR-1, c:col.charCodeAt(0)-65})];
+        result.totalAcres[idx] = Math.round(Number(cell?.v || 0));
+      }
+      break;
+    }
+    if (bVal === 'FIRES') {
+      // Area name — strip " Area" suffix
+      const areaMatch = aVal.replace(/\s*Area$/i, '').trim();
+      const gacc = Object.entries(FA_AREA_TO_GACC).find(([k]) => areaMatch.includes(k));
+      if (!gacc) continue;
+      const fires = [];
+      for (const [col, idx] of Object.entries(COLS)) {
+        const cell = ws[XLSX.utils.encode_cell({r:r-1, c:col.charCodeAt(0)-65})];
+        fires[idx] = Math.round(Number(cell?.v || 0));
+      }
+      // Next row should be ACRES
+      const acresRow = r + 1;
+      const acres = [];
+      for (const [col, idx] of Object.entries(COLS)) {
+        const cell = ws[XLSX.utils.encode_cell({r:acresRow-1, c:col.charCodeAt(0)-65})];
+        acres[idx] = Math.round(Number(cell?.v || 0));
+      }
+      result.rows.push({ area: gacc[0], gacc: gacc[1], fires, acres });
+    }
+  }
+  return result;
+}
+
+async function handleAutoSitFile(file) {
+  setAutoSitStatus('Reading AutoSIT / F&A report…');
+  try {
+    const buf = await file.arrayBuffer();
+    const wb = XLSX.read(buf, { type: 'array' });
+
+    const data = { resSummary: null, faYesterday: null, faYTD: null, iaTotal: null, newFiresByGacc: {} };
+    const allText = [];
+
+    // Scan all sheets for known section markers
+    for (const sn of wb.SheetNames) {
+      const ws = wb.Sheets[sn];
+      const range = XLSX.utils.decode_range(ws['!ref'] || 'A1');
+
+      // Scan rows for markers
+      for (let r = range.s.r; r <= range.e.r; r++) {
+        const aCell = ws[XLSX.utils.encode_cell({r, c:0})];
+        const aVal = String(aCell?.v || '');
+
+        // Active Incident Resource Summary header
+        if (/Active Incident Resource Summary/i.test(aVal)) {
+          data.resSummary = {};
+          // Header row is r+1, data starts at r+2
+          const GACC_KEYS = ['AICC','NWCC','ONCC','OSCC','NRCC','GBCC','SWCC','RMCC','EACC','SACC'];
+          for (let gr = r + 2; gr <= r + 12; gr++) {
+            const gaccCell = ws[XLSX.utils.encode_cell({r:gr, c:0})];
+            const gaccVal = String(gaccCell?.v || '').trim().toUpperCase();
+            if (gaccVal === 'TOTAL') {
+              // Total row
+              data.resSummary.TOTAL = {
+                inc: Math.round(Number(ws[XLSX.utils.encode_cell({r:gr, c:1})]?.v || 0)),
+                acres: Math.round(Number(ws[XLSX.utils.encode_cell({r:gr, c:2})]?.v || 0)),
+                crews: Math.round(Number(ws[XLSX.utils.encode_cell({r:gr, c:3})]?.v || 0)),
+                eng: Math.round(Number(ws[XLSX.utils.encode_cell({r:gr, c:4})]?.v || 0)),
+                heli: Math.round(Number(ws[XLSX.utils.encode_cell({r:gr, c:5})]?.v || 0)),
+                ppl: Math.round(Number(ws[XLSX.utils.encode_cell({r:gr, c:6})]?.v || 0)),
+              };
+              break;
+            }
+            if (GACC_KEYS.includes(gaccVal)) {
+              data.resSummary[gaccVal] = {
+                inc: Math.round(Number(ws[XLSX.utils.encode_cell({r:gr, c:1})]?.v || 0)),
+                acres: Math.round(Number(ws[XLSX.utils.encode_cell({r:gr, c:2})]?.v || 0)),
+                crews: Math.round(Number(ws[XLSX.utils.encode_cell({r:gr, c:3})]?.v || 0)),
+                eng: Math.round(Number(ws[XLSX.utils.encode_cell({r:gr, c:4})]?.v || 0)),
+                heli: Math.round(Number(ws[XLSX.utils.encode_cell({r:gr, c:5})]?.v || 0)),
+                ppl: Math.round(Number(ws[XLSX.utils.encode_cell({r:gr, c:6})]?.v || 0)),
+              };
+            }
+          }
+        }
+
+        // F&A Yesterday
+        if (/Fires and Acres Yesterday/i.test(aVal) && !/Prescribed/i.test(aVal)) {
+          // Header row is next, data starts 2 rows after marker
+          data.faYesterday = parseFASheet(ws, r + 3); // +3 because parseFASheet uses 1-based row
+          // Extract IA total = TOTAL FIRES column I (index 6 = TOTAL)
+          if (data.faYesterday.totalFires.length) {
+            data.iaTotal = data.faYesterday.totalFires[6]; // TOTAL column
+          }
+          // Extract new fires per GACC
+          for (const row of data.faYesterday.rows) {
+            data.newFiresByGacc[row.gacc] = row.fires[6]; // TOTAL column per GACC
+          }
+        }
+
+        // F&A YTD
+        if (/Fires and Acres Year.to.Date/i.test(aVal) && !/Prescribed/i.test(aVal)) {
+          data.faYTD = parseFASheet(ws, r + 3);
+        }
+      }
+    }
+
+    // Summary
+    const parts = [];
+    if (data.resSummary) parts.push('Resource Summary');
+    if (data.faYesterday) parts.push(`F&A Yesterday (IA: ${data.iaTotal ?? '?'} fires)`);
+    if (data.faYTD) parts.push('F&A YTD');
+    if (!parts.length) {
+      setAutoSitStatus('No recognized tables found in file. Expected: AutoSIT or F&A Report.', 'err');
+      return;
+    }
+
+    autoSitData = data;
+    setAutoSitStatus(`✓ ${parts.join(' · ')} loaded from ${file.name}`, 'ok');
+    if (allIncidents.length) renderOutput();
+  } catch(e) {
+    setAutoSitStatus('Failed to read file — ' + e.message, 'err');
+    console.error('AutoSIT parse error:', e);
+  }
+}
+
+function clearAutoSit() {
+  autoSitData = null;
+  autoSitStatusEl.style.display = 'none';
+  if (allIncidents.length) renderOutput();
+}
 
 // GACC reorder
 function moveGacc(fromIdx, dir) {
@@ -557,7 +890,7 @@ async function handleFiles(files) {
   if (!files.length) return;
   setStatus(`Processing ${files.length} PDF${files.length > 1 ? 's' : ''}...`);
 
-  const INC_NUM_RE = /[A-Z]{2}-[A-Z0-9]+-\d+/;
+  const INC_NUM_RE = /[A-Z]{2}-[A-Z0-9]+-\S+/;
 
   for (const file of files) {
     try {
@@ -630,9 +963,19 @@ async function handleFiles(files) {
 }
 
 function updateFileList() {
-  fileListEl.innerHTML = allIncidents.map(f =>
-    `<span>${f.f1 || f._filename}</span>`
-  ).join('');
+  fileListEl.innerHTML = allIncidents.map(f => {
+    const key = normKey(f.f1, f.unit);
+    const isDel = deletedFires.has(key);
+    if (isDel) {
+      return `<span class="deleted" onclick="restoreFire('${key.replace(/'/g,"\\'")}')" title="Click to restore">${f.f1 || f._filename}</span>`;
+    }
+    return `<span>${f.f1 || f._filename}</span>`;
+  }).join('');
+}
+
+function restoreFire(key) {
+  deletedFires.delete(key);
+  renderOutput();
 }
 
 // ── PARSERS ───────────────────────────────────────────────────────────────
@@ -760,12 +1103,12 @@ function parseFields(text) {
   }
   // Layout B fallback: name appears between "Number:" and the unit code
   if (!f.f1) {
-    const incM2 = text.match(/Incident Name:\s*2\.\s*Incident Number:\s*(\S.*?)\s+[A-Z]{2}-[A-Z0-9]+-\d+/i);
+    const incM2 = text.match(/Incident Name:\s*2\.\s*Incident Number:\s*(\S.*?)\s+[A-Z]{2}-[A-Z0-9]+-\S+/i);
     f.f1 = incM2 ? incM2[1].trim() : '';
   }
 
-  f.f2 = grab(text, /([A-Z]{2}-[A-Z0-9]+-\d+)/);
-  f.unit = f.f2 ? f.f2.replace(/-\d+$/, '') : '';
+  f.f2 = grab(text, /([A-Z]{2}-[A-Z0-9]+-\S+)/);
+  f.unit = f.f2 ? f.f2.split('-').slice(0, 2).join('-') : '';
   f.originOwn = deriveOwn(f.f2);
 
   // Acres with comma formatting
@@ -827,7 +1170,13 @@ function parseFields(text) {
   f.isFinal   = /X\s+Final|Final\s+X/i.test(text);
   f.isInitial = /X\s+Initial|Initial\s+X/i.test(text);
 
-  // Box 6: Incident Start Date — used for stale one-and-done detection
+  // FINAL overrides % — trust Box 3 over Box 8a
+  if (f.isFinal && parseInt(f.f8a) < 100) {
+    f._originalPct = f.f8a; // preserve for badge tooltip
+    f.f8a = '100';
+  }
+
+  // Box 6: Incident Start Date — used for stale fire detection
   // Strategy: try anchoring on "6. ... Start" first (clean PDFs).
   // Fallback: bare "Date:" followed by date then "Time:" — unique to Box 6.
   // Box 11 uses "From Date/Time:" and "To Date/Time:" so won't false match.
@@ -874,18 +1223,18 @@ function parseFields(text) {
 
   f.f45 = grab(text, /45\.\s*Estimated Incident Costs[\s\S]{0,30}?:\s*\$?([\d,]+(?:\.\d+)?)/i);
 
-  // Boxes 30,33,35,36,37,38,40,41,47 — scan for threats and precip
+  // Boxes 30,33,35,36,38,40,41,47 — scan for threats and precip
+  // Box 37 (Strategic Objectives) excluded: infrastructure keywords there describe plans, not threats
   const box30 = grabBlock(text, /30\.\s*[\s\S]{0,200}?:\s*/i, /31\.|Narrative:/i);
   const box33 = grabBlock(text, /33\.\s*[\s\S]{0,200}?:\s*/i, /34\.|Narrative:/i);
   const box35 = grabBlock(text, /35\.\s*[\s\S]{0,200}?:\s*/i, /36\.|Narrative:/i);
   const box36 = grabBlock(text, /36\.\s*[\s\S]{0,200}?:\s*/i, /37\.|Narrative:/i);
-  const box37 = grabBlock(text, /37\.\s*[\s\S]{0,200}?:\s*/i, /38\.|Narrative:/i);
   const box38 = grabBlock(text, /38\.\s*[\s\S]{0,600}?:\s*/i, /39\.|Narrative:/i);
   const box40 = grabBlock(text, /40\.\s*[\s\S]{0,200}?:\s*/i, /41\.|Narrative:/i);
   const box41 = grabBlock(text, /41\.\s*[\s\S]{0,200}?:\s*/i, /42\.|Narrative:/i);
   const box47 = grabBlock(text, /47\.\s*[\s\S]{0,200}?:\s*/i, /48\.|Narrative:/i);
 
-  const infraScanText = [box30,box33,box35,box36,box37,box38,box40,box41,box47].join(' ');
+  const infraScanText = [box30,box33,box35,box36,box38,box40,box41,box47].join(' ');
   f._infra = detectInfrastructure(infraScanText);
   f._sageGrouse = detectSageGrouse(infraScanText);
   f._precipDetected = detectPrecip(box35 + ' ' + box38 + ' ' + box40 + ' ' + box47);
@@ -4476,7 +4825,7 @@ const UNIT_LOOKUP = {
   "NM-N1S": "Chama District, New Mexico State Forestry",
   "NM-N2S": "Cimarron District, New Mexico State Forestry",
   "NM-N3S": "Socorro District, New Mexico State Forestry",
-  "NM-N4S": "Las Vegas District, New Mexico State Forestry",
+  "NM-N4S": "Las Vegas District, NM State Forestry",
   "NM-N5S": "Capitan District, New Mexico State Forestry",
   "NM-N6S": "Bernalillo District, New Mexico State Forestry",
   "NM-NPA": "Northern Pueblos Agency, BIA",
@@ -6928,21 +7277,22 @@ function buildTableRows(incidents) {
     if (prev && prev.pct >= 100 && is100(f)) classes.push('returning-100');
     if (prev && prev.wasLastReport) classes.push('last-rpt');
     if (isReentry(f)) classes.push('reentry');
-    // ONE & DONE: new fire, 100%, old start date
+    // STALE: new fire, 100%, old start date
     const isNewFire = !prev && !isReentry(f);
     if (isNewFire && is100(f) && f.f6) {
       const daysAgo = Math.floor((new Date() - f.f6) / 86400000);
-      if (daysAgo > 1) classes.push('onedone');
+      if (daysAgo > 1) classes.push('stale');
     }
     const pctV = parseInt(f.f8a || 0);
-    if ((f.isFinal && pctV < 100) || (!f.isFinal && pctV >= 100)) classes.push('discrep');
+    const origPctV = f._originalPct ? parseInt(f._originalPct) : pctV;
+    if ((f.isFinal && origPctV < 100) || (!f.isFinal && pctV >= 100)) classes.push('discrep');
     const classAttr = classes.length ? ` class="${classes.join(' ')}"` : '';
     return `<tr${classAttr}>${tds}</tr>`;
   }).join('');
 }
 
 
-function buildNarrativeLines(incidents, cssClass='') {
+function buildNarrativeLines(incidents, cssClass='', dragKey='') {
   return incidents.map((f) => {
     const { name, parts } = buildNarrativeLine(f);
     const sentence = capitalizeSentences(parts.join('. ') + (parts.length ? '.' : ''));
@@ -6953,8 +7303,9 @@ function buildNarrativeLines(incidents, cssClass='') {
     let alsoManaging = '';
     const managedByTeam = findTeamByMember(f.f2);
     const isPrimaryTeam = findTeamByPrimary(f.f2);
-    if (managedByTeam) {
-      // Managed fire — strip CIMT label entirely
+    // Drop CIMT/NIMO label for managed fires, 100% contained, or Final
+    if (managedByTeam || is100(f) || f.isFinal) {
+      // Managed fire or 100%/final — strip CIMT label entirely
       cimtLabel = '';
     } else if (f.hasCIMT || f.hasNIMO) {
       const teamType = f.hasNIMO ? 'NIMO' : 'CIMT';
@@ -6986,28 +7337,48 @@ function buildNarrativeLines(incidents, cssClass='') {
     const lastRptBadge = (prev && prev.wasLastReport) ? '<span class="last-rpt-badge" title="Previous IMSR contained a last-report statement.">LAST RPT ON PREVIOUS IMSR</span>' : '';
     const lastRptClass = (prev && prev.wasLastReport) ? ' last-rpt' : '';
 
-    // Re-entry from MAP — FALLOFF-08 treatment
+    // Re-entry from MAP treatment
     const reentryClass = reentry ? ' reentry' : '';
-    const reentryBadge = reentry ? '<span class="reentry-badge" title="Previously on IMSR — detected from MAP file (FALLOFF-08). No asterisk. &quot;Previously reported incident.&quot; injected.">PREV REPORTED</span>' : '';
-    const reentryStmt  = reentry ? ' <span class="reentry-stmt">Previously reported incident.</span>' : '';
+    let reentryBadge = '', reentryStmt = '';
+    if (reentry) {
+      const ri = getReentryInfo(f);
+      const pctStr = f.f8a ? ` · ${f.f8a}%` : '';
+      let badgeText = 'DROPPED';
+      let hoverText = 'Previously appeared on IMSR.';
+      if (ri) {
+        const deltaStr = ri.acresDelta > 0 ? `+${ri.acresDelta.toLocaleString()} ac`
+                       : ri.acresDelta < 0 ? `${ri.acresDelta.toLocaleString()} ac`
+                       : '0 ac growth';
+        const daysStr = ri.daysAgo !== null ? `${ri.daysAgo}d ago · ` : '';
+        badgeText = `DROPPED · ${daysStr}${deltaStr}${pctStr}`;
+        const daysLabel = ri.daysAgo !== null ? `Last seen ${ri.daysAgo} day(s) ago at` : 'Last MAP size:';
+        hoverText = `Previously appeared on IMSR. ${daysLabel} ${ri.mapAcres.toLocaleString()} ac. Current 209: ${ri.currentAcres.toLocaleString()} ac at ${f.f8a || '?'}%.`;
+      } else {
+        badgeText = `DROPPED${pctStr}`;
+      }
+      hoverText += ' No asterisk. &quot;Previously reported incident.&quot; injected.';
+      reentryBadge = `<span class="reentry-badge" title="${hoverText}">${badgeText}</span>`;
+      reentryStmt = ' <span class="reentry-stmt">Previously reported incident.</span>';
+    }
 
     // Returning 100% fire — was in prev IMSR and still 100%
     const ret100 = (prev && prev.pct >= 100 && is100(f)) ? ' returning-100' : '';
     const ret100Badge = (prev && prev.pct >= 100 && is100(f)) ? '<span class="ret100-badge" title="Returning fire still at 100% contained — was 100% in previous IMSR">RETURNING 100% · NO CHANGE</span>' : '';
 
-    // Box 3 vs Box 8a discrepancy
+    // Box 3 vs Box 8a discrepancy — use original % if FINAL override was applied
     const pctVal = parseInt(f.f8a || 0);
-    const box3Discrep = (f.isFinal && pctVal < 100) || (!f.isFinal && pctVal >= 100);
+    const origPct = f._originalPct ? parseInt(f._originalPct) : pctVal;
+    const box3Discrep = (f.isFinal && origPct < 100) || (!f.isFinal && pctVal >= 100);
     const discrepClass = box3Discrep ? ' discrep' : '';
-    const discrepBadge = box3Discrep ? `<span class="discrep-badge" title="${f.isFinal ? 'Box 3 = Final but % contained is ' + pctVal + '%' : 'Box 8a = ' + pctVal + '% but Box 3 is not Final'}">FINAL vs % MISMATCH</span>` : '';
+    const discrepBadge = box3Discrep ? `<span class="discrep-badge" title="${f.isFinal ? 'Box 3 = Final but 209 reported ' + origPct + '% — parser assumed 100%' : 'Box 8a = ' + pctVal + '% but Box 3 is not Final'}">FINAL vs % MISMATCH</span>` : '';
 
-    // ONE & DONE: new fire, 100% contained, start date is old
-    let onedoneClass = '', onedoneBadge = '';
+    // STALE: new fire, 100% contained, start date is old
+    let staleClass = '', staleBadge = '';
     if (isNew && is100(f) && f.f6) {
       const daysAgo = Math.floor((new Date() - f.f6) / 86400000);
       if (daysAgo > 1) {
-        onedoneClass = ' onedone';
-        onedoneBadge = `<span class="onedone-badge" title="New fire at 100% — Box 6 start date is ${daysAgo} days ago. Likely missed reporting window. Consider removing.">ONE &amp; DONE · ${daysAgo}d ago</span>`;
+        staleClass = ' stale';
+        staleBadge = `<span class="stale-badge" title="100% contained fire missed its 209 reporting window (Box 6 start: ${daysAgo}d ago). Consider removing from IMSR and adding to Large Fire MAP xlsx.">STALE · ${daysAgo}d ago</span>`;
       }
     }
 
@@ -7027,8 +7398,24 @@ function buildNarrativeLines(incidents, cssClass='') {
     // 100% contained — blue highlight matching table rows
     const ctn100Class = is100(f) ? ' ctn100' : '';
 
+    // Drag-and-drop (active + kick-off fires only, not managed)
+    const isDraggable = dragKey && !managedByTeam;
+    const dragAttrs = isDraggable
+      ? ` draggable="true" data-drag-key="${dragKey}" data-drag-f2="${f.f2}" ondragstart="narrDragStart(event)" ondragover="narrDragOver(event)" ondrop="narrDrop(event)" ondragend="narrDragEnd(event)"`
+      : '';
+    const gripHtml = isDraggable ? '<span class="narr-grip" title="Drag to reorder">⠿</span>' : '';
+
+    // Name edit — inline input or display + pencil
+    let nameHtml;
+    if (nameEditMode.has(f.f2)) {
+      nameHtml = `<input class="name-edit-input" type="text" value="${name.replace(/"/g,'&quot;')}" data-inc="${f.f2}" onblur="saveFireName(this)" onkeydown="if(event.key==='Enter'){saveFireName(this);event.preventDefault();}" onclick="event.stopPropagation()">`;
+    } else {
+      const nameEditBtn = `<span class="name-edit-btn" onclick="event.stopPropagation();editFireName('${f.f2}')" title="Edit fire name">✎</span>`;
+      nameHtml = `<b>${asterisk}${name}</b>${nameEditBtn}`;
+    }
+
     const delBtn = `<button class="narr-del" title="Remove this fire" onclick="deleteSingleFire('${f.f2}','')">✕</button>`;
-    return `<div class="narr-line ${cssClass}${lastRptClass}${ret100}${discrepClass}${ctn100Class}${onedoneClass}${reentryClass}${managedClass}" data-inc="${f.f2}" data-pct="${f.f8a || 0}"><b>${asterisk}${name}</b>${lastRptBadge}${ret100Badge}${reentryBadge}${discrepBadge}${onedoneBadge}${managedBadge}, ${managingOrg}${cimtLabel}.${alsoManaging}${reentryStmt} ${sentence}${precipFlag}${kickoffControls}${delBtn}</div>`;
+    return `<div class="narr-line ${cssClass}${lastRptClass}${ret100}${discrepClass}${ctn100Class}${staleClass}${reentryClass}${managedClass}" data-inc="${f.f2}" data-pct="${f.f8a || 0}"${dragAttrs}>${gripHtml}${nameHtml}${lastRptBadge}${ret100Badge}${reentryBadge}${discrepBadge}${staleBadge}${managedBadge}, ${managingOrg}${cimtLabel}.${alsoManaging}${reentryStmt} ${sentence}${precipFlag}${kickoffControls}${delBtn}</div>`;
   }).join('<div class="narr-spacer"><br></div>');
 }
 
@@ -7138,6 +7525,75 @@ function moveIncident(gacc, fromIdx, dir) {
   renderOutput();
 }
 
+// ── DRAG-AND-DROP SORT ──────────────────────────────────────────────────
+let _narrDragKey = null, _narrDragF2 = null;
+
+function narrDragStart(e) {
+  const row = e.target.closest('.narr-line[data-drag-key]');
+  if (!row) return;
+  _narrDragKey = row.dataset.dragKey;
+  _narrDragF2 = row.dataset.dragF2;
+  row.classList.add('narr-dragging');
+  e.dataTransfer.effectAllowed = 'move';
+  e.dataTransfer.setData('text/plain', '');
+}
+
+function narrDragOver(e) {
+  e.preventDefault();
+  e.dataTransfer.dropEffect = 'move';
+  const row = e.target.closest('.narr-line[data-drag-key]');
+  if (!row || row.dataset.dragKey !== _narrDragKey) return;
+  document.querySelectorAll('.narr-drag-over').forEach(r => r.classList.remove('narr-drag-over'));
+  row.classList.add('narr-drag-over');
+}
+
+function narrDrop(e) {
+  e.preventDefault();
+  const row = e.target.closest('.narr-line[data-drag-key]');
+  if (!row || row.dataset.dragKey !== _narrDragKey) return;
+  const toF2 = row.dataset.dragF2;
+  if (_narrDragF2 === toF2) return;
+  const order = manualOrder[_narrDragKey];
+  if (!order) return;
+  const fromIdx = order.indexOf(_narrDragF2);
+  const toIdx = order.indexOf(toF2);
+  if (fromIdx < 0 || toIdx < 0) return;
+  order.splice(fromIdx, 1);
+  order.splice(toIdx, 0, _narrDragF2);
+  renderOutput();
+}
+
+function narrDragEnd(e) {
+  _narrDragKey = null;
+  _narrDragF2 = null;
+  document.querySelectorAll('.narr-dragging, .narr-drag-over').forEach(el => {
+    el.classList.remove('narr-dragging', 'narr-drag-over');
+  });
+}
+
+// ── FIRE NAME EDITING ───────────────────────────────────────────────────
+const nameEditMode = new Set();
+
+function editFireName(incNum) {
+  nameEditMode.add(incNum);
+  renderOutput();
+  setTimeout(() => {
+    const inp = document.querySelector(`.name-edit-input[data-inc="${incNum}"]`);
+    if (inp) { inp.focus(); inp.select(); }
+  }, 50);
+}
+
+function saveFireName(el) {
+  const incNum = el.dataset.inc;
+  const f = allIncidents.find(i => i.f2 === incNum);
+  if (f && el.value.trim()) {
+    f.f1 = el.value.trim();
+    nameEdited.add(incNum); // protect from MAP override this session
+  }
+  nameEditMode.delete(incNum);
+  renderOutput();
+}
+
 // ── CIMT/NIMO TEAM MANAGEMENT ────────────────────────────────────────
 
 function findTeamByPrimary(incNum) {
@@ -7239,6 +7695,61 @@ function buildAlsoManaging(f) {
 function renderOutput() {
   // Proceed if we have 209s OR a previous IMSR loaded (missed fires need to render)
   if (!allIncidents.length && !prevIMSR) return;
+
+  // Apply clean fire names: analyst edit > MAP (incident number) > prev IMSR (prevMatch) > raw 209
+  allIncidents.forEach(f => {
+    if (nameEdited.has(f.f2)) return; // analyst edited this session
+    if (mapData) {
+      const mapEntry = mapData.get(f.f2);
+      if (mapEntry && mapEntry.name) { f.f1 = mapEntry.name.replace(/\s*[-?]\s*/g, ' ').replace(/\s{2,}/g, ' ').trim(); return; }
+    }
+    const prev = prevMatch(f);
+    if (prev && prev.name) f.f1 = prev.name;
+  });
+
+  // Auto-populate CIMT/NIMO team assignments from previous IMSR (one-time on first render)
+  if (!_teamsAutoPopulated && prevIMSR && allIncidents.length) {
+    for (const [key, prev] of prevIMSR) {
+      if (!prev.prevTeamType || !prev.prevTeamName) continue;
+      console.log(`Team carry-forward: found ${prev.prevTeamType} (${prev.prevTeamName}) on ${prev.name}, managed: [${(prev.prevManagedNames||[]).join(', ')}]`);
+
+      // Find today's fire matching this primary
+      const primaryFire = allIncidents.find(f => {
+        const pm = prevMatch(f);
+        return pm && pm.name === prev.name && pm.unit === prev.unit;
+      });
+      if (!primaryFire) { console.log('  → primary not found in today\'s 209s'); continue; }
+      if (is100(primaryFire) || primaryFire.isFinal) { console.log('  → primary 100%/Final — divorced'); continue; }
+      console.log(`  → primary matched: ${primaryFire.f1} (${primaryFire.f2})`);
+
+      // Find managed fires by name from narrative
+      const managedIncs = [];
+      for (const mName of (prev.prevManagedNames || [])) {
+        const normM = mName.toLowerCase().replace(/[^a-z0-9 ]/g, ' ').replace(/\s+/g, ' ').trim();
+        const managed = allIncidents.find(f => {
+          const normF = (f.f1 || '').toLowerCase().replace(/[^a-z0-9 ]/g, ' ').replace(/\s+/g, ' ').trim();
+          return normF === normM && !is100(f) && !f.isFinal;
+        });
+        if (managed) {
+          managedIncs.push(managed.f2);
+          console.log(`  → managed "${mName}" matched: ${managed.f1} (${managed.f2})`);
+        } else {
+          console.log(`  → managed "${mName}" NOT FOUND in today's fires`);
+        }
+      }
+
+      if (!teamGroups.find(g => g.primaryInc === primaryFire.f2)) {
+        teamGroups.push({
+          teamType: prev.prevTeamType,
+          teamName: prev.prevTeamName,
+          primaryInc: primaryFire.f2,
+          managedIncs
+        });
+      }
+    }
+    if (teamGroups.length) console.log('Team carry-forward:', teamGroups.length, 'teams,', teamGroups.reduce((s,g)=>s+g.managedIncs.length,0), 'managed fires');
+    _teamsAutoPopulated = true;
+  }
 
   const thCells = COLS.map(c => `<th>${c.head}</th>`).join('');
 
@@ -7345,44 +7856,41 @@ function renderOutput() {
     const lastRptInc  = incidents.filter(f =>  isLastReport(f) && !is100(f));
     const containedInc = incidents.filter(f => is100(f));
 
-    // Apply manual sort order to activeInc only — init or reset if count changed
-    if (!manualOrder[gacc] || manualOrder[gacc].length !== activeInc.length) {
-      manualOrder[gacc] = activeInc.map((_, i) => i);
+    // Apply manual sort order to activeInc — f2-based (survives deletions)
+    const defaultActiveF2 = activeInc.map(f => f.f2);
+    if (manualOrder[gacc]) {
+      const ordered = [];
+      const remaining = [...activeInc];
+      for (const f2 of manualOrder[gacc]) {
+        const idx = remaining.findIndex(f => f.f2 === f2);
+        if (idx >= 0) ordered.push(...remaining.splice(idx, 1));
+      }
+      ordered.push(...remaining); // new fires appended at end
+      activeInc = ordered;
     }
-    activeInc = manualOrder[gacc].map(i => activeInc[i]);
+    manualOrder[gacc] = activeInc.map(f => f.f2);
+    const sortPanelInc = [...activeInc]; // pre-grouping snapshot for sort panel
 
     // Apply team grouping — managed fires stack under primary
     activeInc = applyTeamGrouping(activeInc);
 
-    // Apply manual sort order to lastRptInc — separate order key
+    // Apply manual sort order to lastRptInc — f2-based
     const lrKey = gacc + '_lr';
-    if (!manualOrder[lrKey] || manualOrder[lrKey].length !== lastRptInc.length) {
-      manualOrder[lrKey] = lastRptInc.map((_, i) => i);
+    const defaultLrF2 = lastRptInc.map(f => f.f2);
+    let sortedLastRpt;
+    if (manualOrder[lrKey]) {
+      const ordered = [];
+      const remaining = [...lastRptInc];
+      for (const f2 of manualOrder[lrKey]) {
+        const idx = remaining.findIndex(f => f.f2 === f2);
+        if (idx >= 0) ordered.push(...remaining.splice(idx, 1));
+      }
+      ordered.push(...remaining);
+      sortedLastRpt = ordered;
+    } else {
+      sortedLastRpt = [...lastRptInc];
     }
-    const sortedLastRpt = manualOrder[lrKey].map(i => lastRptInc[i]);
-
-    // Build sort panel for activeInc (shows base order, before grouping)
-    const baseSortInc = manualOrder[gacc].map(i => (byGacc[gacc] || []).filter(f => !isLastReport(f) && !is100(f))[i]);
-    const sortPanel = baseSortInc.length > 1 ? `
-      <div class="sort-panel">
-        ${baseSortInc.map((f, i) => {
-          if (!f) return '';
-          const pct = parseInt(f.f8a) || 0;
-          const moved = manualOrder[gacc][i] !== i;
-          const name = (f.f1 || f._filename || '?').slice(0, 40);
-          const tg = findTeamByPrimary(f.f2);
-          const tm = findTeamByMember(f.f2);
-          const teamTag = tg ? `<span class="team-tag primary">${tg.teamType} (${tg.teamName})</span>`
-            : tm ? `<span class="team-tag managed">▸ ${tm.teamName}</span>` : '';
-          return `<div class="sort-row${moved ? ' sort-moved' : ''}">
-            <button class="sort-btn" onclick="moveIncident('${gacc}',${i},-1)" title="Move up">▲</button>
-            <button class="sort-btn" onclick="moveIncident('${gacc}',${i},1)" title="Move down">▼</button>
-            <span class="sort-name">${name}${moved ? ' ✎' : ''}</span>
-            ${teamTag}
-            <span class="sort-pct">${pct}%</span>
-          </div>`;
-        }).join('')}
-      </div>` : '';
+    manualOrder[lrKey] = sortedLastRpt.map(f => f.f2);
 
     // Build team manager panel — shows when any CIMT/NIMO team exists in this GACC
     const gaccTeams = teamGroups.filter(g => {
@@ -7430,29 +7938,13 @@ function renderOutput() {
         }).join('')}
       </div>` : '';
 
-    // Build sort panel for lastRptInc (kick-off fires)
-    const lrSortPanel = sortedLastRpt.length > 1 ? `
-      <div class="sort-panel" style="margin-top:4px;border-color:#b090d0;">
-        <div style="font-family:'IBM Plex Mono',monospace;font-size:9px;color:#6a40a0;padding:3px 8px;background:#f0e8f8;border-bottom:1px solid #b090d0;font-weight:600;letter-spacing:.08em;">KICK-OFF</div>
-        ${sortedLastRpt.map((f, i) => {
-          const pct = parseInt(f.f8a) || 0;
-          const moved = manualOrder[lrKey][i] !== i;
-          const name = (f.f1 || f._filename || '?').slice(0, 40);
-          return `<div class="sort-row${moved ? ' sort-moved' : ''}">
-            <button class="sort-btn" onclick="moveIncident('${lrKey}',${i},-1)" title="Move up">▲</button>
-            <button class="sort-btn" onclick="moveIncident('${lrKey}',${i},1)" title="Move down">▼</button>
-            <span class="sort-name">${name}${moved ? ' ✎' : ''}</span>
-            <span class="sort-pct">${pct}%</span>
-          </div>`;
-        }).join('')}
-      </div>` : '';
 
 
     // Narrative order: active → lastReport (kick-off) → missed (no 209) → 100%
     const NARR_SPACER = '<div class="narr-spacer"><br></div>';
     const narrGroups = [
-      buildNarrativeLines(activeInc),
-      buildNarrativeLines(sortedLastRpt),
+      buildNarrativeLines(activeInc, '', gacc),
+      buildNarrativeLines(sortedLastRpt, '', lrKey),
       buildMissedNarrLines(missed),
       buildNarrativeLines(containedInc),
     ].filter(g => g.length > 0);
@@ -7467,11 +7959,12 @@ function renderOutput() {
 
     const cimtBadge = hasCimtGacc(gacc) ? `<span style="font-size:10px;background:#8b1a1a;color:#fff;border-radius:2px;padding:1px 5px;margin-left:6px;font-weight:600;">CIMT</span>` : '';
     const gaccReentryCount = mapData ? incidents.filter(f => isReentry(f)).length : 0;
-    const reentryBadgeGacc = gaccReentryCount ? `<span style="font-size:10px;background:#b8960a;color:#fff;border-radius:2px;padding:1px 5px;margin-left:6px;font-weight:600;">${gaccReentryCount} PREV REPORTED</span>` : '';
+    const reentryBadgeGacc = gaccReentryCount ? `<span style="font-size:10px;background:#b8960a;color:#fff;border-radius:2px;padding:1px 5px;margin-left:6px;font-weight:600;">${gaccReentryCount} DROPPED</span>` : '';
+    const plBadge = gaccPLs[gacc] ? `<span style="font-size:10px;background:#2565ae;color:#fff;border-radius:2px;padding:1px 5px;margin-left:6px;font-weight:600;">PL ${gaccPLs[gacc]}</span>` : '';
     return `
       <div class="gacc-section">
         <div class="gacc-section-head" style="border-color:${color};">
-          <span class="gacc-label" style="background:${color};">${gacc}</span>${cimtBadge}${reentryBadgeGacc}
+          <span class="gacc-label" style="background:${color};">${gacc}</span>${plBadge}${cimtBadge}${reentryBadgeGacc}
           <span style="font-family:'IBM Plex Mono',monospace;font-size:11px;color:var(--muted);">${incidents.length} qualifying${missed.length ? ` · ${missed.length} no 209` : ''}</span>
         </div>
         <div class="block">
@@ -7479,9 +7972,7 @@ function renderOutput() {
             Narrative Lines — ${gacc}
             <button class="copy-btn narr" onclick="copyNarrFromBlock(this)">Copy Narratives</button>
           </div>
-          ${sortPanel}
           ${teamPanel}
-          ${lrSortPanel}
           ${narrLines}
         </div>
         <div class="block">
@@ -7541,8 +8032,9 @@ function renderOutput() {
   outputEl.style.display = 'block';
   outputEl.innerHTML = `
     <div class="summary">
-      <strong>${qualifying.length}</strong> qualifying · <strong>${nonQualifying.length}</strong> non-qualifying across <strong>${gaccKeys.length}</strong> GACC${gaccKeys.length !== 1 ? 's' : ''}${reentryCount ? ` · <span style="color:#b8960a;font-weight:600;">${reentryCount} prev reported</span>` : ''}${deletedFires.size ? ` · <span style="color:#c0392b;font-weight:600;">${deletedFires.size} deleted</span>` : ''}
+      <strong>${qualifying.length}</strong> qualifying · <strong>${nonQualifying.length}</strong> non-qualifying across <strong>${gaccKeys.length}</strong> GACC${gaccKeys.length !== 1 ? 's' : ''}${reentryCount ? ` · <span style="color:#b8960a;font-weight:600;">${reentryCount} dropped</span>` : ''}${deletedFires.size ? ` · <span style="color:#c0392b;font-weight:600;">${deletedFires.size} deleted</span>` : ''}
       <span style="float:right;">
+        <button class="copy-btn" onclick="generateIMSR()" style="background:${templateDocxBytes ? '#1a6b1a' : '#888'};margin-right:6px;" title="${templateDocxBytes ? 'Generate complete IMSR .docx from template' : 'Drop a .docx (not PDF) in the previous IMSR zone first'}">⬇ Generate IMSR${templateDocxBytes ? '' : ' (need .docx)'}${autoSitData ? ' ✓' : ''}</button>
         <button class="copy-btn narr" onclick="copyAllNarr(this)" style="margin-right:6px;">Copy All Narratives</button>
         <button class="copy-btn" onclick="copyAllRows(this)" style="margin-right:6px;">Copy All Rows</button>
         <button class="copy-btn clear" onclick="clearAll()" style="margin-left:6px;">Clear All</button>
@@ -7561,6 +8053,25 @@ function renderOutput() {
   `;
   // Reapply narrative filter (persists across re-renders from delete, precip toggle, etc.)
   if (narrFilterState !== 'all') applyNarrFilter(narrFilterState);
+
+  // Update PL panel — show only for active GACCs
+  const plPanel = document.getElementById('pl-panel');
+  const gaccPlRow = document.getElementById('gacc-pl-row');
+  if (plPanel && gaccPlRow) {
+    plPanel.style.display = 'block';
+    const plOpts = v => ['',...'12345'].map(o => `<option value="${o}"${o===v?' selected':''}>${o||'—'}</option>`).join('');
+    gaccPlRow.innerHTML = '<label>GACC PLs:</label>' + gaccKeys.map(g => {
+      const plVal = gaccPLs[g] || '';
+      const plWarn = !plVal ? ' style="outline:2px solid #e6a817;border-radius:2px;"' : '';
+      return `<span class="gacc-pl">${g} <select${plWarn} onchange="gaccPLs['${g}']=this.value;renderOutput();">${plOpts(plVal)}</select></span>`;
+    }).join('');
+    // Restore National PL dropdown
+    const natSel = document.getElementById('pl-national');
+    if (natSel && nationalPL) natSel.value = nationalPL;
+  }
+
+  // Sync fire name tags — deleted fires show as strikethrough/restorable
+  updateFileList();
 }
 
 function buildCopyLine(f) {
@@ -7574,8 +8085,8 @@ function buildCopyLine(f) {
   let alsoManaging = '';
   const managedByTeam = findTeamByMember(f.f2);
   const isPrimaryTeam = findTeamByPrimary(f.f2);
-  if (managedByTeam) {
-    // Managed fire — no CIMT label in copy
+  // Drop CIMT/NIMO label for managed fires, 100% contained, or Final
+  if (managedByTeam || is100(f) || f.isFinal) {
     cimtLabel = '';
   } else if (f.hasCIMT || f.hasNIMO) {
     const teamType = f.hasNIMO ? 'NIMO' : 'CIMT';
@@ -7651,7 +8162,7 @@ function copyAllNarr(btn) {
       const bEl = div.querySelector('b');
       const name = bEl ? bEl.textContent.trim() : '';
       const clone = div.cloneNode(true);
-      clone.querySelectorAll('button, .last-rpt-badge, .ret100-badge, .discrep-badge, .reentry-badge, .onedone-badge').forEach(el => el.remove());
+      clone.querySelectorAll('button, .last-rpt-badge, .ret100-badge, .discrep-badge, .reentry-badge, .stale-badge').forEach(el => el.remove());
       const fullText = clone.textContent.trim();
       const rest = name && fullText.startsWith(name) ? fullText.slice(name.length) : fullText;
       const plain  = name + rest;
@@ -7695,7 +8206,7 @@ function copyNarrFromBlock(btn) {
       const bEl = el.querySelector('b');
       const name = bEl ? bEl.textContent.trim() : '';
       const clone = el.cloneNode(true);
-      clone.querySelectorAll('button, .last-rpt-badge, .ret100-badge, .discrep-badge, .reentry-badge, .onedone-badge').forEach(n => n.remove());
+      clone.querySelectorAll('button, .last-rpt-badge, .ret100-badge, .discrep-badge, .reentry-badge, .stale-badge').forEach(n => n.remove());
       const fullText = clone.textContent.trim();
       const rest = name && fullText.startsWith(name) ? fullText.slice(name.length) : fullText;
       const plain  = name + rest;
@@ -8013,7 +8524,7 @@ function copyMissedNarr(btn) {
     const bEl = div.querySelector('b');
     const name = bEl ? bEl.textContent.trim() : '';
     const clone = div.cloneNode(true);
-    clone.querySelectorAll('button, .last-rpt-badge, .ret100-badge, .discrep-badge, .reentry-badge, .onedone-badge').forEach(el => el.remove());
+    clone.querySelectorAll('button, .last-rpt-badge, .ret100-badge, .discrep-badge, .reentry-badge, .stale-badge').forEach(el => el.remove());
     const fullText = clone.textContent.trim();
     const rest = name && fullText.startsWith(name) ? fullText.slice(name.length) : fullText;
     const plain  = name + rest;
@@ -8158,7 +8669,7 @@ function parseIMSR(text) {
           // Use a simple scan — stop at patterns that look like another fire's narrative start
           let narrText = afterOrg;
           // Truncate at next "FireName, OrgText." boundary or table section
-          const stopPatterns = [/\bIncident Name\b/i, /\bTABLE ROWS\b/i, /\b[A-Z]{2}-[A-Z]{2,}\s+[\d,]+\s/];
+          const stopPatterns = [/\bIncident Name\b/i, /\bTABLE ROWS\b/i, /\b[A-Z]{2}-[A-Z]{2,}\s+[\d,]+\s/, /\s\*\s+[A-Z][A-Za-z]/];
           for (const sp of stopPatterns) {
             const sm = sp.exec(narrText);
             if (sm) narrText = narrText.slice(0, sm.index).trim();
@@ -8184,6 +8695,20 @@ function parseIMSR(text) {
     }
     if (!narrEntry) narrEntry = { narrative: '', fullNarr: '', missCount: 1 };
 
+    // Extract CIMT/NIMO team info from narrative
+    let prevTeamType = '', prevTeamName = '', prevManagedNames = [];
+    if (narrEntry.fullNarr) {
+      const teamM = narrEntry.fullNarr.match(/(CIMT|NIMO)\s*\(([^)]+)\)/);
+      if (teamM) {
+        prevTeamType = teamM[1];
+        prevTeamName = teamM[2].trim();
+      }
+      const mgrM = narrEntry.fullNarr.match(/also managing the (.+?) incidents?/i);
+      if (mgrM) {
+        prevManagedNames = mgrM[1].split(/,\s*|\s+and\s+/i).map(s => s.trim()).filter(Boolean);
+      }
+    }
+
     const est = m[7];  // Est from prev IMSR table: M/DD, ---, or UNK
 
     const key = normKey(name, unit);
@@ -8193,7 +8718,8 @@ function parseIMSR(text) {
         narrative:  narrEntry.narrative,
         fullNarr:   narrEntry.fullNarr,
         missCount:  narrEntry.missCount,
-        wasLastReport: false });
+        wasLastReport: false,
+        prevTeamType, prevTeamName, prevManagedNames });
     }
   }
 
@@ -8265,9 +8791,1107 @@ function prevMatch(f) {
 }
 
 // Intercept Ctrl+C — if any narr-lines are selected, override clipboard
-// with properly spaced HTML so Word paste looks the same as button copy.
-// Copy event listener removed — highlight + Ctrl+C now works natively.
-// Use the Copy buttons for Word-formatted output with bold fire names.
+// ── DOCX GENERATION ENGINE ───────────────────────────────────────────────
+
+function xmlEsc(s) {
+  return String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/[\u2018\u2019]/g,"'").replace(/[\u201C\u201D]/g,'"');
+}
+
+function mergeDocxRuns(xml) {
+  // Merge adjacent <w:r> elements with identical <w:rPr> blocks.
+  // Word splits text across runs for edit-tracking (rsid attributes).
+  // Strip rsid* attributes first so runs that differ only by rsid merge.
+  let out = xml.replace(/\s+w:rsid[A-Za-z]*="[^"]*"/g, '');
+  // Iteratively merge adjacent runs with same rPr
+  let prev;
+  do {
+    prev = out;
+    out = out.replace(
+      /<w:r>(<w:rPr>([\s\S]*?)<\/w:rPr>)?<w:t([^>]*)>([\s\S]*?)<\/w:t><\/w:r>\s*<w:r>(<w:rPr>([\s\S]*?)<\/w:rPr>)?<w:t([^>]*)>([\s\S]*?)<\/w:t><\/w:r>/g,
+      function(_, rpr1Full, rpr1, tAttr1, text1, rpr2Full, rpr2, tAttr2, text2) {
+        const r1 = (rpr1 || '').trim();
+        const r2 = (rpr2 || '').trim();
+        if (r1 === r2) {
+          const combined = text1 + text2;
+          const needsPreserve = /^\s|\s$/.test(combined) ? ' xml:space="preserve"' : '';
+          const rprBlock = rpr1Full || '';
+          return `<w:r>${rprBlock}<w:t${needsPreserve}>${combined}</w:t></w:r>`;
+        }
+        return _;
+      }
+    );
+  } while (out !== prev);
+  return out;
+}
+
+// GACC full area names for .docx headers
+const GACC_FULL_NAMES = {
+  SACC: 'Southern Area', SWCC: 'Southwest Area', GBCC: 'Great Basin Area',
+  RMCC: 'Rocky Mountain Area', NRCC: 'Northern Rockies Area', NWCC: 'Northwest Area',
+  NOPS: 'Northern California Area', SOPS: 'Southern California Area',
+  ONCC: 'Northern California Area', OSCC: 'Southern California Area',
+  EACC: 'Eastern Area', AICC: 'Alaska Area'
+};
+
+function docxNarrPara(boldText, normalText) {
+  const rpr = '<w:rPr><w:rFonts w:eastAsiaTheme="majorEastAsia" w:cstheme="majorBidi"/>';
+  return `<w:p><w:pPr><w:spacing w:after="0" w:line="240" w:lineRule="auto"/><w:rPr><w:rFonts w:eastAsiaTheme="majorEastAsia" w:cstheme="majorBidi"/></w:rPr></w:pPr><w:r>${rpr}<w:b/><w:bCs/></w:rPr><w:t xml:space="preserve">${xmlEsc(boldText)}</w:t></w:r><w:r>${rpr}</w:rPr><w:t xml:space="preserve">${xmlEsc(normalText)}</w:t></w:r></w:p>`;
+}
+
+function docxEmptyPara() {
+  return '<w:p><w:pPr><w:spacing w:after="0" w:line="240" w:lineRule="auto"/><w:rPr><w:rFonts w:eastAsiaTheme="majorEastAsia" w:cstheme="majorBidi"/></w:rPr></w:pPr></w:p>';
+}
+
+function docxPageBreak() {
+  return '<w:p><w:pPr><w:spacing w:after="0" w:line="240" w:lineRule="auto"/><w:rPr><w:rFonts w:eastAsia="Arial" w:cs="Arial"/></w:rPr></w:pPr><w:r><w:rPr><w:rFonts w:eastAsia="Arial" w:cs="Arial"/></w:rPr><w:br w:type="page"/></w:r></w:p>';
+}
+
+function docxGaccHeading(gaccKey, pl) {
+  const name = GACC_FULL_NAMES[gaccKey] || gaccKey;
+  const plVal = pl || gaccPLs[gaccKey] || '';
+  const plStr = plVal ? ` (PL ${plVal})` : '';
+  return `<w:p><w:pPr><w:pStyle w:val="Heading1"/><w:spacing w:line="240" w:lineRule="auto"/><w:contextualSpacing/></w:pPr><w:r><w:t xml:space="preserve">${xmlEsc(name)}${xmlEsc(plStr)}  </w:t></w:r></w:p>`;
+}
+
+// Build one narrative line for .docx output (returns XML string)
+function docxBuildNarr(f) {
+  const { name, parts } = buildNarrativeLine(f);
+  const sentence = capitalizeSentences(parts.join('. ') + (parts.length ? '.' : ''));
+  const org = (lookupUnit(f.unit) || fv(f.unit) || '').replace(/\s*\([A-Z]{2}\)$/,'') || '[MANAGING ORG]';
+
+  let cimtLabel = '';
+  let alsoManaging = '';
+  const managedByTeam = findTeamByMember(f.f2);
+  const isPrimaryTeam = findTeamByPrimary(f.f2);
+  // Drop CIMT/NIMO label for managed fires, 100% contained, or Final
+  if (managedByTeam || is100(f) || f.isFinal) {
+    cimtLabel = '';
+  } else if (f.hasCIMT || f.hasNIMO) {
+    const teamType = f.hasNIMO ? 'NIMO' : 'CIMT';
+    const teamName = isPrimaryTeam ? isPrimaryTeam.teamName : '___';
+    cimtLabel = `. ${teamType} (${teamName})`;
+    if (isPrimaryTeam && isPrimaryTeam.managedIncs.length) {
+      alsoManaging = buildAlsoManaging(f);
+    }
+  }
+
+  const precip = f._precipConfirmed ? ' Precipitation occurred over the fire area yesterday.' : '';
+  const prev = prevMatch(f);
+  const reentry = isReentry(f);
+  const isNew = !prev && !reentry;
+  const asterisk = isNew ? '* ' : '';
+  const reentryStmt = reentry ? ' Previously reported incident.' : '';
+
+  let body = sentence;
+  const LAST_RPT = 'Last report unless significant activity occurs.';
+  if (precip) {
+    if (body.endsWith(LAST_RPT)) {
+      body = body.slice(0, -LAST_RPT.length).trimEnd() + ' ' + precip.trim() + ' ' + LAST_RPT;
+    } else {
+      body = body.trimEnd().replace(/\.?$/, '') + '. ' + precip.trim();
+    }
+  }
+
+  const boldPart = asterisk + name;
+  const normalPart = `, ${org}${cimtLabel}.${alsoManaging}${reentryStmt} ${body}`;
+  return docxNarrPara(boldPart, normalPart);
+}
+
+// Build missed fire narrative for .docx
+function docxBuildMissedNarr(p) {
+  const name = normalizeName(p.name || '???');
+  const unit = (p.unit || '').replace(/-\d+$/, '');
+  const org = (lookupUnit(p.unit) || unit || '').replace(/\s*\([A-Z]{2}\)$/, '') || '[MANAGING ORG]';
+  const prevNarr = (p.narrative || '').trim();
+  const miss = p.missCount || 1;
+  const suffix = miss >= 2
+    ? 'No new information. Last report unless new information is received.'
+    : 'No new information.';
+  const tail = prevNarr ? `${prevNarr}. ${suffix}` : suffix;
+  const normalPart = `, ${org}. ${tail}`;
+  return docxNarrPara(name, normalPart);
+}
+
+// Large fire table column widths (from real IMSR)
+const TBL_WIDTHS = [1705, 810, 720, 672, 732, 613, 591, 667, 666, 508, 508, 506, 512, 846, 798];
+const TBL_HEADERS = ['Incident Name', 'Unit', 'Total Acres', 'Chge in Acres', '%', 'Ctn/ Comp', 'Est', 'Total PPL', 'Chge in PPL', 'Crw', 'Eng', 'Heli', 'Strc Lost', '$$ CTD', 'Origin Own'];
+
+function docxTblCell(text, width, opts={}) {
+  const bold = opts.bold ? '<w:b/><w:bCs/>' : '';
+  const shading = opts.shading ? `<w:shd w:val="clear" w:color="auto" w:fill="${opts.shading}"/>` : '';
+  const jc = opts.align === 'left' ? '' : '<w:jc w:val="center"/>';
+  const preserve = /^\s|\s$/.test(text) ? ' xml:space="preserve"' : '';
+  return `<w:tc><w:tcPr><w:tcW w:w="${width}" w:type="dxa"/>${shading}<w:vAlign w:val="center"/></w:tcPr><w:p><w:pPr><w:spacing w:after="0" w:line="240" w:lineRule="auto"/>${jc}<w:rPr><w:rFonts w:eastAsia="Times New Roman" w:cs="Arial"/><w:sz w:val="18"/><w:szCs w:val="18"/></w:rPr></w:pPr><w:r><w:rPr><w:rFonts w:eastAsia="Times New Roman" w:cs="Arial"/>${bold}<w:sz w:val="18"/><w:szCs w:val="18"/></w:rPr><w:t${preserve}>${xmlEsc(text)}</w:t></w:r></w:p></w:tc>`;
+}
+
+function docxTblHeaderRow() {
+  const cells = TBL_HEADERS.map((h, i) =>
+    docxTblCell(h + ' ', TBL_WIDTHS[i], { bold: false, shading: 'CCFFFF' })
+  ).join('');
+  return `<w:tr><w:trPr><w:trHeight w:val="330"/><w:tblHeader/><w:jc w:val="center"/></w:trPr>${cells}</w:tr>`;
+}
+
+function docxTblDataRow(f, incidentNumber) {
+  const cv = getColVals(f);
+  const vals = [cv.name, cv.unit, cv.acres, cv.chgeac, cv.pct, cv.ctn, cv.est, cv.ppl, cv.chgeppl, cv.crw, cv.eng, cv.heli, cv.strc, cv.cost, cv.own];
+  const cells = vals.map((v, i) =>
+    docxTblCell(v || '', TBL_WIDTHS[i], { align: i === 0 ? 'left' : 'center' })
+  ).join('');
+  return `<w:tr><w:trPr><w:trHeight w:val="285"/><w:jc w:val="center"/></w:trPr>${cells}</w:tr>`;
+}
+
+function docxMissedTblRow(p) {
+  const name = normalizeName(p.name || '???');
+  const unit = (p.unit || '').replace(/-\d+$/, '');
+  // Est carry-over logic (matches display builder)
+  let estVal = p.est || '---';
+  if (p.pct >= 100) {
+    estVal = '---';
+  } else {
+    const dm = (estVal || '').match(/^(\d{1,2})\/(\d{1,2})$/);
+    if (dm) {
+      const now = new Date();
+      const candidate = new Date(now.getFullYear(), parseInt(dm[1]) - 1, parseInt(dm[2]));
+      if (candidate < now && (now - candidate) < 180 * 86400000) estVal = 'UNK';
+    }
+  }
+  const vals = [
+    name, unit,
+    p.acres ? p.acres.toLocaleString() : '---',
+    '---', String(p.pct != null ? p.pct : '---'), 'Ctn', estVal,
+    String(p.ppl != null ? p.ppl : '---'), '---',
+    String(p.crw || 0), String(p.eng || 0), String(p.heli || 0),
+    String(p.strc || 0), p.cost || 'NR', p.origin || '---'
+  ];
+  const cells = vals.map((v, i) =>
+    docxTblCell(v, TBL_WIDTHS[i], { align: i === 0 ? 'left' : 'center' })
+  ).join('');
+  return `<w:tr><w:trPr><w:trHeight w:val="285"/><w:jc w:val="center"/></w:trPr>${cells}</w:tr>`;
+}
+
+function docxLargeFireTable(rows) {
+  const gridCols = TBL_WIDTHS.map(w => `<w:gridCol w:w="${w}"/>`).join('');
+  return `<w:tbl><w:tblPr><w:tblW w:w="0" w:type="auto"/><w:tblBorders><w:top w:val="single" w:sz="4" w:space="0" w:color="auto"/><w:left w:val="single" w:sz="4" w:space="0" w:color="auto"/><w:bottom w:val="single" w:sz="4" w:space="0" w:color="auto"/><w:right w:val="single" w:sz="4" w:space="0" w:color="auto"/><w:insideH w:val="single" w:sz="4" w:space="0" w:color="auto"/><w:insideV w:val="single" w:sz="4" w:space="0" w:color="auto"/></w:tblBorders><w:tblCellMar><w:left w:w="0" w:type="dxa"/><w:right w:w="0" w:type="dxa"/></w:tblCellMar><w:tblLook w:val="04A0" w:firstRow="1" w:lastRow="0" w:firstColumn="1" w:lastColumn="0" w:noHBand="0" w:noVBand="1"/><w:tblCaption w:val="Table of Large Fire Activity"/><w:tblDescription w:val="Table of summary information for large fires including location, size, number of resources assigned and cost."/></w:tblPr><w:tblGrid>${gridCols}</w:tblGrid>${docxTblHeaderRow()}${rows}</w:tbl>`;
+}
+
+function docxLegendPara(entries) {
+  if (!entries.length) return '';
+  const text = entries.map(e => `${e.shortCode} – ${e.fullName}`).join('     ');
+  return `<w:p><w:pPr><w:spacing w:after="0" w:line="240" w:lineRule="auto"/><w:rPr><w:rFonts w:eastAsia="Arial" w:cs="Arial"/><w:sz w:val="18"/><w:szCs w:val="18"/></w:rPr></w:pPr><w:r><w:rPr><w:rFonts w:eastAsia="Arial" w:cs="Arial"/><w:sz w:val="18"/><w:szCs w:val="18"/></w:rPr><w:t xml:space="preserve">${xmlEsc(text)}</w:t></w:r></w:p>`;
+}
+
+// Build GACC fire activity stats table (2-column borderless)
+function docxGaccStatsTable(gacc, incidents, missed) {
+  const newLarge = incidents.filter(f => {
+    const prev = prevMatch(f);
+    const reentry = isReentry(f);
+    return !prev && !reentry;
+  }).length;
+  // Uncontained includes both 209-submitted fires AND missed fires (still active, no 209 today)
+  const missedUncontained = (missed || []).filter(p => p.pct < 100).length;
+  const uncontained = incidents.filter(f => !is100(f)).length + missedUncontained;
+  const cimts = new Set(incidents.filter(f => f.hasCIMT && !is100(f) && !findTeamByMember(f.f2)).map(f => {
+    const team = findTeamByPrimary(f.f2);
+    return team ? team.teamName : f.f2;
+  })).size;
+  const nimos = new Set(incidents.filter(f => f.hasNIMO && !is100(f) && !findTeamByMember(f.f2)).map(f => {
+    const team = findTeamByPrimary(f.f2);
+    return team ? team.teamName : f.f2;
+  })).size;
+
+  function statsRow(label, value, bold) {
+    const bRpr = bold ? '<w:b/><w:bCs/>' : '';
+    const rpr = '<w:rPr><w:rFonts w:eastAsia="Times New Roman" w:cs="Arial"/>' + bRpr + '</w:rPr>';
+    const cellPr = '<w:tcPr><w:tcW w:w="4335" w:type="dxa"/><w:tcBorders><w:top w:val="nil"/><w:left w:val="nil"/><w:bottom w:val="nil"/><w:right w:val="nil"/></w:tcBorders><w:vAlign w:val="center"/></w:tcPr>';
+    const cellPr2 = '<w:tcPr><w:tcW w:w="1080" w:type="dxa"/><w:tcBorders><w:top w:val="nil"/><w:left w:val="nil"/><w:bottom w:val="nil"/><w:right w:val="nil"/></w:tcBorders><w:vAlign w:val="center"/></w:tcPr>';
+    const pPrL = '<w:pPr><w:keepNext/><w:keepLines/><w:widowControl w:val="0"/><w:spacing w:after="0" w:line="240" w:lineRule="auto"/></w:pPr>';
+    const pPrC = '<w:pPr><w:keepNext/><w:keepLines/><w:widowControl w:val="0"/><w:spacing w:after="0" w:line="240" w:lineRule="auto"/><w:jc w:val="center"/></w:pPr>';
+    return `<w:tr><w:trPr><w:trHeight w:val="274"/></w:trPr><w:tc>${cellPr}<w:p>${pPrL}<w:r>${rpr}<w:t xml:space="preserve">${xmlEsc(label)}</w:t></w:r></w:p></w:tc><w:tc>${cellPr2}<w:p>${pPrC}<w:r>${rpr}<w:t>${xmlEsc(String(value))}</w:t></w:r></w:p></w:tc></w:tr>`;
+  }
+
+  let rows = statsRow('Fire Activity and Teams Assigned', 'Totals', true);
+  const newFires = (autoSitData && autoSitData.newFiresByGacc) ? (autoSitData.newFiresByGacc[gacc] ?? '') : '';
+  console.log(`docxGaccStatsTable(${gacc}): newFires=${newFires}, newLarge=${newLarge}, uncontained=${uncontained}`);
+  if (newFires !== '') rows += statsRow('New fires:', newFires, false);
+  rows += statsRow('New large incidents:', newLarge, false);
+  rows += statsRow('Uncontained large fires:', uncontained, false);
+  if (cimts > 0) rows += statsRow('CIMTs Committed:', cimts, false);
+  if (nimos > 0) rows += statsRow('NIMOs Committed:', nimos, false);
+
+  return `<w:tbl><w:tblPr><w:tblW w:w="5415" w:type="dxa"/><w:tblBorders><w:top w:val="outset" w:sz="6" w:space="0" w:color="auto"/><w:left w:val="outset" w:sz="6" w:space="0" w:color="auto"/><w:bottom w:val="outset" w:sz="6" w:space="0" w:color="auto"/><w:right w:val="outset" w:sz="6" w:space="0" w:color="auto"/></w:tblBorders><w:tblCellMar><w:left w:w="0" w:type="dxa"/><w:right w:w="0" w:type="dxa"/></w:tblCellMar><w:tblLook w:val="04A0" w:firstRow="1" w:lastRow="0" w:firstColumn="1" w:lastColumn="0" w:noHBand="0" w:noVBand="1"/><w:tblCaption w:val="Geographic Area Fire Activity"/></w:tblPr><w:tblGrid><w:gridCol w:w="4335"/><w:gridCol w:w="1080"/></w:tblGrid>${rows}</w:tbl>`;
+}
+
+// Build one full GACC section XML
+function docxBuildGaccSection(gacc, incidents, missed, isFirst) {
+  const parts = [];
+
+  // Page break before first GACC (start after Resource Summary). Others get 2 blank lines.
+  if (isFirst) {
+    parts.push(docxPageBreak());
+  } else {
+    parts.push(docxEmptyPara());
+    parts.push(docxEmptyPara());
+  }
+
+  // GACC heading
+  parts.push(docxGaccHeading(gacc, ''));
+
+  // GACC fire activity stats table
+  parts.push(docxGaccStatsTable(gacc, incidents, missed));
+  // Space between stats table and first narrative
+  parts.push(docxEmptyPara());
+
+  // Narratives: active → kick-off → missed → 100%
+  const activeInc = incidents.filter(f => !isLastReport(f) && !is100(f));
+  const lastRptInc = incidents.filter(f => isLastReport(f) && !is100(f));
+  const containedInc = incidents.filter(f => is100(f));
+
+  // Apply manual sort if available (f2-based)
+  let sortedActive = activeInc;
+  if (manualOrder[gacc]) {
+    const ordered = [];
+    const remaining = [...activeInc];
+    for (const f2 of manualOrder[gacc]) {
+      const idx = remaining.findIndex(f => f.f2 === f2);
+      if (idx >= 0) ordered.push(...remaining.splice(idx, 1));
+    }
+    ordered.push(...remaining);
+    sortedActive = ordered;
+  }
+  sortedActive = applyTeamGrouping(sortedActive);
+
+  const lrKey = gacc + '_lr';
+  let sortedLastRpt = lastRptInc;
+  if (manualOrder[lrKey]) {
+    const ordered = [];
+    const remaining = [...lastRptInc];
+    for (const f2 of manualOrder[lrKey]) {
+      const idx = remaining.findIndex(f => f.f2 === f2);
+      if (idx >= 0) ordered.push(...remaining.splice(idx, 1));
+    }
+    ordered.push(...remaining);
+    sortedLastRpt = ordered;
+  }
+
+  // Build narrative paragraphs — active fires
+  sortedActive.forEach((f, i) => {
+    parts.push(docxBuildNarr(f));
+    if (i < sortedActive.length - 1) parts.push(docxEmptyPara());
+  });
+
+  // Spacer between active and kick-off (only if both exist)
+  if (sortedActive.length && sortedLastRpt.length) parts.push(docxEmptyPara());
+
+  // Kick-off fire narratives
+  sortedLastRpt.forEach((f, i) => {
+    parts.push(docxBuildNarr(f));
+    if (i < sortedLastRpt.length - 1) parts.push(docxEmptyPara());
+  });
+
+  // Spacer before missed fires (only if both exist)
+  const missedWithNarr = missed.filter(p => (p.missCount || 1) <= 2);
+  if ((sortedActive.length || sortedLastRpt.length) && missedWithNarr.length) parts.push(docxEmptyPara());
+
+  // Missed fire narratives (bucket 4a/4b only)
+  missedWithNarr.forEach((p, i) => {
+    parts.push(docxBuildMissedNarr(p));
+    if (i < missedWithNarr.length - 1) parts.push(docxEmptyPara());
+  });
+
+  // 100% contained fires have no narrative
+
+  // One blank line before the large fire table
+  parts.push(docxEmptyPara());
+
+  // Large fire table
+  let tableRowsXml = '';
+  const allTableInc = [...sortedActive, ...sortedLastRpt];
+  allTableInc.forEach(f => { tableRowsXml += docxTblDataRow(f, f.f2); });
+  missed.forEach(p => { tableRowsXml += docxMissedTblRow(p); });
+  containedInc.forEach(f => { tableRowsXml += docxTblDataRow(f, f.f2); });
+
+  if (tableRowsXml) {
+    parts.push(docxLargeFireTable(tableRowsXml));
+  }
+
+  // Unit legend
+  const legend = buildUnitLegend(incidents);
+  if (legend.length) {
+    parts.push(docxLegendPara(legend));
+  }
+
+  return parts.join('');
+}
+
+// ── Clear+Fill: replace cell text while preserving all formatting ────
+function ensureBoldCell(cellXml) {
+  // Add <w:b/> to every <w:rPr> in the cell; if no rPr exists in a run, inject one.
+  return cellXml
+    .replace(/(<w:rPr>)([\s\S]*?)(<\/w:rPr>)/g, (m, open, inner, close) => {
+      if (/<w:b\/>/.test(inner) || /<w:b\s/.test(inner)) return m; // already bold
+      return `${open}<w:b/>${inner}${close}`;
+    })
+    .replace(/<w:r>(<w:t)/g, '<w:r><w:rPr><w:b/></w:rPr>$1'); // bare runs with no rPr
+}
+
+function replaceCellTextContent(cellXml, newText, bold = false) {
+  const tRe = /<w:t([^>]*)>[^<]*<\/w:t>/g;
+  let found = false;
+  let first = true;
+  let result = cellXml.replace(tRe, (match, attrs) => {
+    found = true;
+    if (first) { first = false; return `<w:t xml:space="preserve">${xmlEsc(String(newText))}</w:t>`; }
+    return `<w:t${attrs}></w:t>`;
+  });
+  if (found) return bold ? ensureBoldCell(result) : result;
+  // No <w:t> found (empty cell) — inject a run with the value, inheriting paragraph formatting
+  const pEnd = cellXml.lastIndexOf('</w:p>');
+  if (pEnd >= 0) {
+    // Extract rPr from paragraph's pPr to inherit bold/font/size
+    const pPrMatch = cellXml.match(/<w:pPr>[\s\S]*?<\/w:pPr>/);
+    let rPr = '';
+    if (pPrMatch) {
+      const rPrInner = pPrMatch[0].match(/<w:rPr>([\s\S]*?)<\/w:rPr>/);
+      if (rPrInner) rPr = `<w:rPr>${rPrInner[1]}</w:rPr>`;
+    }
+    return cellXml.substring(0, pEnd) +
+      `<w:r>${rPr}<w:t xml:space="preserve">${xmlEsc(String(newText))}</w:t></w:r>` +
+      cellXml.substring(pEnd);
+  }
+  return cellXml;
+}
+
+// Fill a table in-place: find rows by key text in first column, replace data cells
+function fillTableByKey(tblXml, dataMap) {
+  let result = tblXml;
+  for (const [key, vals] of Object.entries(dataMap)) {
+    const keyPattern = `>${key}<`;
+    const keyIdx = result.indexOf(keyPattern);
+    if (keyIdx < 0) continue;
+    const trStart = result.lastIndexOf('<w:tr', keyIdx);
+    const trEnd = result.indexOf('</w:tr>', keyIdx);
+    if (trStart < 0 || trEnd < 0) continue;
+    const trEndFull = trEnd + 7;
+    let rowXml = result.substring(trStart, trEndFull);
+    const cellRe = /<w:tc\b[\s\S]*?<\/w:tc>/g;
+    const cells = [...rowXml.matchAll(cellRe)];
+    for (let c = cells.length - 1; c >= 1; c--) {
+      const vi = c - 1;
+      if (vi >= vals.length) continue;
+      const newCell = replaceCellTextContent(cells[c][0], vals[vi]);
+      rowXml = rowXml.substring(0, cells[c].index) + newCell + rowXml.substring(cells[c].index + cells[c][0].length);
+    }
+    result = result.substring(0, trStart) + rowXml + result.substring(trEndFull);
+  }
+  return result;
+}
+
+// Fill F&A table: match rows by extracted text, replace numeric cells
+function fillFATableByArea(tblXml, faData) {
+  if (!faData) return tblXml;
+  let result = tblXml;
+  const fmt = n => (n === 0 || n === null || n === undefined) ? '0' : n.toLocaleString();
+
+  // Build a lookup: area keyword → { fires: [...], acres: [...] }
+  const areaLookup = {};
+  for (const row of faData.rows) {
+    const name = FA_AREA_TO_GACC_REV[row.gacc] || row.area;
+    areaLookup[name] = { fires: row.fires, acres: row.acres };
+  }
+
+  // Parse all rows, extract text to identify them
+  const rowRe = /<w:tr\b[\s\S]*?<\/w:tr>/g;
+  const rows = [...result.matchAll(rowRe)];
+
+  // Process rows in reverse to preserve indices
+  for (let i = rows.length - 1; i >= 0; i--) {
+    const rowXml = rows[i][0];
+    // Extract all text from this row
+    const texts = [];
+    const tRe = /<w:t[^>]*>([^<]*)<\/w:t>/g;
+    let tm;
+    while ((tm = tRe.exec(rowXml)) !== null) texts.push(tm[1]);
+    const rowText = texts.join(' ').trim();
+
+    // Check for TOTAL FIRES / TOTAL ACRES
+    if (/TOTAL\s*FIRES/i.test(rowText) && faData.totalFires) {
+      const cellRe2 = /<w:tc\b[\s\S]*?<\/w:tc>/g;
+      const cells = [...rowXml.matchAll(cellRe2)];
+      let newRow = rowXml;
+      for (let c = cells.length - 1; c >= 2; c--) {
+        const vi = c - 2;
+        if (vi < faData.totalFires.length) {
+          newRow = newRow.substring(0, cells[c].index) +
+            replaceCellTextContent(cells[c][0], fmt(faData.totalFires[vi]), true) +
+            newRow.substring(cells[c].index + cells[c][0].length);
+        }
+      }
+      result = result.substring(0, rows[i].index) + newRow + result.substring(rows[i].index + rows[i][0].length);
+      continue;
+    }
+    if (/TOTAL\s*ACRES/i.test(rowText) && faData.totalAcres) {
+      const cellRe2 = /<w:tc\b[\s\S]*?<\/w:tc>/g;
+      const cells = [...rowXml.matchAll(cellRe2)];
+      let newRow = rowXml;
+      for (let c = cells.length - 1; c >= 2; c--) {
+        const vi = c - 2;
+        if (vi < faData.totalAcres.length) {
+          newRow = newRow.substring(0, cells[c].index) +
+            replaceCellTextContent(cells[c][0], fmt(faData.totalAcres[vi]), true) +
+            newRow.substring(cells[c].index + cells[c][0].length);
+        }
+      }
+      result = result.substring(0, rows[i].index) + newRow + result.substring(rows[i].index + rows[i][0].length);
+      continue;
+    }
+
+    // Match area names — check if row text contains a known area
+    let matchedArea = null;
+    let isFires = /FIRES/i.test(rowText);
+    let isAcres = /ACRES/i.test(rowText);
+    if (!isFires && !isAcres) continue;
+
+    for (const areaName of Object.keys(areaLookup)) {
+      if (rowText.includes(areaName)) { matchedArea = areaName; break; }
+    }
+    // Fallback: partial match for fragmented names
+    if (!matchedArea) {
+      for (const areaName of Object.keys(areaLookup)) {
+        const words = areaName.split(' ');
+        if (words.every(w => rowText.includes(w))) { matchedArea = areaName; break; }
+      }
+    }
+    if (!matchedArea) continue;
+
+    console.log(`fillFA: matched row "${rowText.substring(0,40)}" → area "${matchedArea}" (${isFires?'FIRES':'ACRES'})`);
+    const vals = isFires ? areaLookup[matchedArea].fires : areaLookup[matchedArea].acres;
+    const cellRe2 = /<w:tc\b[\s\S]*?<\/w:tc>/g;
+    const cells = [...rowXml.matchAll(cellRe2)];
+    let newRow = rowXml;
+    for (let c = cells.length - 1; c >= 2; c--) {
+      const vi = c - 2;
+      const isTotalCol = (c === cells.length - 1);
+      if (vi < vals.length) {
+        newRow = newRow.substring(0, cells[c].index) +
+          replaceCellTextContent(cells[c][0], fmt(vals[vi]), isTotalCol) +
+          newRow.substring(cells[c].index + cells[c][0].length);
+      }
+    }
+    result = result.substring(0, rows[i].index) + newRow + result.substring(rows[i].index + rows[i][0].length);
+  }
+  return result;
+}
+
+// Reverse GACC→area name map for F&A table lookups
+const FA_AREA_TO_GACC_REV = {
+  AICC:'Alaska', NWCC:'Northwest', ONCC:'Northern California',
+  OSCC:'Southern California', NRCC:'Northern Rockies', GBCC:'Great Basin',
+  SWCC:'Southwest', RMCC:'Rocky Mountain', EACC:'Eastern', SACC:'Southern'
+};
+
+// ── Find a <w:tbl> in docXml near a text marker (handles fragmented runs) ──
+function findDocxTable(docXml, markerText, searchFrom) {
+  // First try direct indexOf (fast path for unfragmented text)
+  let idx = docXml.indexOf(markerText, searchFrom || 0);
+
+  // If not found, scan paragraphs for fragmented text
+  if (idx < 0) {
+    const pRe = /<w:p[\s>][\s\S]*?<\/w:p>/g;
+    pRe.lastIndex = searchFrom || 0;
+    let pm;
+    while ((pm = pRe.exec(docXml)) !== null) {
+      const texts = [];
+      const tRe = /<w:t[^>]*>([^<]*)<\/w:t>/g;
+      let tm;
+      while ((tm = tRe.exec(pm[0])) !== null) texts.push(tm[1]);
+      if (texts.join('').includes(markerText)) {
+        idx = pm.index;
+        break;
+      }
+    }
+  }
+  if (idx < 0) return null;
+
+  // Check if marker is INSIDE a table
+  const tblBefore = docXml.lastIndexOf('<w:tbl>', idx);
+  if (tblBefore >= 0) {
+    const tblEndBefore = docXml.indexOf('</w:tbl>', tblBefore);
+    if (tblEndBefore > idx) {
+      return { start: tblBefore, end: tblEndBefore + 8 };
+    }
+  }
+  // Otherwise find next table after marker
+  let tblStart = docXml.indexOf('<w:tbl>', idx);
+  if (tblStart < 0) tblStart = docXml.indexOf('<w:tbl ', idx);
+  if (tblStart < 0) return null;
+  const tblEnd = docXml.indexOf('</w:tbl>', tblStart);
+  if (tblEnd < 0) return null;
+  return { start: tblStart, end: tblEnd + 8 };
+}
+
+// ── Extract yesterday's personnel by GACC from prev IMSR ────────────
+function extractPrevPplByGacc() {
+  if (!prevIMSR) return null;
+  // The prev IMSR doesn't store Resource Summary directly.
+  // We extract it from the template .docx XML if available.
+  // Fallback: sum personnel from individual prev IMSR fires.
+  // For now: use the template docx's Resource Summary table if present.
+  // This gets called inside generateIMSR() where template is already loaded.
+  return null; // Placeholder — computed inside generateIMSR from template XML
+}
+
+async function generateIMSR() {
+  if (!templateDocxBytes) {
+    alert('Drop a previous IMSR .docx in the blue zone first — it provides the formatting template.');
+    return;
+  }
+  if (!allIncidents.length) {
+    alert('No 209 data loaded.');
+    return;
+  }
+  // Warn if any active GACC has no PL set
+  const missingPL = (manualGaccOrder || GACC_ORDER.filter(g => byGacc[g] || missedByGacc[g]))
+    .filter(g => !(gaccPLs[g] || '').trim());
+  if (missingPL.length) {
+    const ok = confirm(`The following GACCs have no PL set:\n  ${missingPL.join(', ')}\n\nProceed anyway?`);
+    if (!ok) return;
+  }
+
+  try {
+    console.log('generateIMSR: starting...');
+
+    // 1. Unzip template
+    const zip = await JSZip.loadAsync(templateDocxBytes);
+    let docXml = await zip.file('word/document.xml').async('string');
+    console.log('generateIMSR: template loaded, XML length:', docXml.length);
+
+    // 2. Compute GACC data (same logic as renderOutput)
+    const qualifying = [];
+    const nonQualifying = [];
+    allIncidents.forEach(f => {
+      if (deletedFires.has(normKey(f.f1, f.unit))) return;
+      const q = qualifiesForIMSR(f);
+      f._qualifies = q.qualifies;
+      f._gacc = deriveGACC(f);
+      if (q.qualifies) qualifying.push(f);
+      else nonQualifying.push(f);
+    });
+    const byGacc = {};
+    qualifying.forEach(f => { (byGacc[f._gacc] = byGacc[f._gacc] || []).push(f); });
+    Object.keys(byGacc).forEach(g => { byGacc[g] = trancheSort(byGacc[g]); });
+
+    const missedByGacc = {};
+    if (prevIMSR) {
+      const matchedKeys = new Set(qualifying.concat(nonQualifying).map(f => normKey(f.f1, f.unit)));
+      for (const [key, p] of prevIMSR) {
+        if (p.pct >= 100) continue;
+        if (matchedKeys.has(key)) continue;
+        if (deletedFires.has(key)) continue;
+        const unitCode = (p.unit || '').toUpperCase().replace(/-\d+$/, '');
+        const gacc = UNIT_GACC_OVERRIDE[unitCode] || STATE_TO_GACC[(p.unit || '').slice(0,2).toUpperCase()] || 'UNKNOWN';
+        (missedByGacc[gacc] = missedByGacc[gacc] || []).push(p);
+      }
+    }
+
+    // Use current GACC order (manual or auto)
+    const gaccKeys = manualGaccOrder || GACC_ORDER.filter(g => byGacc[g] || missedByGacc[g]);
+    const activeGaccKeys = gaccKeys.filter(g => byGacc[g] || missedByGacc[g]);
+    console.log('generateIMSR: GACCs:', activeGaccKeys);
+
+    // 3. Find GACC section boundaries — must be at top-level <w:p elements
+    // Strategy: find all <w:pStyle w:val="Heading1"/> positions, then find their
+    // containing <w:p tag. The first one containing "Area" = GACC start.
+    // The one containing "Fires and Acres" = GACC end.
+    
+    let spliceStart = -1;
+    let spliceEnd = -1;
+    
+    // Find all Heading1 pStyle positions
+    const pStyleRe = /<w:pStyle w:val="Heading1"\/>/g;
+    let pMatch;
+    while ((pMatch = pStyleRe.exec(docXml)) !== null) {
+      const stylePos = pMatch.index;
+      // Find the containing <w:p  (with space — not <w:pPr or <w:pStyle)
+      let pStart = -1;
+      let searchFrom = Math.max(0, stylePos - 500);
+      let searchRegion = docXml.substring(searchFrom, stylePos);
+      // Find last occurrence of '<w:p ' (with space) in the region
+      let lastP = searchRegion.lastIndexOf('<w:p ');
+      if (lastP >= 0) pStart = searchFrom + lastP;
+      
+      if (pStart < 0) continue;
+      
+      // Extract text content of this paragraph
+      let pEndPos = docXml.indexOf('</w:p>', stylePos);
+      if (pEndPos < 0) continue;
+      let paraXml = docXml.substring(pStart, pEndPos + 6);
+      let texts = [];
+      let tMatch;
+      const tRe = /<w:t[^>]*>([^<]*)<\/w:t>/g;
+      while ((tMatch = tRe.exec(paraXml)) !== null) texts.push(tMatch[1]);
+      let content = texts.join('').trim();
+      
+      if (spliceStart < 0 && content.includes('Area') && !content.includes('Fires')) {
+        // First GACC heading — find page break paragraph before it
+        let breakSearch = docXml.substring(Math.max(0, pStart - 500), pStart);
+        let breakIdx = breakSearch.lastIndexOf('w:type="page"');
+        if (breakIdx >= 0) {
+          let breakP = breakSearch.lastIndexOf('<w:p ');
+          if (breakP >= 0) spliceStart = Math.max(0, pStart - 500) + breakP;
+          else spliceStart = pStart;
+        } else {
+          spliceStart = pStart;
+        }
+        console.log('generateIMSR: first GACC heading:', content, 'at', pStart, 'spliceStart:', spliceStart);
+      }
+      
+      if (content.includes('Fires and Acres')) {
+        // F&A heading — find page break paragraph before it
+        let breakSearch = docXml.substring(Math.max(0, pStart - 500), pStart);
+        let breakIdx = breakSearch.lastIndexOf('w:type="page"');
+        if (breakIdx >= 0) {
+          let breakP = breakSearch.lastIndexOf('<w:p ');
+          if (breakP >= 0) {
+            spliceEnd = Math.max(0, pStart - 500) + breakP;
+            // Advance past the page-break paragraph so template's break is consumed;
+            // our docxPageBreak() at end of newGaccXml will be the only one.
+            const endP = docXml.indexOf('</w:p>', spliceEnd);
+            if (endP >= 0) spliceEnd = endP + '</w:p>'.length;
+          } else {
+            spliceEnd = pStart;
+          }
+        } else {
+          spliceEnd = pStart;
+        }
+        console.log('generateIMSR: F&A heading:', content, 'at', pStart, 'spliceEnd:', spliceEnd);
+        break; // Stop after finding F&A
+      }
+    }
+
+    console.log('generateIMSR: spliceStart:', spliceStart, 'spliceEnd:', spliceEnd);
+    
+    // Validate splice boundaries
+    if (spliceStart >= 0) {
+      const atStart = docXml.substring(spliceStart, spliceStart + 10);
+      console.log('generateIMSR: at spliceStart:', atStart);
+      if (!atStart.startsWith('<w:p ')) {
+        console.error('generateIMSR: spliceStart not at <w:p boundary! Got:', atStart);
+      }
+    }
+    if (spliceEnd >= 0) {
+      const atEnd = docXml.substring(spliceEnd, spliceEnd + 10);
+      console.log('generateIMSR: at spliceEnd:', atEnd);
+      if (!atEnd.startsWith('<w:p ')) {
+        console.error('generateIMSR: spliceEnd not at <w:p boundary! Got:', atEnd);
+      }
+    }
+
+    if (spliceStart < 0 || spliceEnd < 0 || spliceEnd <= spliceStart) {
+      alert('Could not find GACC section boundaries in the template .docx.\n\nMake sure you dropped a real IMSR .docx (not a blank document).');
+      return;
+    }
+
+    // 4. Build new GACC content
+    let newGaccXml = '';
+    activeGaccKeys.forEach((gacc, i) => {
+      const incidents = byGacc[gacc] || [];
+      const missed = missedByGacc[gacc] || [];
+      newGaccXml += docxBuildGaccSection(gacc, incidents, missed, i === 0);
+    });
+    // Page break after last GACC section (before F&A tables)
+    newGaccXml += docxPageBreak();
+    console.log('generateIMSR: GACC XML built, length:', newGaccXml.length);
+
+    // 5. Splice: replace old GACC content with new
+    docXml = docXml.substring(0, spliceStart) + newGaccXml + docXml.substring(spliceEnd);
+    console.log('generateIMSR: spliced, new XML length:', docXml.length);
+
+    // 5b. Update header date — find the paragraph containing a day name and replace its runs
+    const today = new Date();
+    const days = ['Sunday','Monday','Tuesday','Wednesday','Thursday','Friday','Saturday'];
+    const months = ['January','February','March','April','May','June','July','August','September','October','November','December'];
+    const dateStr = `${days[today.getDay()]} ${months[today.getMonth()]} ${today.getDate()}, ${today.getFullYear()} `;
+    
+    // Find any day name in the first 5000 chars (header area)
+    const headerArea = docXml.substring(0, 5000);
+    for (const day of days) {
+      const dayIdx = headerArea.indexOf(day);
+      if (dayIdx >= 0) {
+        // Find the containing <w:p ...>...</w:p>
+        const pStart = headerArea.lastIndexOf('<w:p ', dayIdx);
+        const pEnd = headerArea.indexOf('</w:p>', dayIdx);
+        if (pStart >= 0 && pEnd >= 0) {
+          // Extract the paragraph's pPr (formatting)
+          const paraXml = headerArea.substring(pStart, pEnd + 6);
+          const pPrMatch = paraXml.match(/<w:pPr>[\s\S]*?<\/w:pPr>/);
+          const pPr = pPrMatch ? pPrMatch[0] : '<w:pPr><w:jc w:val="center"/></w:pPr>';
+          // Build replacement paragraph with single run
+          const newPara = `<w:p>${pPr}<w:r><w:rPr><w:b/></w:rPr><w:t xml:space="preserve">${xmlEsc(dateStr)}</w:t></w:r><w:r><w:rPr><w:rFonts w:eastAsia="Arial" w:cs="Arial"/><w:b/></w:rPr><w:t>– 0730 MDT</w:t></w:r></w:p>`;
+          docXml = docXml.substring(0, pStart) + newPara + docXml.substring(pEnd + 6);
+          console.log('generateIMSR: date updated to:', dateStr.trim());
+          break;
+        }
+      }
+    }
+
+    // 5c. Update National PL in header
+    if (nationalPL) {
+      // Search for "Preparedness" in extracted paragraph text (handles fragmented runs)
+      // Scan first ~8000 chars of XML for paragraphs containing "Preparedness"
+      const headerSearchArea = docXml.substring(0, 8000);
+      const pRe = /<w:p[\s>][\s\S]*?<\/w:p>/g;
+      let pm;
+      while ((pm = pRe.exec(headerSearchArea)) !== null) {
+        // Extract text from this paragraph
+        const paraTexts = [];
+        const ptRe = /<w:t[^>]*>([^<]*)<\/w:t>/g;
+        let pt;
+        while ((pt = ptRe.exec(pm[0])) !== null) paraTexts.push(pt[1]);
+        const paraText = paraTexts.join('');
+        if (/Preparedness/i.test(paraText)) {
+          const plPStart = pm.index;
+          const plPEnd = plPStart + pm[0].length;
+          // Extract pPr
+          const plPPrMatch = pm[0].match(/<w:pPr>[\s\S]*?<\/w:pPr>/);
+          const plPPr = plPPrMatch ? plPPrMatch[0] : '<w:pPr><w:jc w:val="center"/></w:pPr>';
+          // Get first run's rPr for formatting
+          const plRPrMatch = pm[0].match(/<w:rPr>[\s\S]*?<\/w:rPr>/);
+          const plRPr = plRPrMatch ? plRPrMatch[0] : '<w:rPr><w:b/></w:rPr>';
+          const newPlPara = `<w:p>${plPPr}<w:r>${plRPr}<w:t xml:space="preserve">National Preparedness Level ${nationalPL}</w:t></w:r></w:p>`;
+          docXml = docXml.substring(0, plPStart) + newPlPara + docXml.substring(plPEnd);
+          console.log('generateIMSR: National PL updated to', nationalPL);
+          break;
+        }
+      }
+    }
+
+    // 5d. Fill National Fire Activity stats
+    // Compute stats from 209 data
+    const allQualFlat = activeGaccKeys.flatMap(g => byGacc[g] || []);
+    const natNewLarge = allQualFlat.filter(f => {
+      return !prevMatch(f) && !isReentry(f);
+    }).length;
+    const natContained = allQualFlat.filter(f => is100(f)).length;
+    const allMissedFlat = activeGaccKeys.flatMap(g => missedByGacc[g] || []);
+    const natUncontained = allQualFlat.filter(f => !is100(f)).length + allMissedFlat.filter(p => p.pct < 100).length;
+    const natCimtSet = new Set();
+    const natNimoSet = new Set();
+    allQualFlat.forEach(f => {
+      if (!is100(f)) {
+        if (f.hasCIMT && !findTeamByMember(f.f2)) {
+          const team = findTeamByPrimary(f.f2);
+          natCimtSet.add(team ? team.teamName : f.f2);
+        }
+        if (f.hasNIMO && !findTeamByMember(f.f2)) {
+          const team = findTeamByPrimary(f.f2);
+          natNimoSet.add(team ? team.teamName : f.f2);
+        }
+      }
+    });
+
+    // Fill IA activity count from F&A Yesterday total fires (NAT-02: Light 0-199, Moderate 200-299, Heavy 300+)
+    let iaVal = null;
+    console.log('generateIMSR: autoSitData=', !!autoSitData, 'iaTotal=', autoSitData ? autoSitData.iaTotal : 'N/A');
+    if (autoSitData && autoSitData.iaTotal != null) {
+      const n = autoSitData.iaTotal;
+      const adj = n >= 300 ? 'Heavy' : n >= 200 ? 'Moderate' : 'Light';
+      iaVal = `${adj} (${n.toLocaleString()} fires)`;
+      console.log('generateIMSR: iaVal =', iaVal);
+    } else {
+      console.warn('generateIMSR: iaVal is NULL — autoSitData or iaTotal missing. IA cell will keep template value.');
+    }
+    const natStats = {
+      'Initial attack activity': iaVal,
+      'New large incidents': String(natNewLarge),
+      'Large fires contained': String(natContained),
+      'Uncontained large fires': String(natUncontained),
+      'CIMTs committed': String(natCimtSet.size),
+      'NIMOs committed': String(natNimoSet.size),
+    };
+
+    // Find the National Fire Activity table (before Resource Summary)
+    const natTbl = findDocxTable(docXml, 'Fire Activity and Teams Assigned');
+    if (natTbl) {
+      let natTblXml = docXml.substring(natTbl.start, natTbl.end);
+      const natRowRe = /<w:tr\b[\s\S]*?<\/w:tr>/g;
+      const natRows = [...natTblXml.matchAll(natRowRe)];
+      // Process in reverse
+      for (let i = natRows.length - 1; i >= 0; i--) {
+        const rowXml = natRows[i][0];
+        const texts = [];
+        const ntRe = /<w:t[^>]*>([^<]*)<\/w:t>/g;
+        let ntm;
+        while ((ntm = ntRe.exec(rowXml)) !== null) texts.push(ntm[1]);
+        const rowText = texts.join(' ').trim();
+
+        for (const [label, value] of Object.entries(natStats)) {
+          if (value === null) continue;
+          if (!rowText.includes(label.split(' ')[0])) continue; // Quick filter
+          // More precise: check if all words of the label appear
+          const words = label.split(' ');
+          if (!words.every(w => rowText.toLowerCase().includes(w.toLowerCase()))) continue;
+
+          // Replace the value in the LAST cell (right column)
+          const cellRe2 = /<w:tc\b[\s\S]*?<\/w:tc>/g;
+          const cells = [...rowXml.matchAll(cellRe2)];
+          if (cells.length >= 2) {
+            let newRow = rowXml;
+            const lastCell = cells[cells.length - 1];
+            const newCell = replaceCellTextContent(lastCell[0], value);
+            newRow = newRow.substring(0, lastCell.index) + newCell + newRow.substring(lastCell.index + lastCell[0].length);
+            natTblXml = natTblXml.substring(0, natRows[i].index) + newRow + natTblXml.substring(natRows[i].index + natRows[i][0].length);
+          }
+          break; // Found the matching label
+        }
+      }
+      docXml = docXml.substring(0, natTbl.start) + natTblXml + docXml.substring(natTbl.end);
+      console.log('generateIMSR: National Fire Activity filled —', JSON.stringify(natStats));
+    }
+
+    // 5d-ii. Update National Fire Activity section header (NAT-01)
+    // Daily = "National Fire Activity:" · Date-range = "National Fire Activity (Start – End):"
+    {
+      const pl = parseInt(nationalPL) || 2;
+      const today = new Date();
+      const dow = today.getDay(); // 0=Sun, 1=Mon, ..., 5=Fri, 6=Sat
+      const fmtDate = d => d.toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' });
+      let natHeader = 'National Fire Activity:';
+      const needsRange = (pl <= 1) || (pl === 2 && dow === 1);
+      if (needsRange) {
+        let startDate, endDate;
+        if (pl <= 1) {
+          // PL1: Friday IMSR covers preceding Fri (7 days ago) through Thu (yesterday)
+          endDate = new Date(today); endDate.setDate(today.getDate() - 1);
+          startDate = new Date(endDate); startDate.setDate(endDate.getDate() - 6);
+        } else {
+          // PL2 Monday: covers Fri (3 days ago) through Sun (yesterday)
+          endDate = new Date(today); endDate.setDate(today.getDate() - 1);
+          startDate = new Date(today); startDate.setDate(today.getDate() - 3);
+        }
+        natHeader = `National Fire Activity (${fmtDate(startDate)} \u2013 ${fmtDate(endDate)}):`;
+      }
+
+      // Find paragraph containing "National Fire" (skip table captions)
+      const natHdrRe = /<w:p[\s>][\s\S]*?<\/w:p>/g;
+      let nhm;
+      while ((nhm = natHdrRe.exec(docXml)) !== null) {
+        // Skip table internals (captions)
+        if (/w:tblCaption/.test(nhm[0])) continue;
+        const hTexts = [];
+        const htRe = /<w:t[^>]*>([^<]*)<\/w:t>/g;
+        let ht;
+        while ((ht = htRe.exec(nhm[0])) !== null) hTexts.push(ht[1]);
+        const hText = hTexts.join('');
+        if (/National Fire\s*Activit/i.test(hText)) {
+          const hStart = nhm.index;
+          const hEnd = hStart + nhm[0].length;
+          const hPPrMatch = nhm[0].match(/<w:pPr>[\s\S]*?<\/w:pPr>/);
+          const hPPr = hPPrMatch ? hPPrMatch[0] : '';
+          const hRPrMatch = nhm[0].match(/<w:rPr>[\s\S]*?<\/w:rPr>/);
+          const hRPr = hRPrMatch ? hRPrMatch[0] : '<w:rPr><w:b/></w:rPr>';
+          const newHPara = `<w:p>${hPPr}<w:r>${hRPr}<w:t xml:space="preserve">${natHeader}</w:t></w:r></w:p>`;
+          docXml = docXml.substring(0, hStart) + newHPara + docXml.substring(hEnd);
+          console.log('generateIMSR: National Fire Activity header →', natHeader);
+          break;
+        }
+      }
+    }
+
+    // 5e. Extract yesterday's personnel from template Resource Summary, then fill with new data
+    let prevPplByGacc = null;
+    const resTbl = findDocxTable(docXml, 'Resource Summary');
+    if (resTbl) {
+      // Extract yesterday's Total Personnel per GACC from the template (= yesterday's IMSR)
+      const GACC_RES_ORDER = ['AICC','NWCC','ONCC','OSCC','NRCC','GBCC','SWCC','RMCC','EACC','SACC'];
+      prevPplByGacc = {};
+      const resTblXml = docXml.substring(resTbl.start, resTbl.end);
+      const rowRe = /<w:tr[\s>][\s\S]*?<\/w:tr>/g;
+      let rm;
+      while ((rm = rowRe.exec(resTblXml)) !== null) {
+        const texts = [];
+        const tRe = /<w:t[^>]*>([^<]*)<\/w:t>/g;
+        let tm;
+        while ((tm = tRe.exec(rm[0])) !== null) {
+          const t = tm[1].trim();
+          if (t) texts.push(t);
+        }
+        const gacc = texts.find(t => GACC_RES_ORDER.includes(t));
+        if (gacc && texts.length >= 7) {
+          const numVals = texts.slice(texts.indexOf(gacc) + 1);
+          if (numVals.length >= 6) {
+            prevPplByGacc[gacc] = parseInt(numVals[5]?.replace(/,/g, '') || '0') || 0;
+          }
+        }
+      }
+      console.log('generateIMSR: extracted prev personnel:', prevPplByGacc);
+
+      // Clear+Fill: replace cell values in-place, preserving template formatting
+      if (autoSitData && autoSitData.resSummary) {
+        const fmt = n => n.toLocaleString();
+        const fmtChg = n => n === 0 ? '0' : (n > 0 ? n.toLocaleString() : '-' + Math.abs(n).toLocaleString());
+        const resMap = {};
+        const totals = { inc:0, acres:0, crews:0, eng:0, heli:0, ppl:0, chg:0 };
+        for (const gacc of GACC_RES_ORDER) {
+          const d = autoSitData.resSummary[gacc] || { inc:0, acres:0, crews:0, eng:0, heli:0, ppl:0 };
+          const yestPpl = (prevPplByGacc && prevPplByGacc[gacc] !== undefined) ? prevPplByGacc[gacc] : null;
+          const chg = (yestPpl !== null) ? (d.ppl - yestPpl) : 0;
+          totals.inc += d.inc; totals.acres += d.acres; totals.crews += d.crews;
+          totals.eng += d.eng; totals.heli += d.heli; totals.ppl += d.ppl; totals.chg += chg;
+          resMap[gacc] = [fmt(d.inc), fmt(d.acres), fmt(d.crews), fmt(d.eng), fmt(d.heli), fmt(d.ppl), fmtChg(chg)];
+        }
+        resMap['Total'] = [fmt(totals.inc), fmt(totals.acres), fmt(totals.crews), fmt(totals.eng), fmt(totals.heli), fmt(totals.ppl), fmtChg(totals.chg)];
+        const newTblXml = fillTableByKey(docXml.substring(resTbl.start, resTbl.end), resMap);
+        docXml = docXml.substring(0, resTbl.start) + newTblXml + docXml.substring(resTbl.end);
+        console.log('generateIMSR: Resource Summary filled in-place');
+      }
+    }
+
+    // 5f. Fill F&A Yesterday table in-place
+    // The heading may be "Fires and Acres Yesterday" (daily) or "Fires and Acres from [dates]" (date range)
+    let faYestTbl = findDocxTable(docXml, 'Fires and Acres Yesterday');
+    if (!faYestTbl) faYestTbl = findDocxTable(docXml, 'Fires and Acres from');
+    console.log('generateIMSR: F&A Yesterday table found:', !!faYestTbl, faYestTbl ? `at ${faYestTbl.start}-${faYestTbl.end}` : '');
+    console.log('generateIMSR: autoSitData.faYesterday:', autoSitData ? !!autoSitData.faYesterday : 'no autoSitData');
+    if (faYestTbl && autoSitData && autoSitData.faYesterday) {
+      const tblBefore = docXml.substring(faYestTbl.start, faYestTbl.start + 200);
+      console.log('generateIMSR: F&A Yesterday table starts with:', tblBefore.substring(0, 200));
+      const newTbl = fillFATableByArea(docXml.substring(faYestTbl.start, faYestTbl.end), autoSitData.faYesterday);
+      const changed = newTbl !== docXml.substring(faYestTbl.start, faYestTbl.end);
+      console.log('generateIMSR: F&A Yesterday fill changed table:', changed);
+      docXml = docXml.substring(0, faYestTbl.start) + newTbl + docXml.substring(faYestTbl.end);
+      console.log('generateIMSR: F&A Yesterday filled in-place');
+    }
+
+    // 5g. Fill F&A YTD table in-place
+    let faYtdTbl = findDocxTable(docXml, 'Year-to-Date');
+    if (!faYtdTbl) faYtdTbl = findDocxTable(docXml, 'Year to Date');
+    if (!faYtdTbl) faYtdTbl = findDocxTable(docXml, 'Year-to');
+    console.log('generateIMSR: F&A YTD table found:', !!faYtdTbl, faYtdTbl ? `at ${faYtdTbl.start}-${faYtdTbl.end}` : '');
+    if (faYtdTbl && autoSitData && autoSitData.faYTD) {
+      const newTbl = fillFATableByArea(docXml.substring(faYtdTbl.start, faYtdTbl.end), autoSitData.faYTD);
+      docXml = docXml.substring(0, faYtdTbl.start) + newTbl + docXml.substring(faYtdTbl.end);
+      console.log('generateIMSR: F&A YTD filled in-place');
+    }
+
+    // 5h. Update F&A Yesterday heading to correct format for today's PL/day
+    {
+      const pl = parseInt(nationalPL) || 2;
+      const today = new Date();
+      const dow = today.getDay();
+      const fmtDate = d => d.toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' });
+      const needsRange = (pl <= 1) || (pl === 2 && dow === 1);
+      let faHeading;
+      if (needsRange) {
+        let startDate, endDate;
+        if (pl <= 1) {
+          endDate = new Date(today); endDate.setDate(today.getDate() - 1);
+          startDate = new Date(endDate); startDate.setDate(endDate.getDate() - 6);
+        } else {
+          endDate = new Date(today); endDate.setDate(today.getDate() - 1);
+          startDate = new Date(today); startDate.setDate(today.getDate() - 3);
+        }
+        faHeading = `Fires and Acres from ${fmtDate(startDate)} \u2013 ${fmtDate(endDate)} (by Protection):`;
+      } else {
+        faHeading = 'Fires and Acres Yesterday (by Protection):';
+      }
+
+      // Find the heading paragraph (contains "Fires and Acres" but NOT "Year")
+      const faHdrRe = /<w:p[\s>][\s\S]*?<\/w:p>/g;
+      let fhm;
+      while ((fhm = faHdrRe.exec(docXml)) !== null) {
+        const hTexts = [];
+        const htRe = /<w:t[^>]*>([^<]*)<\/w:t>/g;
+        let ht;
+        while ((ht = htRe.exec(fhm[0])) !== null) hTexts.push(ht[1]);
+        const hText = hTexts.join('');
+        if (/Fires and Acres/i.test(hText) && !/Year/i.test(hText)) {
+          const hStart = fhm.index;
+          const hEnd = hStart + fhm[0].length;
+          const hPPrMatch = fhm[0].match(/<w:pPr>[\s\S]*?<\/w:pPr>/);
+          const hPPr = hPPrMatch ? hPPrMatch[0] : '';
+          const hRPrMatch = fhm[0].match(/<w:rPr>[\s\S]*?<\/w:rPr>/);
+          const hRPr = hRPrMatch ? hRPrMatch[0] : '<w:rPr><w:b/></w:rPr>';
+          const newHPara = `<w:p>${hPPr}<w:r>${hRPr}<w:t xml:space="preserve">${faHeading}</w:t></w:r></w:p>`;
+          docXml = docXml.substring(0, hStart) + newHPara + docXml.substring(hEnd);
+          console.log('generateIMSR: F&A heading updated →', faHeading);
+          break;
+        }
+      }
+    }
+
+    // 6. Write back and rezip
+    zip.file('word/document.xml', docXml);
+    const blob = await zip.generateAsync({
+      type: 'blob',
+      mimeType: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+      compression: 'DEFLATE'
+    });
+    console.log('generateIMSR: blob created, size:', blob.size);
+
+    // 7. Download via native save dialog or fallback
+    // (today already declared above in date replacement section)
+    const fname = `IMSR_CY${String(today.getFullYear()).slice(2)}_${String(today.getMonth()+1).padStart(2,'0')}${String(today.getDate()).padStart(2,'0')}${today.getFullYear()}.docx`;
+
+    // Store blob for download button
+    window._imsrBlob = blob;
+    window._imsrFname = fname;
+
+    // Show download bar
+    const existing = document.getElementById('docx-download-bar');
+    if (existing) existing.remove();
+    const bar = document.createElement('div');
+    bar.id = 'docx-download-bar';
+    bar.style.cssText = 'background:#1a6b1a;color:#fff;padding:14px 16px;border-radius:4px;margin-bottom:12px;display:flex;align-items:center;gap:12px;font-family:"IBM Plex Mono",monospace;font-size:13px;';
+    bar.innerHTML = `<span style="font-weight:600;">✓ IMSR generated (${(blob.size/1024).toFixed(0)} KB)</span><button onclick="saveIMSR()" style="color:#fff;background:#145214;padding:8px 20px;border-radius:3px;font-weight:600;border:1px solid #0f3f0f;cursor:pointer;font-family:inherit;font-size:14px;">⬇ Save ${fname}</button><button onclick="this.parentElement.remove()" style="margin-left:auto;background:none;border:none;color:#fff;cursor:pointer;font-size:16px;">✕</button>`;
+    outputEl.insertBefore(bar, outputEl.firstChild);
+    console.log('generateIMSR: ready, blob size:', blob.size);
+
+  } catch(e) {
+    alert('IMSR generation failed: ' + e.message);
+    console.error('generateIMSR error:', e);
+  }
+}
+
+async function saveIMSR() {
+  const blob = window._imsrBlob;
+  const fname = window._imsrFname;
+  if (!blob) { alert('No IMSR generated yet.'); return; }
+
+  try {
+    // Method 1: File System Access API (modern Chrome/Edge)
+    if (window.showSaveFilePicker) {
+      const handle = await window.showSaveFilePicker({
+        suggestedName: fname,
+        types: [{ description: 'Word Document', accept: { 'application/vnd.openxmlformats-officedocument.wordprocessingml.document': ['.docx'] } }]
+      });
+      const writable = await handle.createWritable();
+      await writable.write(blob);
+      await writable.close();
+      console.log('saveIMSR: saved via File System Access API');
+      return;
+    }
+  } catch(e) {
+    if (e.name === 'AbortError') return; // user cancelled
+    console.warn('saveIMSR: File System Access failed:', e.message);
+  }
+
+  // Method 2: Fallback — create/click <a> synchronously
+  try {
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = fname;
+    a.style.display = 'none';
+    document.body.appendChild(a);
+    a.click();
+    setTimeout(() => { document.body.removeChild(a); URL.revokeObjectURL(url); }, 500);
+    console.log('saveIMSR: triggered via a.click fallback');
+  } catch(e2) {
+    console.error('saveIMSR: all methods failed:', e2);
+    alert('Browser is blocking downloads. Try: Open browser DevTools (F12) → Console → paste this:\n\nwindow.open(URL.createObjectURL(window._imsrBlob))');
+  }
+}
+
 
 function clearAll() {
   allIncidents = [];
@@ -8275,9 +9899,19 @@ function clearAll() {
   lastRptLabelOff.clear();
   lastRptForceActive.clear();
   teamGroups = [];
+  _teamsAutoPopulated = false;
   teamEditMode.clear();
   narrFilterState = 'all';
   manualGaccOrder = null;
+  templateDocxBytes = null;
+  autoSitData = null;
+  mapData = null;
+  mapStatusEl.style.display = 'none';
+  nationalPL = '';
+  gaccPLs = {};
+  const natSel = document.getElementById('pl-national');
+  if (natSel) natSel.value = '';
+  document.getElementById('pl-panel').style.display = 'none';
   fileListEl.innerHTML = '';
   outputEl.style.display = 'none';
   outputEl.innerHTML = '';
@@ -8286,6 +9920,11 @@ function clearAll() {
 
 function clearIMSR() {
   prevIMSR = null;
+  templateDocxBytes = null;
+  nationalPL = '';
+  gaccPLs = {};
+  const natSel = document.getElementById('pl-national');
+  if (natSel) natSel.value = '';
   imsrStatusEl.style.display = 'none';
   if (allIncidents.length) renderOutput();
 }
