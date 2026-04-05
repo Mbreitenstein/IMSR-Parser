@@ -8854,19 +8854,28 @@ function buildMissedNarrLines(missed) {
     const name = normalizeName(p.name || '');
     const unit = (p.unit || '').replace(/-\d+$/, '');
     const org  = (lookupUnit(p.unit) || unit || '').replace(/\s*\([A-Z]{2}\)$/, '') || '[MANAGING ORG]';
-    const prevNarr = (p.narrative || '').trim();
-    const suffix = p.missCount >= 2
-      ? 'No new information. Last narrative report unless new information is received.'
-      : 'No new information.';
-    const tail = prevNarr ? `${prevNarr}. ${suffix}` : suffix;
     const mKey = normKey(p.name, p.unit);
-    const lastRptBadge = p.wasLastReport ? '<span class="last-rpt-badge" title="Previous IMSR contained a last-report statement.">LAST RPT ON PREVIOUS IMSR</span>' : '';
-    const lastRptClass = p.wasLastReport ? ' last-rpt' : '';
-    const delBtn = `<button class="narr-del" title="Remove this fire" onclick="deleteSingleFire('','${mKey}')">✕</button>`;
     const missCount = getMissCount(p);
     const mBadge = missBadgeHtml(missCount);
-    return `<div class="narr-line${lastRptClass}" data-missed="1" data-missed-key="${mKey}">
-      ${mBadge}<b>${name}</b>${lastRptBadge}, ${org}. ${tail}${delBtn}
+    const delBtn = `<button class="narr-del" title="Remove this fire" onclick="deleteSingleFire('','${mKey}')">✕</button>`;
+
+    // M3+: no narrative in IMSR output — table row only. Don't show prevNarr (may be stale/garbled).
+    // M1/M2: carry forward prevNarr + append appropriate fall-off suffix.
+    let tail;
+    if (missCount >= 3) {
+      tail = '<em style="color:#999;font-style:italic;">No narrative — table row only.</em>';
+    } else {
+      const prevNarr = (p.narrative || '').trim();
+      const suffix = missCount >= 2
+        ? 'No new information. Last narrative report unless new information is received.'
+        : 'No new information.';
+      tail = prevNarr ? `${prevNarr}. ${suffix}` : suffix;
+    }
+
+    // No last-rpt class or badge for missed fires — fall-off fires stay grey.
+    // Red highlight is reserved for active kick-off fires only.
+    return `<div class="narr-line" data-missed="1" data-missed-key="${mKey}">
+      ${mBadge}<b>${name}</b>, ${org}. ${tail}${delBtn}
     </div>`;
   }).join('<div class="narr-spacer"><br></div>');
 }
@@ -8913,9 +8922,7 @@ function buildMissedTableRows(missed) {
       }
       return `<td>${cols[i] || '---'}</td>`;
     }).join('');
-    const missedClasses = [p.wasLastReport ? 'last-rpt' : ''].filter(Boolean).join(' ');
-    const missedClassAttr = missedClasses ? ` class="${missedClasses}"` : '';
-    return `<tr${missedClassAttr} data-missed-key="${mKey}">${tds}</tr>`;
+    return `<tr data-missed-key="${mKey}">${tds}</tr>`;
   }).join('');
 }
 
@@ -9748,6 +9755,10 @@ async function generateIMSR() {
   }
   if (!allIncidents.length) {
     alert('No 209 data loaded.');
+    return;
+  }
+  if (!autoSitData) {
+    alert('No AutoSIT loaded.\n\nThe Active Incident Resource Summary table (incidents, acres, crews, engines, helicopters, personnel) comes from the AutoSIT xlsx. Drop the AutoSIT file in the green zone before generating.');
     return;
   }
   // Warn if any active GACC has no PL set
