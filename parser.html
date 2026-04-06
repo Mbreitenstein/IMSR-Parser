@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>IMSR Prep Tool v58.9</title>
+<title>IMSR Prep Tool v59.9</title>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
@@ -173,8 +173,8 @@
   .reincluded-badge { display: inline-block; font-size: 9px; font-weight: 700; color: #fff; background: #e67e22; padding: 1px 6px; border-radius: 3px; margin-left: 6px; vertical-align: middle; letter-spacing: 0.3px; cursor: help; -webkit-user-select: none; user-select: none; }
   .narr-line.reincluded { border-left-color: #e67e22 !important; background: #fef5ec !important; }
   .narr-line.reincluded:hover { background: #fdebd0 !important; }
-  .narr-line.stale { border-left-color: #c0392b !important; background: #fde8e5 !important; }
-  table.imsr tr.stale td { background: #fde8e5 !important; }
+  .narr-line.stale { border-left-color: #2a7ab5 !important; background: #e8f2fd !important; }
+  table.imsr tr.stale td { background: #e8f2fd !important; }
   table.imsr tr.discrep td { outline: 2px solid #2471a3; outline-offset: -2px; }
   table.imsr td.empty { color: var(--text); }
   table.imsr td input {
@@ -351,7 +351,7 @@
 <body>
 
 <header>
-  <h1>IMSR PREP TOOL <span style="float:right;font-size:11px;font-weight:400;color:var(--muted);letter-spacing:.04em;">v58.9</span></h1>
+  <h1>IMSR PREP TOOL <span style="float:right;font-size:11px;font-weight:400;color:var(--muted);letter-spacing:.04em;">v59.9</span></h1>
   <p>Drop one or more 209 PDFs — sorted by % contained, ready to paste into Word</p>
 </header>
 
@@ -646,7 +646,10 @@ function reapplyMapGate() {
 
   if (!mapData) return; // No MAP loaded — all fires stay in main display
 
-  const REMOVED_STATUSES = new Set(['KO','KO!','DR','N']);
+  // KOS = soft kick-off (last report given). Treat as departing — same re-inclusion
+  // thresholds apply. Without this, a KOS fire with a Final 209 bypasses the gate
+  // and appears in the 100% blue pile instead of the do-not-include section.
+  const REMOVED_STATUSES = new Set(['KO','KO!','DR','N','KOS']);
   const kept = [];
   for (const f of allIncidents) {
     const incNum = (f.f2 || '').toUpperCase();
@@ -740,7 +743,14 @@ async function handleMapFiles(files) {
         }
         const existingEntry = mapData.get(incNum);
         const newSize = parseFloat(row[sizeCol]) || 0;
-        // Keep the entry with the most recent MAP_Date (append-only file, later rows win)
+        const newStatus = statusCol ? String(row[statusCol] || '').trim() : '';
+        // Keep the entry with the most recent MAP_Date (append-only file, later rows win).
+        // Guard: if new row is same date but has empty status, preserve the existing valid
+        // status rather than overwriting it. Duplicate same-date rows from multiple script
+        // runs can leave trailing null-status rows that would stomp M3, KOS, etc.
+        const sameDate = existingEntry && existingEntry.mapDate && mapDate &&
+                         mapDate.getTime() === existingEntry.mapDate.getTime();
+        const keepOldStatus = sameDate && existingEntry.status && newStatus === '';
         if (!existingEntry || !existingEntry.mapDate || (mapDate && mapDate >= existingEntry.mapDate)) {
           mapData.set(incNum, {
             name:     String(row[incNameCol] || '').trim(),
@@ -749,7 +759,7 @@ async function handleMapFiles(files) {
             pct100:   String(row[pctCol]     || '').trim(),
             size:     newSize,
             mapDate:  mapDate,
-            status:   statusCol   ? String(row[statusCol]   || '').trim() : '',
+            status:   keepOldStatus ? existingEntry.status : newStatus,
             strcLost: strcLostCol ? (parseInt(row[strcLostCol]) || 0)      : 0,
             lastPct:  pctCol      ? (row[pctCol] === 'c' || row[pctCol] === 'C' ? 100 : null) : null,
           });
@@ -816,9 +826,20 @@ function isReentry(f) {
   if (!mapData) return false;
   const incNum = (f.f2 || '').toUpperCase();
   if (!incNum) return false;
-  // If prev IMSR already matched this fire, it's a normal returning fire — not a re-entry
+  // Normal returning fire — not a re-entry
   if (prevMatch(f)) return false;
-  return mapData.has(incNum);
+  if (!mapData.has(incNum)) return false;
+  // A fire whose MAP entry is dated TODAY was just written by today's script run.
+  // That means it is genuinely new — not a fire that previously appeared in the
+  // IMSR, dropped off, and is now returning. Only flag as re-entry when mapDate
+  // is from a PREVIOUS date (fire was in MAP before today's run).
+  const entry = mapData.get(incNum);
+  if (entry.mapDate) {
+    const todayMidnight = new Date(); todayMidnight.setHours(0,0,0,0);
+    const mapDay = new Date(entry.mapDate); mapDay.setHours(0,0,0,0);
+    if (mapDay >= todayMidnight) return false; // added today = genuinely new
+  }
+  return true;
 }
 
 // Get re-entry context: days since last IMSR appearance + acres delta
@@ -1093,10 +1114,17 @@ async function handleFiles(files) {
       for (const { text } of merged) {
         const fields = parseFields(text);
         fields._filename = file.name;
-        // Dedup by incident number
+        // Dedup by incident number — keep the most recently submitted 209.
+        // When the same fire appears across multiple bulk PDFs (e.g. Sat + Sun + Mon),
+        // _submitTime (Box 14) determines which version wins.
         const exists = allIncidents.findIndex(inc => inc.f2 && inc.f2 === fields.f2);
-        if (exists >= 0) allIncidents[exists] = fields;
-        else allIncidents.push(fields);
+        if (exists >= 0) {
+          const existingTime = allIncidents[exists]._submitTime || 0;
+          const newTime = fields._submitTime || 0;
+          if (newTime >= existingTime) allIncidents[exists] = fields; // newer or equal wins
+        } else {
+          allIncidents.push(fields);
+        }
       }
 
     } catch(e) {
@@ -1471,11 +1499,10 @@ function parseFields(text) {
   const headerRegion = text.slice(0, 2000);
   // NIMO gets its own label — check it separately first
   f.hasNIMO = /\bNIMO\b/i.test(headerRegion);
-  // hasCIMT: CIMT or ICCI keyword only — Type 1/2 designation retired
-  f.hasCIMT = !f.hasNIMO && (
-    /\bCIMT\b/i.test(headerRegion) ||
-    /\bICCI\b/i.test(headerRegion)
-  );
+  // hasCIMT: CIMT keyword only. ICCI removed — it appears as a credential
+  // suffix on approver names (e.g. "Danny Gore, ICCI") not as a team designation,
+  // causing false positives on fires with no CIMT assigned.
+  f.hasCIMT = !f.hasNIMO && /\bCIMT\b/i.test(headerRegion);
 
   f.resources = parseResources(text);
 
@@ -7489,7 +7516,7 @@ function buildTableRows(incidents) {
     const isNewFire = !prev && !isReentry(f);
     if (isNewFire && is100(f) && f.f6) {
       const daysAgo = Math.floor((new Date() - f.f6) / 86400000);
-      if (daysAgo > 1) classes.push('stale');
+      if (daysAgo > 2) classes.push('stale');
     }
     const pctV = parseInt(f.f8a || 0);
     const origPctV = f._originalPct ? parseInt(f._originalPct) : pctV;
@@ -7590,7 +7617,7 @@ function buildNarrativeLines(incidents, cssClass='', dragKey='') {
     let staleClass = '', staleBadge = '';
     if (isNew && is100(f) && f.f6) {
       const daysAgo = Math.floor((new Date() - f.f6) / 86400000);
-      if (daysAgo > 1) {
+      if (daysAgo > 2) {
         staleClass = ' stale';
         staleBadge = `<span class="stale-badge" title="100% contained fire missed its 209 reporting window (Box 6 start: ${daysAgo}d ago). Consider removing from IMSR and adding to Large Fire MAP xlsx.">STALE · ${daysAgo}d ago</span>`;
       }
@@ -8005,6 +8032,7 @@ function renderOutput() {
 
   // Find missed fires — in prev IMSR (<100%), no matching 209 today
   const missedByGacc = {};
+  const koNQ = []; // KO fires routed to NQ pile (no 209, wasLastReport, below re-inclusion threshold)
   if (prevIMSR) {
     const matchedKeys = new Set(qualifying.concat(nonQualifying).map(f => normKey(f.f1, f.unit)));
     for (const [key, p] of prevIMSR) {
@@ -8012,6 +8040,30 @@ function renderOutput() {
       if (matchedKeys.has(key)) continue;
       if (deletedFires.has(key)) continue;
       if (deletedPrevFires.has(key)) continue;
+      // KO gate: fire said "Last report unless significant activity" on the prev IMSR
+      // OR the MAP Master flagged it KOS (soft kick-off) — both mean the same thing.
+      // No 209 received today confirms the departure.
+      // Check re-inclusion threshold: ≥1000ac growth or prev IMSR had >250 personnel.
+      // Below threshold → route to NQ do-not-include pile (not fall-off/missed).
+      // Above threshold → treat as active miss so analyst can see it.
+      const mapEntryForKO = mapDataByName ? mapDataByName.get((p.name||'').toLowerCase().replace(/[^a-z0-9]/g,'')) : null;
+      // isKO: explicit "Last report" text in prevIMSR OR MAP says KOS (before advancement)
+      const rawMapStatus = mapEntryForKO ? (mapEntryForKO.status || '') : '';
+      // KO = advanced from KOS (deliberate); KO! = fire vanished without warning day;
+      // KOS = last report given but not yet missed. All three = NICC owns this departure.
+      const isKO = p.wasLastReport || ['KOS','KO','KO!'].includes(rawMapStatus);
+      if (isKO) {
+        const prevAcres = p.acres || 0;
+        const latestAcres = mapEntryForKO ? (mapEntryForKO.size || prevAcres) : prevAcres;
+        const acresDelta = latestAcres - prevAcres;
+        const prevPpl = p.ppl || 0;
+        const meetsThreshold = acresDelta >= 1000 || prevPpl > 250;
+        if (!meetsThreshold) {
+          koNQ.push(p); // push to NQ do-not-include
+          continue;
+        }
+        // Meets threshold — fall through, treat as missed (analyst will see it)
+      }
       // FALLOFF-04: if this fire is at its 6th miss, auto-move to Removed Incidents panel
       const missCount = getMissCount(p);
       if (missCount >= 6) {
@@ -8241,13 +8293,45 @@ function renderOutput() {
             </table>
           </div>
         </div>
-        ${renderUnitLegend(buildUnitLegend(incidents))}
+        ${renderUnitLegend(buildUnitLegend(incidents, missed))}
       </div>
     `;
   }).join('');
 
   // Non-qualifying fires — flat pile at the very bottom, no GACC grouping
   let nqHtml = '';
+
+  // KO do-not-include fires (wasLastReport + no 209 + below re-inclusion threshold)
+  if (koNQ.length) {
+    const koRows = koNQ.map(p => {
+      const name = normalizeName(p.name || '');
+      const unit = (p.unit || '').replace(/-\d+$/, '');
+      const tds = COLS.map((c, i) => {
+        if (i === 0) return `<td style="text-align:left;"><b>${name}</b></td>`;
+        if (i === 1) return `<td>${unit}</td>`;
+        if (i === 2) return `<td>${p.acres ? p.acres.toLocaleString() : '---'}</td>`;
+        if (i === 4) return `<td>${p.pct != null ? p.pct : '---'}</td>`;
+        if (i === 7) return `<td>${p.ppl != null ? p.ppl : '---'}</td>`;
+        return `<td>---</td>`;
+      }).join('');
+      return `<tr style="opacity:.7;">${tds}</tr>`;
+    }).join('');
+    nqHtml += `
+      <hr class="nq-divider">
+      <div class="nq-banner" style="border-color:#c0392b;">
+        <strong>🚫 NICC Kick-Off — Do Not Include — ${koNQ.length} fire${koNQ.length !== 1 ? 's' : ''}</strong>
+        <span style="font-weight:normal;color:var(--muted);">said "Last report" on prev IMSR · no 209 received · below re-inclusion threshold (1000ac growth or >250 ppl)</span>
+      </div>
+      <div class="block" style="border-color:#c0392b;">
+        <div class="tbl-outer">
+          <table class="imsr nq" style="opacity:.75;">
+            <thead><tr>${thCells}</tr></thead>
+            <tbody>${koRows}</tbody>
+          </table>
+        </div>
+      </div>`;
+  }
+
   if (nonQualifying.length) {
     const nqTableRows = nonQualifying.map(f => {
       const cv = getColVals(f);
@@ -8263,7 +8347,7 @@ function renderOutput() {
       return `<tr style="opacity:.7;">${tds}</tr>`;
     }).join('');
 
-    nqHtml = `
+    nqHtml += `
       <hr class="nq-divider">
       <div class="nq-banner">
         <strong>⚠ Does Not Meet IMSR Criteria — ${nonQualifying.length} incident${nonQualifying.length !== 1 ? 's' : ''}</strong>
@@ -8748,19 +8832,35 @@ function applyNarrFilter(val) {
 
 // ── UNIT LEGEND ──────────────────────────────────────────────────────────
 
-function buildUnitLegend(incidents) {
+function buildUnitLegend(incidents, missed) {
 
-  // "Explained" = units on active fires — already named in narrative lines, skip in legend.
+  // "Explained" = units on active/kick-off fires already named in narrative lines.
+  // M1/M2 missed fires also carry a narrative that names the org, so exclude those too.
   const explained = new Set();
   incidents.forEach(f => { if (!is100(f)) explained.add(f.unit); });
+  if (missed) missed.forEach(p => { if (getMissCount(p) <= 2) explained.add(p.unit); });
 
-  // Walk table rows in order; collect finaled fires whose unit isn't explained above.
+  // Walk in table display order: M3+ missed fires first (they render above 100%),
+  // then 100%-contained fires. This keeps the legend in top-to-bottom table order.
   const seen = new Set();
   const entries = [];
+
+  // 1. M3+ missed fires (table-only, appear first in the rendered table)
+  if (missed) missed.forEach(p => {
+    if (getMissCount(p) < 3) return;    // M1/M2 — has narrative, already explained
+    if (explained.has(p.unit)) return;
+    if (seen.has(p.unit)) return;
+    seen.add(p.unit);
+    const shortCode = (p.unit || '').includes('-') ? p.unit.slice(p.unit.indexOf('-') + 1) : (p.unit || '');
+    const fullName  = UNIT_LOOKUP[p.unit] || '';
+    if (shortCode && fullName) entries.push({ shortCode, fullName });
+  });
+
+  // 2. 100%-contained fires (render after missed in table)
   incidents.forEach(f => {
     if (!is100(f)) return;              // active fire — has narrative line
     if (explained.has(f.unit)) return;  // unit already named in a narrative
-    if (seen.has(f.unit)) return;       // duplicate unit in legend
+    if (seen.has(f.unit)) return;       // duplicate
     seen.add(f.unit);
     const shortCode = f.unit.includes('-') ? f.unit.slice(f.unit.indexOf('-') + 1) : f.unit;
     const fullName  = UNIT_LOOKUP[f.unit] || '';
@@ -9310,10 +9410,12 @@ function docxBuildMissedNarr(p) {
   const name = normalizeName(p.name || '???');
   const unit = (p.unit || '').replace(/-\d+$/, '');
   const org = (lookupUnit(p.unit) || unit || '').replace(/\s*\([A-Z]{2}\)$/, '') || '[MANAGING ORG]';
+  const miss = getMissCount(p);
+  // M3+: no narrative in IMSR — table row only (matches display behavior)
+  if (miss >= 3) return '';
   const prevNarr = (p.narrative || '').trim();
-  const miss = p.missCount || 1;
   const suffix = miss >= 2
-    ? 'No new information. Last report unless new information is received.'
+    ? 'No new information. Last narrative report unless new information is received.'
     : 'No new information.';
   const tail = prevNarr ? `${prevNarr}. ${suffix}` : suffix;
   const normalPart = `, ${org}. ${tail}`;
@@ -9418,7 +9520,16 @@ function docxGaccStatsTable(gacc, incidents, missed) {
   }
 
   let rows = statsRow('Fire Activity and Teams Assigned', 'Totals', true);
-  const newFires = (autoSitData && autoSitData.newFiresByGacc) ? (autoSitData.newFiresByGacc[gacc] ?? '') : '';
+  // New fires: prefer AutoSIT F&A Yesterday total for this GACC.
+  // If AutoSIT is loaded but this GACC isn't in the F&A table (new GACC, first fires of
+  // the season), fall back to counting asterisked incidents so the row isn't silently omitted.
+  let newFires = '';
+  if (autoSitData && autoSitData.newFiresByGacc) {
+    const raw = autoSitData.newFiresByGacc[gacc];
+    newFires = raw !== undefined
+      ? raw
+      : incidents.filter(f => !prevMatch(f) && !isReentry(f)).length;
+  }
   console.log(`docxGaccStatsTable(${gacc}): newFires=${newFires}, newLarge=${newLarge}, uncontained=${uncontained}`);
   if (newFires !== '') rows += statsRow('New fires:', newFires, false);
   rows += statsRow('New large incidents:', newLarge, false);
@@ -9497,7 +9608,7 @@ function docxBuildGaccSection(gacc, incidents, missed, isFirst) {
   });
 
   // Spacer before missed fires (only if both exist)
-  const missedWithNarr = missed.filter(p => (p.missCount || 1) <= 2);
+  const missedWithNarr = missed.filter(p => getMissCount(p) <= 2);
   if ((sortedActive.length || sortedLastRpt.length) && missedWithNarr.length) parts.push(docxEmptyPara());
 
   // Missed fire narratives (bucket 4a/4b only)
@@ -9523,7 +9634,7 @@ function docxBuildGaccSection(gacc, incidents, missed, isFirst) {
   }
 
   // Unit legend
-  const legend = buildUnitLegend(incidents);
+  const legend = buildUnitLegend(incidents, missed);
   if (legend.length) {
     parts.push(docxLegendPara(legend));
   }
@@ -9799,6 +9910,17 @@ async function generateIMSR() {
         if (p.pct >= 100) continue;
         if (matchedKeys.has(key)) continue;
         if (deletedFires.has(key)) continue;
+        // KO gate (mirrors display path): wasLastReport OR MAP KOS + no 209 + below threshold → skip docx
+        const _mapEKO = mapDataByName ? mapDataByName.get((p.name||'').toLowerCase().replace(/[^a-z0-9]/g,'')) : null;
+        const _rawKOStatus = _mapEKO ? (_mapEKO.status || '') : '';
+        const _isKO = p.wasLastReport || ['KOS','KO','KO!'].includes(_rawKOStatus);
+        if (_isKO) {
+          const prevAcres = p.acres || 0;
+          const latestAcres = _mapEKO ? (_mapEKO.size || prevAcres) : prevAcres;
+          const acresDelta = latestAcres - prevAcres;
+          const prevPpl = p.ppl || 0;
+          if (acresDelta < 1000 && prevPpl <= 250) continue; // KO — do not include in docx
+        }
         const unitCode = (p.unit || '').toUpperCase().replace(/-\d+$/, '');
         const gacc = UNIT_GACC_OVERRIDE[unitCode] || STATE_TO_GACC[(p.unit || '').slice(0,2).toUpperCase()] || 'UNKNOWN';
         (missedByGacc[gacc] = missedByGacc[gacc] || []).push(p);
@@ -10233,6 +10355,30 @@ async function generateIMSR() {
 
     // 6. Write back and rezip
     zip.file('word/document.xml', docXml);
+
+    // Patch word/settings.xml — force single-page normal view at 100% zoom.
+    // This prevents Word from opening in two-page Print Layout view.
+    try {
+      const settingsFile = zip.file('word/settings.xml');
+      if (settingsFile) {
+        let settingsXml = await settingsFile.async('string');
+        // Remove any existing view/zoom elements first, then inject ours
+        settingsXml = settingsXml
+          .replace(/<w:view\s[^>]*\/>/g, '')
+          .replace(/<w:view\s[^>]*>[\s\S]*?<\/w:view>/g, '')
+          .replace(/<w:zoom\s[^>]*\/>/g, '')
+          .replace(/<w:zoom\s[^>]*>[\s\S]*?<\/w:zoom>/g, '');
+        // Inject after opening <w:settings ...> tag
+        settingsXml = settingsXml.replace(
+          /(<w:settings[^>]*>)/,
+          '$1<w:view w:val="normal"/><w:zoom w:percent="100"/>'
+        );
+        zip.file('word/settings.xml', settingsXml);
+      }
+    } catch(e) {
+      console.warn('settings.xml patch skipped:', e.message);
+    }
+
     const blob = await zip.generateAsync({
       type: 'blob',
       mimeType: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
@@ -10280,6 +10426,12 @@ async function saveIMSR() {
       await writable.write(blob);
       await writable.close();
       console.log('saveIMSR: saved via File System Access API');
+      // Update the green bar to show confirmed save
+      const bar = document.getElementById('docx-download-bar');
+      if (bar) {
+        bar.style.background = '#145214';
+        bar.innerHTML = `<span style="font-weight:600;font-size:15px;">✓ Saved: ${handle.name}</span><span style="font-weight:normal;font-size:11px;opacity:.8;">Open in Word · Enable Editing if prompted (one-time per machine: File → Options → Trust Center → Trusted Locations)</span><button onclick="this.parentElement.remove()" style="margin-left:auto;background:none;border:none;color:#fff;cursor:pointer;font-size:16px;">✕</button>`;
+      }
       return;
     }
   } catch(e) {
