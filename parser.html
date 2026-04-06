@@ -9951,6 +9951,7 @@ async function generateIMSR() {
       let searchRegion = docXml.substring(searchFrom, stylePos);
       // Find last occurrence of '<w:p ' (with space) in the region
       let lastP = searchRegion.lastIndexOf('<w:p ');
+      if (lastP < 0) lastP = searchRegion.lastIndexOf('<w:p>');
       if (lastP >= 0) pStart = searchFrom + lastP;
       
       if (pStart < 0) continue;
@@ -9971,6 +9972,7 @@ async function generateIMSR() {
         let breakIdx = breakSearch.lastIndexOf('w:type="page"');
         if (breakIdx >= 0) {
           let breakP = breakSearch.lastIndexOf('<w:p ');
+          if (breakP < 0) breakP = breakSearch.lastIndexOf('<w:p>');
           if (breakP >= 0) spliceStart = Math.max(0, pStart - 500) + breakP;
           else spliceStart = pStart;
         } else {
@@ -9985,6 +9987,7 @@ async function generateIMSR() {
         let breakIdx = breakSearch.lastIndexOf('w:type="page"');
         if (breakIdx >= 0) {
           let breakP = breakSearch.lastIndexOf('<w:p ');
+          if (breakP < 0) breakP = breakSearch.lastIndexOf('<w:p>');
           if (breakP >= 0) {
             spliceEnd = Math.max(0, pStart - 500) + breakP;
             // Advance past the page-break paragraph so template's break is consumed;
