@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>IMSR Prep Tool v59.9</title>
+<title>IMSR Prep Tool v59.12</title>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
@@ -351,7 +351,7 @@
 <body>
 
 <header>
-  <h1>IMSR PREP TOOL <span style="float:right;font-size:11px;font-weight:400;color:var(--muted);letter-spacing:.04em;">v59.9</span></h1>
+  <h1>IMSR PREP TOOL <span style="float:right;font-size:11px;font-weight:400;color:var(--muted);letter-spacing:.04em;">v59.12</span></h1>
   <p>Drop one or more 209 PDFs — sorted by % contained, ready to paste into Word</p>
 </header>
 
@@ -8443,12 +8443,13 @@ function renderOutput() {
       const mapEntry = mapData ? mapData.get((f.f2||'').toUpperCase()) : null;
       const gacc     = (mapEntry || {}).gacc || '';
 
-      // Dropped date + days ago
+      // Removal date + days ago — verb matches removal path
       const mapDateObj = f._mapDate instanceof Date ? f._mapDate : null;
+      const removalVerb = {'KO':'Kicked Off','KO!':'Kicked Off','DR':'Fell Off','N':'Natural'}[f._removedStatus] || 'Removed';
       let droppedStr = 'Previously removed';
       if (mapDateObj) {
         const daysAgo = Math.floor((Date.now() - mapDateObj) / 86400000);
-        droppedStr = `Dropped: ${mapDateObj.getMonth()+1}/${mapDateObj.getDate()} (${daysAgo}d ago)`;
+        droppedStr = `${removalVerb}: ${mapDateObj.getMonth()+1}/${mapDateObj.getDate()} (${daysAgo}d ago)`;
       }
 
       // Last IMSR acreage + pct
