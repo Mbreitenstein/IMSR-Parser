@@ -8462,7 +8462,8 @@ function renderOutput() {
       // Current 209 acreage + pct
       const curAcres = parseInt((f.f7 || '').replace(/,/g,'')) || 0;
       const curPct   = parseInt(f.f8a) || 0;
-      const cur209   = `Current 209: ${curAcres.toLocaleString()} ac · ${curPct}%`;
+      const pctHtml  = curPct < 90 ? `<span style="background:#f5c842;padding:1px 4px;border-radius:3px;font-weight:600;" title="Below 90% — review for possible re-inclusion">${curPct}%</span>` : `${curPct}%`;
+      const cur209   = `Current 209: ${curAcres.toLocaleString()} ac · ${pctHtml}`;
 
       // Acre delta
       const acreDelta    = f._acresDelta;
