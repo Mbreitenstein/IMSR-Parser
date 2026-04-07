@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>IMSR Proofer v5.4</title>
+<title>IMSR Proofer v5.5</title>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/mammoth/1.6.0/mammoth.browser.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
 <style>
@@ -73,7 +73,7 @@ body { font-family: 'Segoe UI', system-ui, sans-serif; background: var(--bg); co
 </style>
 </head>
 <body>
-<div class="header"><h1>IMSR PROOFER</h1><span class="tag">LAYER 1</span><span class="tag" style="background:rgba(22,131,158,0.4);">LAYER 2</span><span class="ver">v5.4</span></div>
+<div class="header"><h1>IMSR PROOFER</h1><span class="tag">LAYER 1</span><span class="tag" style="background:rgba(22,131,158,0.4);">LAYER 2</span><span class="ver">v5.5</span></div>
 <div class="container">
 
   <!-- STEP 1: Yesterday's IMSR (file only — for personnel math) -->
@@ -550,6 +550,8 @@ function identifyGaccTables(tables) {
     for (let r=1; r<rows.length; r++) {
       const row=rows[r]; if(row.length<3) continue;
       const rn=(row[cm.name]||'').trim(); if(!rn||/^total|^gacc/i.test(rn)) continue;
+      // Skip unit legend entries (e.g. "MSS – Mississippi Forestry Commission")
+      if (/^[A-Z]{2,5}\s+[–—-]{1,2}\s+\w/.test(rn)) continue;
       const isNew=rn.startsWith('*'), name=rn.replace(/^\*\s*/,'').trim();
       const num=idx=>{ if(idx===undefined) return null; const v=(row[idx]||'').trim(); if(!v||v==='---'||v==='NR'||v==='UNK') return null; return parseInt(v.replace(/,/g,''))||0; };
       incs.push({ name, isNew, unit:row[cm.unit]||'', acres:num(cm.acres), chgeAcres:(row[cm.chgeAcres]||'').trim(),
