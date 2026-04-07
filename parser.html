@@ -479,6 +479,10 @@ function extractPLsFromIMSR(text) {
   // Reverse mapping: full area name → GACC abbreviation
   const NAME_TO_GACC = {};
   for (const [abbr, name] of Object.entries(GACC_FULL_NAMES)) {
+    // Skip OSCC/ONCC — they are aliases for SOPS/NOPS which are already in GACC_FULL_NAMES
+    // and are the keys used throughout the render pipeline. Letting OSCC/ONCC overwrite
+    // would cause PL extraction to store under the wrong key.
+    if (abbr === 'OSCC' || abbr === 'ONCC') continue;
     NAME_TO_GACC[name] = abbr;
   }
   // Search line by line for area names followed by PL on the same line
@@ -888,8 +892,8 @@ function setAutoSitStatus(msg, type='loading') {
 
 // F&A area names → GACC abbreviation mapping
 const FA_AREA_TO_GACC = {
-  'Alaska': 'AICC', 'Northwest': 'NWCC', 'Northern California': 'ONCC',
-  'Southern California': 'OSCC', 'Northern Rockies': 'NRCC', 'Great Basin': 'GBCC',
+  'Alaska': 'AICC', 'Northwest': 'NWCC', 'Northern California': 'NOPS',
+  'Southern California': 'SOPS', 'Northern Rockies': 'NRCC', 'Great Basin': 'GBCC',
   'Southwest': 'SWCC', 'Rocky Mountain': 'RMCC', 'Eastern': 'EACC', 'Southern': 'SACC'
 };
 const FA_AREA_ORDER = ['Alaska','Northwest','Northern California','Southern California','Northern Rockies','Great Basin','Southwest','Rocky Mountain','Eastern','Southern'];
@@ -9803,8 +9807,8 @@ function fillFATableByArea(tblXml, faData) {
 
 // Reverse GACC→area name map for F&A table lookups
 const FA_AREA_TO_GACC_REV = {
-  AICC:'Alaska', NWCC:'Northwest', ONCC:'Northern California',
-  OSCC:'Southern California', NRCC:'Northern Rockies', GBCC:'Great Basin',
+  AICC:'Alaska', NWCC:'Northwest', NOPS:'Northern California',
+  SOPS:'Southern California', NRCC:'Northern Rockies', GBCC:'Great Basin',
   SWCC:'Southwest', RMCC:'Rocky Mountain', EACC:'Eastern', SACC:'Southern'
 };
 
@@ -9951,7 +9955,6 @@ async function generateIMSR() {
       let searchRegion = docXml.substring(searchFrom, stylePos);
       // Find last occurrence of '<w:p ' (with space) in the region
       let lastP = searchRegion.lastIndexOf('<w:p ');
-      if (lastP < 0) lastP = searchRegion.lastIndexOf('<w:p>');
       if (lastP >= 0) pStart = searchFrom + lastP;
       
       if (pStart < 0) continue;
@@ -9972,7 +9975,6 @@ async function generateIMSR() {
         let breakIdx = breakSearch.lastIndexOf('w:type="page"');
         if (breakIdx >= 0) {
           let breakP = breakSearch.lastIndexOf('<w:p ');
-          if (breakP < 0) breakP = breakSearch.lastIndexOf('<w:p>');
           if (breakP >= 0) spliceStart = Math.max(0, pStart - 500) + breakP;
           else spliceStart = pStart;
         } else {
@@ -9987,7 +9989,6 @@ async function generateIMSR() {
         let breakIdx = breakSearch.lastIndexOf('w:type="page"');
         if (breakIdx >= 0) {
           let breakP = breakSearch.lastIndexOf('<w:p ');
-          if (breakP < 0) breakP = breakSearch.lastIndexOf('<w:p>');
           if (breakP >= 0) {
             spliceEnd = Math.max(0, pStart - 500) + breakP;
             // Advance past the page-break paragraph so template's break is consumed;
