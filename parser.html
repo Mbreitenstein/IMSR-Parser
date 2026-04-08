@@ -28,6 +28,7 @@
   }
   .drop-zone:hover, .drop-zone.drag-over { border-color: var(--accent); background: #fff8f5; }
   .drop-zone p { color: var(--muted); font-size: 13px; margin-bottom: 12px; }
+  .drop-label { font-size: 18px; font-weight: 700; margin-bottom: 4px; letter-spacing: .02em; }
   .drop-zones { display: flex; gap: 12px; margin-bottom: 8px; }
   .drop-zones .drop-zone { flex: 1; margin-bottom: 0; }
   .drop-zone.imsr-zone { border-color: var(--accent2); }
@@ -357,11 +358,13 @@
 
 <div class="drop-zones">
   <div class="drop-zone" id="drop-zone">
+    <div class="drop-label" style="color:var(--accent);">209s</div>
     <p>Drop 209 PDFs here (one or many) or click to select</p>
     <button onclick="document.getElementById('file-input').click()">Select PDFs</button>
     <input type="file" id="file-input" accept=".pdf" multiple>
   </div>
   <div class="drop-zone imsr-zone" id="imsr-drop-zone">
+    <div class="drop-label" style="color:var(--accent2);">Previous IMSR</div>
     <p>Drop previous IMSR (PDF or .docx) here for comparison<br><small style="color:var(--muted);">Removes asterisks on returning fires · Calculates Chge in Acres &amp; PPL · .docx also serves as formatting template for Generate IMSR</small></p>
     <button onclick="document.getElementById('imsr-file-input').click()">Select IMSR (PDF or .docx)</button>
     <button onclick="clearIMSR()" style="margin-left:8px;background:var(--muted);color:#fff;border:none;padding:8px 14px;border-radius:3px;font-family:'IBM Plex Mono',monospace;font-size:11px;font-weight:600;cursor:pointer;">Clear IMSR</button>
@@ -370,12 +373,14 @@
 </div>
 <div class="drop-zones" style="margin-top:0;">
   <div class="drop-zone map-zone" id="map-drop-zone">
+    <div class="drop-label" style="color:#b8960a;">IMSR MAP Master</div>
     <p>Drop IMSR MAP xlsx here<br><small style="color:var(--muted);">Identifies previously reported fires · Shows days since last IMSR appearance + acres change</small></p>
     <button onclick="document.getElementById('map-file-input').click()">Select MAP xlsx</button>
     <button onclick="clearMap()" style="margin-left:8px;background:var(--muted);color:#fff;border:none;padding:8px 14px;border-radius:3px;font-family:'IBM Plex Mono',monospace;font-size:11px;font-weight:600;cursor:pointer;">Clear MAP</button>
     <input type="file" id="map-file-input" accept=".xlsx,.xls" multiple style="display:none">
   </div>
   <div class="drop-zone autosit-zone" id="autosit-drop-zone">
+    <div class="drop-label" style="color:#2a7d2a;">Today's AutoSIT</div>
     <p>Drop AutoSIT or F&A Report xlsx here<br><small style="color:var(--muted);">Resource Summary · F&A Yesterday · F&A YTD · Fills tables in generated .docx</small></p>
     <button onclick="document.getElementById('autosit-file-input').click()">Select AutoSIT xlsx</button>
     <button onclick="clearAutoSit()" style="margin-left:8px;background:var(--muted);color:#fff;border:none;padding:8px 14px;border-radius:3px;font-family:'IBM Plex Mono',monospace;font-size:11px;font-weight:600;cursor:pointer;">Clear</button>
