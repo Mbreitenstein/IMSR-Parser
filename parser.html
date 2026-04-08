@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>IMSR Prep Tool v59.12</title>
+<title>IMSR Prep Tool v59.13</title>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
@@ -351,7 +351,7 @@
 <body>
 
 <header>
-  <h1>IMSR PREP TOOL <span style="float:right;font-size:11px;font-weight:400;color:var(--muted);letter-spacing:.04em;">v59.12</span></h1>
+  <h1>IMSR PREP TOOL <span style="float:right;font-size:11px;font-weight:400;color:var(--muted);letter-spacing:.04em;">v59.13</span></h1>
   <p>Drop one or more 209 PDFs — sorted by % contained, ready to paste into Word</p>
 </header>
 
@@ -412,6 +412,7 @@ const fileListEl = document.getElementById('file-list');
 // Store all parsed incidents
 let allIncidents = [];
 let removedIncidents = []; // Fires with MAP Status KO/KO!/DR/N that have a 209 but don't meet re-inclusion criteria
+let readdedFires = new Set(); // Keys of fires re-added from Removed panel — prevents re-drop loop
 // Previous IMSR data for comparison: Map of normKey → {name, unit, acres, ppl, pct}
 let prevIMSR = null;
 let templateDocxBytes = null; // Raw .docx bytes for IMSR generation template
@@ -647,6 +648,7 @@ function reapplyMapGate() {
     delete f._reinclusionReason;
   });
   removedIncidents = [];
+  readdedFires.clear();
 
   if (!mapData) return; // No MAP loaded — all fires stay in main display
 
@@ -7055,6 +7057,40 @@ function parseSubmitTime(text) {
   return parseInt(yr + mo.padStart(2,'0') + dy.padStart(2,'0') + hhmm.padStart(4,'0'));
 }
 
+// ── STALE 209 DETECTION ──────────────────────────────────────────────────
+// A 209 is "stale" if submitted before the current reporting window opened.
+// The window opens at 0600 MDT on the previous reporting day (PL-aware).
+// Stale 209s are excluded from qualifying so they fall through to the
+// prevIMSR missed-fire path — same treatment as "no 209 received."
+
+function getReportingWindowCutoff() {
+  const pl = parseInt(nationalPL) || 2; // default PL2 if not set
+  const now = new Date();
+  const dow = now.getDay(); // 0=Sun..6=Sat
+
+  // How many calendar days back is the previous reporting day?
+  let daysBack;
+  if (pl <= 1) {
+    // PL1: weekly Friday — prev reporting day is the most recent Friday before today
+    daysBack = (dow <= 5) ? ((dow + 2) % 7 || 7) : (dow - 5);
+  } else if (pl <= 2) {
+    // PL2: Mon-Fri
+    if (dow === 0) daysBack = 2;       // Sunday → Friday
+    else if (dow === 1) daysBack = 3;   // Monday → Friday
+    else if (dow === 6) daysBack = 1;   // Saturday → Friday
+    else daysBack = 1;                  // Tue-Fri → yesterday
+  } else {
+    // PL3+: daily (7 days/week)
+    daysBack = 1;
+  }
+
+  const cutoff = new Date(now.getFullYear(), now.getMonth(), now.getDate() - daysBack, 6, 0, 0);
+  const yr = cutoff.getFullYear();
+  const mo = String(cutoff.getMonth() + 1).padStart(2, '0');
+  const dy = String(cutoff.getDate()).padStart(2, '0');
+  return parseInt(`${yr}${mo}${dy}0600`);
+}
+
 function formatCost(raw) {
   if (!raw) return 'NR';
   const n = Number(raw.replace(/,/g, ''));
@@ -8026,6 +8062,21 @@ function renderOutput() {
     else nonQualifying.push(f);
   });
 
+  // ── Stale 209 filter ──────────────────────────────────────────────────
+  // Bulk 209 PDFs include old submissions from previous reporting periods.
+  // Remove stale 209s from qualifying so they fall through to the missed
+  // fire path via prevIMSR matching — same treatment as "no 209 received."
+  const staleCutoff = getReportingWindowCutoff();
+  const staleKeys = new Set();
+  for (let i = qualifying.length - 1; i >= 0; i--) {
+    const f = qualifying[i];
+    if (f._submitTime && f._submitTime !== Infinity && f._submitTime < staleCutoff) {
+      console.log(`Stale 209: ${f.f1} submitted ${f._submitTime}, cutoff ${staleCutoff} — excluding from qualifying`);
+      staleKeys.add(normKey(f.f1, f.unit));
+      qualifying.splice(i, 1);
+    }
+  }
+
   // Group qualifying by GACC in defined order
   const byGacc = {};
   qualifying.forEach(f => { (byGacc[f._gacc] = byGacc[f._gacc] || []).push(f); });
@@ -8039,6 +8090,7 @@ function renderOutput() {
   const koNQ = []; // KO fires routed to NQ pile (no 209, wasLastReport, below re-inclusion threshold)
   if (prevIMSR) {
     const matchedKeys = new Set(qualifying.concat(nonQualifying).map(f => normKey(f.f1, f.unit)));
+    staleKeys.forEach(k => matchedKeys.delete(k)); // stale 209s fall through to missed path
     for (const [key, p] of prevIMSR) {
       if (p.pct >= 100) continue;
       if (matchedKeys.has(key)) continue;
@@ -8068,9 +8120,10 @@ function renderOutput() {
         }
         // Meets threshold — fall through, treat as missed (analyst will see it)
       }
-      // FALLOFF-04: if this fire is at its 6th miss, auto-move to Removed Incidents panel
+      // FALLOFF-04: if this fire is past its 6th miss, auto-move to Removed Incidents panel
+      // M6 is the last visible day; M7+ = dropped.
       const missCount = getMissCount(p);
-      if (missCount >= 6) {
+      if (missCount >= 7 && !readdedFires.has(key)) {
         // Build a synthetic fire object for the Removed Incidents panel
         const synth = {
           f1: p.name, f2: null, f7: p.acres ? p.acres.toLocaleString() : '0',
@@ -8935,21 +8988,24 @@ function getMissCount(p) {
     if (entry && entry.status) {
       const m = entry.status.match(/^M(\d)$/);
       if (m) return parseInt(m[1]) + 1; // advance by 1 for today's miss
-      if (entry.status === 'DR') return 6; // MAP says already dropped
+      if (entry.status === 'DR') return 7; // MAP says already dropped — past M6
     }
   }
   // Fallback: prevIMSR text-derived count + 1 for today
-  return Math.min((p.missCount || 1) + 1, 5);
+  return Math.min((p.missCount || 1) + 1, 6);
 }
 
 // Build a miss badge HTML string for display in missed fire lines.
 // Does NOT copy to IMSR .docx — parser UI only.
 function missBadgeHtml(missCount) {
-  if (missCount >= 6) {
-    return `<span class="miss-badge remove" title="FALLOFF-04: 6th consecutive miss — remove from IMSR">REMOVE</span>`;
+  if (missCount >= 7) {
+    return `<span class="miss-badge remove" title="FALLOFF-04: Past 6th consecutive miss — remove from IMSR">REMOVE</span>`;
+  }
+  if (missCount === 6) {
+    return `<span class="miss-badge critical" title="Miss 6 — last day on IMSR. Next miss triggers automatic removal">M6</span>`;
   }
   if (missCount === 5) {
-    return `<span class="miss-badge critical" title="Miss 5 of 6 — one more miss triggers automatic removal">M5</span>`;
+    return `<span class="miss-badge critical" title="Miss 5 of 6 — two more misses triggers automatic removal">M5</span>`;
   }
   return `<span class="miss-badge" title="Miss ${missCount} of 6">M${missCount}</span>`;
 }
@@ -9905,6 +9961,16 @@ async function generateIMSR() {
       if (q.qualifies) qualifying.push(f);
       else nonQualifying.push(f);
     });
+    // Stale 209 filter (mirrors renderOutput)
+    const docxStaleCutoff = getReportingWindowCutoff();
+    const docxStaleKeys = new Set();
+    for (let i = qualifying.length - 1; i >= 0; i--) {
+      const f = qualifying[i];
+      if (f._submitTime && f._submitTime !== Infinity && f._submitTime < docxStaleCutoff) {
+        docxStaleKeys.add(normKey(f.f1, f.unit));
+        qualifying.splice(i, 1);
+      }
+    }
     const byGacc = {};
     qualifying.forEach(f => { (byGacc[f._gacc] = byGacc[f._gacc] || []).push(f); });
     Object.keys(byGacc).forEach(g => { byGacc[g] = trancheSort(byGacc[g]); });
@@ -9912,6 +9978,7 @@ async function generateIMSR() {
     const missedByGacc = {};
     if (prevIMSR) {
       const matchedKeys = new Set(qualifying.concat(nonQualifying).map(f => normKey(f.f1, f.unit)));
+      docxStaleKeys.forEach(k => matchedKeys.delete(k)); // stale 209s fall through
       for (const [key, p] of prevIMSR) {
         if (p.pct >= 100) continue;
         if (matchedKeys.has(key)) continue;
@@ -9927,6 +9994,9 @@ async function generateIMSR() {
           const prevPpl = p.ppl || 0;
           if (acresDelta < 1000 && prevPpl <= 250) continue; // KO — do not include in docx
         }
+        // FALLOFF-04: M7+ fires are past their last visible day — exclude from docx
+        const docxMissCount = getMissCount(p);
+        if (docxMissCount >= 7 && !readdedFires.has(key)) continue;
         const unitCode = (p.unit || '').toUpperCase().replace(/-\d+$/, '');
         const gacc = UNIT_GACC_OVERRIDE[unitCode] || STATE_TO_GACC[(p.unit || '').slice(0,2).toUpperCase()] || 'UNKNOWN';
         (missedByGacc[gacc] = missedByGacc[gacc] || []).push(p);
@@ -10466,6 +10536,7 @@ async function saveIMSR() {
 function clearAll() {
   allIncidents = [];
   removedIncidents = [];
+  readdedFires.clear();
   deletedFires.clear();
   deletedPrevFires.clear();
   lastRptLabelOff.clear();
@@ -10503,7 +10574,11 @@ function reAddFire(incNum) {
   if (f._fromMissed) {
     // FALLOFF-04 fire — came from prevIMSR missed track, not a 209 fire
     // Restore by removing from deletedPrevFires so it re-appears in missedByGacc
-    if (f._missedKey) deletedPrevFires.delete(f._missedKey);
+    // Add to readdedFires so the missCount >= 7 gate doesn't re-drop it
+    if (f._missedKey) {
+      deletedPrevFires.delete(f._missedKey);
+      readdedFires.add(f._missedKey);
+    }
     // Override getMissCount to show M5 (one below removal threshold)
     // by routing it back through the missed fire path
     renderOutput();
