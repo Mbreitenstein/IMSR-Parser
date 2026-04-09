@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>IMSR Prep Tool v59.13</title>
+<title>IMSR Prep Tool v59.14</title>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
@@ -352,7 +352,7 @@
 <body>
 
 <header>
-  <h1>IMSR PREP TOOL <span style="float:right;font-size:11px;font-weight:400;color:var(--muted);letter-spacing:.04em;">v59.13</span></h1>
+  <h1>IMSR PREP TOOL <span style="float:right;font-size:11px;font-weight:400;color:var(--muted);letter-spacing:.04em;">v59.14</span></h1>
   <p>Drop one or more 209 PDFs — sorted by % contained, ready to paste into Word</p>
 </header>
 
@@ -365,8 +365,8 @@
   </div>
   <div class="drop-zone imsr-zone" id="imsr-drop-zone">
     <div class="drop-label" style="color:var(--accent2);">Previous IMSR</div>
-    <p>Drop previous IMSR (PDF or .docx) here for comparison<br><small style="color:var(--muted);">Removes asterisks on returning fires · Calculates Chge in Acres &amp; PPL · .docx also serves as formatting template for Generate IMSR</small></p>
-    <button onclick="document.getElementById('imsr-file-input').click()">Select IMSR (PDF or .docx)</button>
+    <p>Drop previous IMSR (.docx) here for comparison<br><small style="color:var(--muted);">Removes asterisks on returning fires · Calculates Chge in Acres &amp; PPL · .docx serves as formatting template for Generate IMSR</small></p>
+    <button onclick="document.getElementById('imsr-file-input').click()">Select IMSR (.docx)</button>
     <button onclick="clearIMSR()" style="margin-left:8px;background:var(--muted);color:#fff;border:none;padding:8px 14px;border-radius:3px;font-family:'IBM Plex Mono',monospace;font-size:11px;font-weight:600;cursor:pointer;">Clear IMSR</button>
     <input type="file" id="imsr-file-input" accept=".pdf,.docx" style="display:none">
   </div>
@@ -7121,9 +7121,9 @@ function qualifiesForIMSR(f) {
     { pat: /Hardwood\s+Litter/i,          threshold: 100, label: 'hardwood litter' },
     { pat: /Timber\s*\(\s*Grass\s+and\s+Understory\s*\)/i, threshold: 300, label: 'timber (grass and understory)' },
     { pat: /Timber/i,                      threshold: 100, label: 'timber' },
-    { pat: /Heavy\s+Slash/i,              threshold: 100, label: 'heavy slash' },
-    { pat: /Medium\s+Slash/i,             threshold: 100, label: 'medium slash' },
-    { pat: /Light\s+Slash/i,              threshold: 100, label: 'light slash' },
+    { pat: /Heavy\s+(?:Logging\s+)?Slash/i,  threshold: 100, label: 'heavy slash' },
+    { pat: /Medium\s+(?:Logging\s+)?Slash/i, threshold: 100, label: 'medium slash' },
+    { pat: /Light\s+(?:Logging\s+)?Slash/i,  threshold: 100, label: 'light slash' },
     { pat: /Short\s+Grass/i,              threshold: 300, label: 'grass' },
     { pat: /Tall\s+Grass/i,               threshold: 300, label: 'grass' },
     { pat: /\bGrass\b/i,                 threshold: 300, label: 'grass' },
@@ -7251,9 +7251,9 @@ function cleanFuels(raw) {
     { pat: /Closed\s+Timber\s+Litter(?:\s*\([^)]*\))?/i, out: 'closed timber litter' },
     { pat: /Hardwood\s+Litter(?:\s*\([^)]*\))?/i,         out: 'hardwood litter' },
     { pat: /Timber(?:\s*\([^)]*\))?/i,                     out: 'timber' },
-    { pat: /Heavy\s+Slash(?:\s*\([^)]*\))?/i,              out: 'heavy slash' },
-    { pat: /Medium\s+Slash(?:\s*\([^)]*\))?/i,             out: 'medium slash' },
-    { pat: /Light\s+Slash(?:\s*\([^)]*\))?/i,              out: 'light slash' },
+    { pat: /Heavy\s+(?:Logging\s+)?Slash(?:\s*\([^)]*\))?/i,  out: 'heavy slash' },
+    { pat: /Medium\s+(?:Logging\s+)?Slash(?:\s*\([^)]*\))?/i, out: 'medium slash' },
+    { pat: /Light\s+(?:Logging\s+)?Slash(?:\s*\([^)]*\))?/i,  out: 'light slash' },
     { pat: /Southern\s+Rough(?:\s*\([^)]*\))?/i,           out: 'southern rough' },
     { pat: /Dormant\s+Brush(?:,\s*Hardwood\s+Slash)?(?:\s*\([^)]*\))?/i, out: 'dormant brush' },
     { pat: /Chaparral(?:\s*\([^)]*\))?/i,                   out: 'chaparral' },
@@ -9244,7 +9244,7 @@ function parseIMSR(text) {
           // Use a simple scan — stop at patterns that look like another fire's narrative start
           let narrText = afterOrg;
           // Truncate at next "FireName, OrgText." boundary or table section
-          const stopPatterns = [/\bIncident Name\b/i, /\bTABLE ROWS\b/i, /\b[A-Z]{2}-[A-Z]{2,}\s+[\d,]+\s/, /\s\*\s+[A-Z][A-Za-z]/];
+          const stopPatterns = [/\n\s*\n/, /\bIncident Name\b/i, /\bTABLE ROWS\b/i, /\b[A-Z]{2}-[A-Z]{2,}\s+[\d,]+\s/, /\s\*\s+[A-Z][A-Za-z]/];
           for (const sp of stopPatterns) {
             const sm = sp.exec(narrText);
             if (sm) narrText = narrText.slice(0, sm.index).trim();
@@ -9988,6 +9988,7 @@ async function generateIMSR() {
         if (p.pct >= 100) continue;
         if (matchedKeys.has(key)) continue;
         if (deletedFires.has(key)) continue;
+        if (deletedPrevFires.has(key)) continue;
         // KO gate (mirrors display path): wasLastReport OR MAP KOS + no 209 + below threshold → skip docx
         const _mapEKO = mapDataByName ? mapDataByName.get((p.name||'').toLowerCase().replace(/[^a-z0-9]/g,'')) : null;
         const _rawKOStatus = _mapEKO ? (_mapEKO.status || '') : '';
