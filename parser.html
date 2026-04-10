@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>IMSR Prep Tool v59.15</title>
+<title>IMSR Prep Tool v59.16</title>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
@@ -352,7 +352,7 @@
 <body>
 
 <header>
-  <h1>IMSR PREP TOOL <span style="float:right;font-size:11px;font-weight:400;color:var(--muted);letter-spacing:.04em;">v59.15</span></h1>
+  <h1>IMSR PREP TOOL <span style="float:right;font-size:11px;font-weight:400;color:var(--muted);letter-spacing:.04em;">v59.16</span></h1>
   <p>Drop one or more 209 PDFs — sorted by % contained, ready to paste into Word</p>
 </header>
 
@@ -9687,8 +9687,9 @@ function docxBuildGaccSection(gacc, incidents, missed, isFirst) {
 
   // 100% contained fires have no narrative
 
-  // One blank line before the large fire table
-  parts.push(docxEmptyPara());
+  // One blank line before the large fire table (only if narratives preceded it)
+  const hasNarratives = sortedActive.length || sortedLastRpt.length || missedWithNarr.length;
+  if (hasNarratives) parts.push(docxEmptyPara());
 
   // Large fire table
   let tableRowsXml = '';
