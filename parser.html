@@ -7555,7 +7555,7 @@ function buildTableRows(incidents) {
     if (is100(f)) classes.push('ctn100');
     const prev = prevMatch(f);
     if (prev && prev.pct >= 100 && is100(f)) classes.push('returning-100');
-    if (prev && prev.wasLastReport) classes.push('last-rpt');
+    // wasLastReport only applies to missed fires (no current 209); fires with 209s came back
     if (isReentry(f)) classes.push('reentry');
     // STALE: new fire, 100%, old start date
     const isNewFire = !prev && !isReentry(f);
@@ -7614,8 +7614,9 @@ function buildNarrativeLines(incidents, cssClass='', dragKey='') {
     const reentry = isReentry(f);
     const isNew = !prev && !reentry;
     const asterisk = isNew ? '* ' : '';
-    const lastRptBadge = (prev && prev.wasLastReport) ? '<span class="last-rpt-badge" title="Previous IMSR contained a last-report statement.">LAST RPT ON PREVIOUS IMSR</span>' : '';
-    const lastRptClass = (prev && prev.wasLastReport) ? ' last-rpt' : '';
+    // wasLastReport badge only for missed fires; fires with fresh 209s came back — no badge
+    const lastRptBadge = '';
+    const lastRptClass = '';
 
     // Re-entry from MAP treatment
     const reentryClass = reentry ? ' reentry' : '';
