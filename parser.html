@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>IMSR Prep Tool v59.16</title>
+<title>IMSR Prep Tool v59.18</title>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
@@ -169,6 +169,7 @@
   .removed-fire-meta { color: #666; flex: 1; }
   .removed-status-badge { display: inline-block; font-size: 9px; font-weight: 700; color: #fff; background: #c0392b; padding: 1px 5px; border-radius: 3px; }
   .removed-threshold-badge { display: inline-block; font-size: 9px; font-weight: 700; color: #fff; background: #e67e22; padding: 1px 5px; border-radius: 3px; margin-left: 4px; }
+  .removed-flag-badge { display: inline-block; font-size: 9px; font-weight: 700; color: #fff; background: #8e44ad; padding: 1px 5px; border-radius: 3px; margin-left: 4px; }
   .readd-btn { font-size: 11px; font-weight: 600; padding: 3px 10px; background: #1a6b1a; color: #fff; border: none; border-radius: 4px; cursor: pointer; white-space: nowrap; }
   .readd-btn:hover { background: #145214; }
   .reincluded-badge { display: inline-block; font-size: 9px; font-weight: 700; color: #fff; background: #e67e22; padding: 1px 6px; border-radius: 3px; margin-left: 6px; vertical-align: middle; letter-spacing: 0.3px; cursor: help; -webkit-user-select: none; user-select: none; }
@@ -352,7 +353,7 @@
 <body>
 
 <header>
-  <h1>IMSR PREP TOOL <span style="float:right;font-size:11px;font-weight:400;color:var(--muted);letter-spacing:.04em;">v59.16</span></h1>
+  <h1>IMSR PREP TOOL <span style="float:right;font-size:11px;font-weight:400;color:var(--muted);letter-spacing:.04em;">v59.18</span></h1>
   <p>Drop one or more 209 PDFs — sorted by % contained, ready to paste into Word</p>
 </header>
 
@@ -619,7 +620,7 @@ function advanceStatus(status, steps) {
   if (['KO','KO!','DR','N'].includes(status)) return status;
   if (status === 'KOS') return 'KO';   // soft flag → confirmed KO after any absence
   if (status === 'A')   return 'KO!';  // gone without warning day
-  const prog = {'M1':'M2','M2':'M3','M3':'M4','M4':'M5','M5':'DR'};
+  const prog = {'M1':'M2','M2':'M3','M3':'M4','M4':'M5','M5':'M6','M6':'DR'};
   let s = status;
   for (let i = 0; i < steps; i++) {
     s = prog[s] || 'DR';
@@ -675,16 +676,23 @@ function reapplyMapGate() {
     const strcDelta      = currentStrc - (entry.strcLost || 0);
     const cimtAdded      = !!(f.hasCIMT || f.hasNIMO);
     const fatalityReport = !!f.fatalThisPeriod;
-    const meetsThreshold = cimtAdded || acresDelta >= 1000 || strcDelta > 0 || fatalityReport;
+    const currentPpl     = parseInt(f.totalPers || 0);
+
+    // Two-tier re-inclusion:
+    //   AUTO: fire goes back into rotation with "Previously reported incident."
+    //   FLAG: fire stays in removed panel with alert badge for analyst review
+    const autoInclude   = cimtAdded || acresDelta >= 1000 || currentPpl >= 250;
+    const flagForReview = !autoInclude && (strcDelta > 0 || fatalityReport);
 
     // Build reason string for badge
     const reasons = [];
     if (cimtAdded)          reasons.push('CIMT assigned');
     if (acresDelta >= 1000) reasons.push(`+${acresDelta.toLocaleString()} ac growth`);
+    if (currentPpl >= 250)  reasons.push(`${currentPpl.toLocaleString()} personnel`);
     if (strcDelta > 0)      reasons.push(`+${strcDelta} structure${strcDelta !== 1 ? 's' : ''} lost`);
     if (fatalityReport)     reasons.push('Fatality reported');
 
-    if (meetsThreshold) {
+    if (autoInclude) {
       // Auto-move to main display — fire meets re-inclusion criteria
       f._reincluded        = true;
       f._reinclusionReason = reasons.join(' · ');
@@ -699,6 +707,8 @@ function reapplyMapGate() {
       f._strcDelta      = strcDelta;
       f._cimtAdded      = cimtAdded;
       f._meetsThreshold = false;
+      f._flagForReview  = flagForReview;
+      f._flagReasons    = flagForReview ? reasons.join(' · ') : '';
       f._mapLastSize    = entry.size;
       f._mapLastPct     = entry.lastPct;
       f._mapDate        = entry.mapDate;
@@ -7162,6 +7172,8 @@ function normalizeName(name) {
   if (!name) return name;
   // Strip trailing "Fire" (case-insensitive)
   name = name.trim().replace(/\s+fire$/i, '').trim();
+  // Strip apostrophes — straight, curly, and modifier variants
+  name = name.replace(/[\u0027\u2018\u2019\u02BC]/g, '');
   const isAllCaps = name === name.toUpperCase() && /[A-Z]{2,}/.test(name);
   const words = name.trim().split(/\s+/);
   if (isAllCaps || words.length > 2) {
@@ -8105,7 +8117,9 @@ function renderOutput() {
       // KO gate: fire said "Last report unless significant activity" on the prev IMSR
       // OR the MAP Master flagged it KOS (soft kick-off) — both mean the same thing.
       // No 209 received today confirms the departure.
-      // Check re-inclusion threshold: ≥1000ac growth or prev IMSR had >250 personnel.
+      // Check re-inclusion threshold: ≥1000ac growth or ≥250 personnel.
+      // Note: CIMT check not possible here — no current 209 data for missed fires.
+      // reapplyMapGate() handles CIMT for fires WITH 209s.
       // Below threshold → route to NQ do-not-include pile (not fall-off/missed).
       // Above threshold → treat as active miss so analyst can see it.
       const mapEntryForKO = mapDataByName ? mapDataByName.get((p.name||'').toLowerCase().replace(/[^a-z0-9]/g,'')) : null;
@@ -8119,7 +8133,7 @@ function renderOutput() {
         const latestAcres = mapEntryForKO ? (mapEntryForKO.size || prevAcres) : prevAcres;
         const acresDelta = latestAcres - prevAcres;
         const prevPpl = p.ppl || 0;
-        const meetsThreshold = acresDelta >= 1000 || prevPpl > 250;
+        const meetsThreshold = acresDelta >= 1000 || prevPpl >= 250;
         if (!meetsThreshold) {
           koNQ.push(p); // push to NQ do-not-include
           continue;
@@ -8473,15 +8487,18 @@ function renderOutput() {
     removedPanelEl.style.display = 'block';
     removedPanelEl.className = 'removed-panel';
     const flaggedCount = removedIncidents.filter(f => f._meetsThreshold).length;
+    const reviewCount = removedIncidents.filter(f => f._flagForReview).length;
 
     // Sort removed incidents:
     // 1. Threshold met (re-inclusion criteria) → top
-    // 2. Highest acre growth descending
+    // 2. Flagged for review (structures/fatalities) → next
     // 3. % containment decrease (most decreased first = lowest curPct - lastPct)
     // 4. Most recently dropped (mapDate descending)
     const sortedRemoved = [...removedIncidents].sort((a, b) => {
-      // Threshold fires first
+      // Threshold fires first (shouldn't be here but safety net)
       if (a._meetsThreshold !== b._meetsThreshold) return a._meetsThreshold ? -1 : 1;
+      // Flagged fires (structures/fatalities) next
+      if ((a._flagForReview || false) !== (b._flagForReview || false)) return a._flagForReview ? -1 : 1;
       // Acre growth descending
       const aDelta = a._acresDelta || 0, bDelta = b._acresDelta || 0;
       if (bDelta !== aDelta) return bDelta - aDelta;
@@ -8546,10 +8563,17 @@ function renderOutput() {
         ? reasons.map(r => `<span class="removed-threshold-badge">⚑ ${r}</span>`).join(' ')
         : '';
 
+      // Flag-for-review: structures or fatalities on a dropped fire — alert badge
+      let flagHtml = '';
+      if (f._flagForReview && f._flagReasons) {
+        const statusWord = {'KO':'KO','KO!':'KO','DR':'DR','N':'N','KOS':'KOS'}[f._removedStatus] || f._removedStatus;
+        flagHtml = `<span class="removed-flag-badge" title="Previously ${statusWord} — analyst review needed">⚠ Previously ${statusWord} — ${f._flagReasons}</span>`;
+      }
+
       return `<div class="removed-fire-row">
         <div class="removed-fire-name">${f.f1 || f.f2}</div>
         <span class="removed-status-badge" title="${statusLabel}">${f._removedStatus}</span>
-        ${thresholdHtml}
+        ${thresholdHtml}${flagHtml}
         <div class="removed-fire-meta">${gacc ? gacc+' · ' : ''}${droppedStr} · ${lastIMSR} · ${cur209} · ${acreDeltaStr}${pctDeltaStr}</div>
         <button class="readd-btn" onclick="reAddFire('${f.f2 || f.f1}')" title="Re-add to main display. Fire gets Previously reported treatment.">↑ Re-add to IMSR</button>
       </div>`;
@@ -10000,7 +10024,7 @@ async function generateIMSR() {
           const latestAcres = _mapEKO ? (_mapEKO.size || prevAcres) : prevAcres;
           const acresDelta = latestAcres - prevAcres;
           const prevPpl = p.ppl || 0;
-          if (acresDelta < 1000 && prevPpl <= 250) continue; // KO — do not include in docx
+          if (acresDelta < 1000 && prevPpl < 250) continue; // KO — do not include in docx
         }
         // FALLOFF-04: M7+ fires are past their last visible day — exclude from docx
         const docxMissCount = getMissCount(p);
