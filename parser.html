@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>IMSR Prep Tool v59.18</title>
+<title>IMSR Prep Tool v59.19</title>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
@@ -353,7 +353,7 @@
 <body>
 
 <header>
-  <h1>IMSR PREP TOOL <span style="float:right;font-size:11px;font-weight:400;color:var(--muted);letter-spacing:.04em;">v59.18</span></h1>
+  <h1>IMSR PREP TOOL <span style="float:right;font-size:11px;font-weight:400;color:var(--muted);letter-spacing:.04em;">v59.19</span></h1>
   <p>Drop one or more 209 PDFs — sorted by % contained, ready to paste into Word</p>
 </header>
 
@@ -9016,13 +9016,14 @@ function getMissCount(p) {
     const normN = (p.name || '').toLowerCase().replace(/[^a-z0-9]/g,'');
     const entry = mapDataByName.get(normN);
     if (entry && entry.status) {
+      if (entry.status === 'A' || entry.status === 'KOS') return 1; // was active yesterday — first miss today
       const m = entry.status.match(/^M(\d)$/);
       if (m) return parseInt(m[1]) + 1; // advance by 1 for today's miss
       if (entry.status === 'DR') return 7; // MAP says already dropped — past M6
     }
   }
   // Fallback: prevIMSR text-derived count + 1 for today
-  return Math.min((p.missCount || 1) + 1, 6);
+  return Math.min((p.missCount || 0) + 1, 6);
 }
 
 // Build a miss badge HTML string for display in missed fire lines.
@@ -9181,8 +9182,8 @@ function parseIMSR(text) {
     const rawName = nm[1].trim();
     if (rawName.length < 2 || /^(?:Incident|Fire Activity|New fires|Understanding|This report)/i.test(rawName)) continue;
     const fullNarr = nm[3].replace(/\s+/g, ' ').trim();
-    const missCount = /last (?:narrative )?report unless new information/i.test(fullNarr) ? 3
-      : /no new information/i.test(fullNarr) ? 2 : 1;
+    const missCount = /last (?:narrative )?report unless new information/i.test(fullNarr) ? 2
+      : /no new information/i.test(fullNarr) ? 1 : 0;
     // Strip: fall-off statements, kick-off statement, behavior terms and everything after
     const stripped = fullNarr
       .replace(/\.?\s*No new information\.?\s*/gi, '')
@@ -9276,8 +9277,8 @@ function parseIMSR(text) {
           }
           if (narrText.length > 5) {
             const fullNarr = narrText.replace(/\s+/g, ' ').trim();
-            const missCount = /last (?:narrative )?report unless new information/i.test(fullNarr) ? 3
-              : /no new information/i.test(fullNarr) ? 2 : 1;
+            const missCount = /last (?:narrative )?report unless new information/i.test(fullNarr) ? 2
+              : /no new information/i.test(fullNarr) ? 1 : 0;
             const stripped = fullNarr
               .replace(/\.?\s*No new information\.?\s*/gi, '')
               .replace(/\.?\s*Last (narrative )?report unless new information is received\.?\s*/gi, '')
@@ -9293,7 +9294,7 @@ function parseIMSR(text) {
       } else {
       }
     }
-    if (!narrEntry) narrEntry = { narrative: '', fullNarr: '', missCount: 1 };
+    if (!narrEntry) narrEntry = { narrative: '', fullNarr: '', missCount: 2 };
 
     // Extract CIMT/NIMO team info from narrative
     let prevTeamType = '', prevTeamName = '', prevManagedNames = [];
@@ -9343,8 +9344,8 @@ function parseIMSR(text) {
         const truncated = entry.fullNarr.slice(0, cutM.index).replace(/[\s*]+$/, '').trim();
         entry.fullNarr = truncated;
         // Re-evaluate missCount and stripped narrative from clean text
-        entry.missCount = /last (?:narrative )?report unless new information/i.test(truncated) ? 3
-          : /no new information/i.test(truncated) ? 2 : 1;
+        entry.missCount = /last (?:narrative )?report unless new information/i.test(truncated) ? 2
+          : /no new information/i.test(truncated) ? 1 : 0;
         entry.narrative = truncated
           .replace(/\.?\s*No new information\.?\s*/gi, '')
           .replace(/\.?\s*Last (narrative )?report unless new information is received\.?\s*/gi, '')
