@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>IMSR Prep Tool v59.20</title>
+<title>IMSR Prep Tool v59.21</title>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
@@ -353,7 +353,7 @@
 <body>
 
 <header>
-  <h1>IMSR PREP TOOL <span style="float:right;font-size:11px;font-weight:400;color:var(--muted);letter-spacing:.04em;">v59.20</span></h1>
+  <h1>IMSR PREP TOOL <span style="float:right;font-size:11px;font-weight:400;color:var(--muted);letter-spacing:.04em;">v59.21</span></h1>
   <p>Drop one or more 209 PDFs — sorted by % contained, ready to paste into Word</p>
 </header>
 
@@ -9361,14 +9361,16 @@ function parseIMSR(text) {
     }
   }
 
-  // ── Step 3: flag fires whose prev narrative had "Last report" ──────
-  // Check each entry's own fullNarr (already truncated at fire boundaries
-  // by Steps 1/2a/2b) — no raw-text vicinity scan needed.
-  // Catch all variants: "Last report unless significant activity occurs",
-  // "Last narrative report unless new information is received",
-  // "Last report unless new information is received".
+  // ── Step 3: flag fires whose prev narrative had the KICK-OFF statement ──
+  // Only the true kick-off phrase ("Last report unless significant activity
+  // occurs") means NICC intentionally retired the fire. The M2 fall-off
+  // suffix ("Last narrative report unless new information is received") is
+  // a separate track — fall-off, not kick-off — and must NOT set this flag.
+  // Prior versions used a looser regex that conflated the two, causing M2
+  // fires to be routed to the "Do Not Include" pile instead of advancing
+  // to M3 (table-only). v59.21 fix.
   for (const [key, entry] of map) {
-    if (entry.fullNarr && /last (?:narrative )?report unless/i.test(entry.fullNarr)) {
+    if (entry.fullNarr && /last report unless significant activity/i.test(entry.fullNarr)) {
       entry.wasLastReport = true;
     }
   }
