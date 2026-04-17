@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>IMSR Prep Tool v59.21</title>
+<title>IMSR Prep Tool v59.22</title>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
@@ -353,7 +353,7 @@
 <body>
 
 <header>
-  <h1>IMSR PREP TOOL <span style="float:right;font-size:11px;font-weight:400;color:var(--muted);letter-spacing:.04em;">v59.21</span></h1>
+  <h1>IMSR PREP TOOL <span style="float:right;font-size:11px;font-weight:400;color:var(--muted);letter-spacing:.04em;">v59.22</span></h1>
   <p>Drop one or more 209 PDFs — sorted by % contained, ready to paste into Word</p>
 </header>
 
@@ -811,10 +811,19 @@ async function handleMapFiles(files) {
   // how many MAP dates in the master came AFTER its last appearance.
   // This correctly promotes M2→DR, KOS→KO, etc. without waiting for the
   // script to write exit-status rows.
-  const allMapDates = [...new Set(allDates)].sort((a, b) => a - b);
+  //
+  // v59.22 fix: dedup dates by timestamp, not Date-object reference. Set
+  // uniqueness compares objects by reference, so two Date objects for the
+  // same calendar day were treated as distinct. With N fires on M real
+  // dates, allMapDates ended up with N entries instead of M. `datesAfter`
+  // then over-counted duplicates, massively over-advancing stale fires
+  // (M1/M2/M3 jumping to DR instead of stepping one per real missed day).
+  // Compare by numeric timestamp to dedup correctly.
+  const uniqueTimes = [...new Set(allDates.map(d => d.getTime()))].sort((a, b) => a - b);
   for (const [incNum, entry] of mapData) {
     if (!entry.mapDate || !entry.status) continue;
-    const datesAfter = allMapDates.filter(d => d > entry.mapDate).length;
+    const entryTime = entry.mapDate.getTime();
+    const datesAfter = uniqueTimes.filter(t => t > entryTime).length;
     if (datesAfter > 0) {
       entry.status = advanceStatus(entry.status, datesAfter);
     }
