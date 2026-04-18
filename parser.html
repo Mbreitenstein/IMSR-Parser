@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>IMSR Prep Tool v59.22</title>
+<title>IMSR Prep Tool v59.33</title>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
@@ -50,6 +50,14 @@
   table.imsr tr.reentry.ctn100 td { background: #fde8e5 !important; }
   table.imsr tr.reentry.ctn100:nth-child(even) td { background: #fcd5d0 !important; }
   .narr-line.reentry.ctn100 { border-left-color: #c0392b; background: #fde8e5; }
+  /* v59.26: rename detection — fire name differs from MAP Master entry for same inc num */
+  .rename-badge { display: inline-block; font-size: 9px; font-weight: 700; color: #fff; background: #7d3c98; padding: 1px 5px; border-radius: 3px; margin-left: 6px; vertical-align: middle; letter-spacing: 0.3px; cursor: help; -webkit-user-select: none; user-select: none; }
+  /* v59.27: NO MAP MATCH — fire has prev IMSR + fresh 209 but MAP Master lookup failed or is stale.
+     Same gold (#b8960a) as reentry-badge / .map-zone — signals a MAP-Master data issue without exiling the fire. */
+  .no-map-match-badge { display: inline-block; font-size: 9px; font-weight: 700; color: #fff; background: #b8960a; padding: 1px 5px; border-radius: 3px; margin-left: 6px; vertical-align: middle; letter-spacing: 0.3px; cursor: help; -webkit-user-select: none; user-select: none; }
+  table.imsr tr.renamed td { background: #f4ecf7 !important; }
+  table.imsr tr.renamed:nth-child(even) td { background: #ebdef0 !important; }
+  .narr-line.renamed { border-left-color: #7d3c98; background: #f4ecf7; }
   .gacc-sort-panel { background: var(--surface); border: 1px solid var(--border); border-radius: 4px; margin-bottom: 16px; overflow: hidden; }
   .gacc-sort-panel .gacc-sort-header { display: flex; align-items: center; gap: 8px; padding: 6px 12px; background: #f0efe8; border-bottom: 1px solid var(--border); font-family: 'IBM Plex Mono', monospace; font-size: 10px; font-weight: 600; letter-spacing: .08em; color: var(--label); }
   .gacc-sort-row { display: flex; align-items: center; gap: 8px; padding: 4px 12px; border-bottom: 1px solid var(--border); font-family: 'IBM Plex Mono', monospace; font-size: 11px; }
@@ -353,7 +361,7 @@
 <body>
 
 <header>
-  <h1>IMSR PREP TOOL <span style="float:right;font-size:11px;font-weight:400;color:var(--muted);letter-spacing:.04em;">v59.22</span></h1>
+  <h1>IMSR PREP TOOL <span style="float:right;font-size:11px;font-weight:400;color:var(--muted);letter-spacing:.04em;">v59.33</span></h1>
   <p>Drop one or more 209 PDFs — sorted by % contained, ready to paste into Word</p>
 </header>
 
@@ -588,6 +596,13 @@ function showIMSRDiagnostic() {
 // Keyed by Incident_Number. Used to detect re-entry fires (FALLOFF-08).
 let mapData = null;       // Map of incident_number → { name, gacc, imt_type, ... }
 let mapDataByName = null; // Map of normalized name → mapData entry (for missed fire lookups)
+// v59.24: Cognos-suffix fallback index — the bulk 209 PDF gives incident numbers
+// WITHOUT the Cognos dispatch suffix (e.g. "AL-ALS-260411"), while MAP Master stores
+// them WITH the suffix (e.g. "AL-ALS-260411-11"). Exact-number lookups miss. This
+// index maps stripped form → entry, but ONLY when the stripped form is unambiguous
+// (no two MAP fires share the same stripped base). Ambiguous cases fall through to
+// name-based lookup via mapLookup().
+let mapDataByStrippedNum = null;
 let manualGaccOrder = null; // Array of GACC keys — manual reorder override
 
 const mapDropZone  = document.getElementById('map-drop-zone');
@@ -630,6 +645,38 @@ function advanceStatus(status, steps) {
   return s;
 }
 
+// ── MAP MASTER LOOKUP — SUFFIX-TOLERANT ──────────────────────────────────
+// v59.24: Cognos suffix mismatch handling. LFS_AUTO/MAP Master store incident
+// numbers WITH a dispatch suffix (e.g. "AL-ALS-260411-11"), but the bulk 209
+// PDF gives them WITHOUT (e.g. "AL-ALS-260411"). Direct mapData.get() misses.
+// Primary: exact match. Secondary: unambiguous stripped-number match.
+// Tertiary: unit-prefix + normalized-name match (guards against cross-state
+// collisions like "Turkey" in OK vs CO).
+function mapLookup(incNum, fireName) {
+  if (!mapData) return null;
+  const upper = (incNum || '').toUpperCase();
+  if (!upper) return null;
+  // 1. Exact match — fastest, always trusted
+  let entry = mapData.get(upper);
+  if (entry) return entry;
+  // 2. Stripped suffix — only when unambiguous per mapDataByStrippedNum
+  if (mapDataByStrippedNum) {
+    entry = mapDataByStrippedNum.get(upper);
+    if (entry) return entry;
+  }
+  // 3. Name + unit prefix — last resort, narrow match to same dispatch unit
+  if (fireName && mapDataByName) {
+    const normN = fireName.toLowerCase().replace(/[^a-z0-9]/g, '');
+    const upperUnit = upper.split('-').slice(0, 2).join('-');
+    for (const [mNum, mEntry] of mapData) {
+      if (!mNum.startsWith(upperUnit + '-')) continue;
+      const mNormN = (mEntry.name || '').toLowerCase().replace(/[^a-z0-9]/g, '');
+      if (mNormN === normN) return mEntry;
+    }
+  }
+  return null;
+}
+
 // ── MAP STATUS GATE ──────────────────────────────────────────────────────
 // Separates fires with MAP Status KO/KO!/DR/N into removedIncidents.
 // Called after PDFs load AND after MAP Master loads — whichever comes second
@@ -646,6 +693,15 @@ function reapplyMapGate() {
     delete f._mapLastSize;
     delete f._mapLastPct;
     delete f._mapDate;
+    // v59.28: also clear the analyst-review flag pair set at the bottom of this
+    // function (lines ~795). Without these deletes, a fire that was flagged for
+    // review in a prior run carries the stale flag forward if it gets moved
+    // back to the main display on re-evaluation. Harmless today (renderer only
+    // checks _flagForReview on fires still in removedIncidents) but loaded —
+    // any future code that reads these flags on main-display fires would see
+    // phantom flags. Symmetric cleanup closes the trap.
+    delete f._flagForReview;
+    delete f._flagReasons;
     allIncidents.push(f);
   }
   // Also merge back any reincluded fires that were previously auto-moved
@@ -653,6 +709,10 @@ function reapplyMapGate() {
   allIncidents.forEach(f => {
     delete f._reincluded;
     delete f._reinclusionReason;
+    // v59.27: clear stale no-map-match flags so re-evaluation is fresh
+    delete f._noMapMatch;
+    delete f._noMapMatchReason;
+    delete f._staleRemovedStatus;
   });
   removedIncidents = [];
   readdedFires.clear();
@@ -666,11 +726,44 @@ function reapplyMapGate() {
   const kept = [];
   for (const f of allIncidents) {
     const incNum = (f.f2 || '').toUpperCase();
-    const entry  = mapData.get(incNum);
-    if (!entry || !REMOVED_STATUSES.has(entry.status)) {
+    // v59.24: use suffix-tolerant lookup (mapData.get would miss when the 209
+    // inc num lacks the Cognos dispatch suffix that MAP Master stores).
+    const entry  = mapLookup(incNum, f.f1);
+    // v59.27: "evidence of active fire today" — fire was visible yesterday AND has a fresh 209.
+    // When this evidence exists, MAP Master data (or its absence) does NOT send the fire to
+    // Removed. We trust prev IMSR + fresh 209 over MAP status and surface the data problem
+    // via a NO MAP MATCH badge so the analyst can fix MAP Master. No silent KO!.
+    const prevOnImsr = !!prevMatch(f);
+    if (!entry) {
+      // No MAP entry at all. If the fire was on prev IMSR, the MAP row is missing or
+      // was skipped (e.g. blank Incident_Number). Flag it. If this is a brand new fire,
+      // no badge — nothing to flag.
+      if (prevOnImsr) {
+        f._noMapMatch = true;
+        f._noMapMatchReason = 'No matching row in MAP Master';
+      }
       kept.push(f);
       continue;
     }
+    if (!REMOVED_STATUSES.has(entry.status)) {
+      kept.push(f);
+      continue;
+    }
+    // Entry has a REMOVED status (KO/KO!/DR/N/KOS).
+    // v59.27: if fire was on prev IMSR AND has a fresh 209 (it's here), the MAP status is
+    // stale — the fire is obviously still active. Keep it in the main display and flag it;
+    // do NOT run it through the re-inclusion gate (that's for fires returning from absence).
+    if (prevOnImsr) {
+      f._noMapMatch = true;
+      f._noMapMatchReason = `MAP Master status is ${entry.status}, but fire is on yesterday's IMSR with a fresh 209`;
+      f._staleRemovedStatus = entry.status;
+      f._mapLastSize = entry.size;
+      f._mapLastPct  = entry.lastPct;
+      f._mapDate     = entry.mapDate;
+      kept.push(f);
+      continue;
+    }
+    // No prevMatch — fire is returning from absence. Run the re-inclusion gate (existing logic).
     const currentAcres   = parseInt((f.f7 || '').replace(/,/g,'')) || 0;
     const acresDelta     = currentAcres - (entry.size || 0);
     const currentStrc    = (f.resDestroyed || 0) + (f.strDestroyed || 0);
@@ -724,6 +817,7 @@ async function handleMapFiles(files) {
   files.sort((a, b) => a.name.localeCompare(b.name));
   if (!mapData) mapData = new Map();
   let filesLoaded = 0, rowsAdded = 0;
+  const warnings = []; // v59.30: surface per-file failures in the UI, not just the console
 
   for (const file of files) {
     setMapStatus(`Reading IMSR MAP (${filesLoaded + 1}/${files.length})…`);
@@ -732,7 +826,10 @@ async function handleMapFiles(files) {
       const wb = XLSX.read(buf, { type: 'array' });
       const ws = wb.Sheets[wb.SheetNames[0]];
       const rows = XLSX.utils.sheet_to_json(ws, { defval: '' });
-      if (!rows.length) continue;
+      if (!rows.length) {
+        warnings.push(`${file.name}: file is empty`);
+        continue;
+      }
 
       const headers = Object.keys(rows[0]);
       const incNumCol = headers.find(h => /incident.?number/i.test(h));
@@ -744,7 +841,11 @@ async function handleMapFiles(files) {
       const mapDateCol  = headers.find(h => /map.?date/i.test(h));
       const statusCol   = headers.find(h => /^status$/i.test(h));
       const strcLostCol = headers.find(h => /strc.?lost/i.test(h));
-      if (!incNumCol) { console.warn('MAP file missing Incident_Number:', file.name); continue; }
+      if (!incNumCol) {
+        console.warn('MAP file missing Incident_Number:', file.name);
+        warnings.push(`${file.name}: missing Incident_Number column`);
+        continue;
+      }
 
       for (const row of rows) {
         const incNum = String(row[incNumCol] || '').trim().toUpperCase();
@@ -791,6 +892,7 @@ async function handleMapFiles(files) {
       filesLoaded++;
     } catch(e) {
       console.warn('Failed to read MAP file', file.name, e);
+      warnings.push(`${file.name}: ${e.message || 'could not read file'}`);
     }
   }
 
@@ -837,7 +939,40 @@ async function handleMapFiles(files) {
     const normN = entry.name.toLowerCase().replace(/[^a-z0-9]/g,'');
     if (!mapDataByName.has(normN)) mapDataByName.set(normN, entry);
   }
-  setMapStatus(`✓ ${mapData.size} incidents loaded from IMSR MAP${plural}${dateRange}`, 'ok');
+
+  // v59.24: Build suffix-stripped index for Cognos-suffix fallback lookup.
+  // LFS_AUTO/MAP Master store Cognos inc nums with dispatch suffix (AL-ALS-260411-11),
+  // but bulk 209 PDFs give the raw unsuffixed form (AL-ALS-260411). Exact mapData.get
+  // misses. This secondary index maps base → entry, but ONLY for bases that are
+  // UNAMBIGUOUS — when two MAP fires share the same base (e.g. AL-ALS-260411-10 Rafey
+  // AND AL-ALS-260411-11 Paint Creek), neither is indexed here; mapLookup falls through
+  // to the name-based path for those.
+  const strippedCounts = new Map();
+  for (const incNum of mapData.keys()) {
+    const m = /^(.+)-\d+$/.exec(incNum);
+    if (!m) continue;
+    const base = m[1];
+    strippedCounts.set(base, (strippedCounts.get(base) || 0) + 1);
+  }
+  mapDataByStrippedNum = new Map();
+  for (const [incNum, entry] of mapData) {
+    const m = /^(.+)-\d+$/.exec(incNum);
+    if (!m) continue;
+    const base = m[1];
+    if (strippedCounts.get(base) === 1) {
+      mapDataByStrippedNum.set(base, entry);
+    }
+  }
+  // v59.30: if any files were skipped, show the warnings inline alongside the success count
+  const baseMsg = `✓ ${mapData.size} incidents loaded from IMSR MAP${plural}${dateRange}`;
+  if (warnings.length) {
+    const list = warnings.map(w => `&nbsp;&nbsp;• ${w.replace(/</g,'&lt;').replace(/>/g,'&gt;')}`).join('<br>');
+    mapStatusEl.className = 'map-status ok';
+    mapStatusEl.style.display = 'block';
+    mapStatusEl.innerHTML = `${baseMsg}<br><span style="color:#c0392b;font-weight:600;">⚠ ${warnings.length} file${warnings.length!==1?'s':''} skipped:</span><br>${list}`;
+  } else {
+    setMapStatus(baseMsg, 'ok');
+  }
   if (allIncidents.length) {
     reapplyMapGate();
     updateFileList();
@@ -848,8 +983,14 @@ async function handleMapFiles(files) {
 function clearMap() {
   mapData = null;
   mapDataByName = null;
+  mapDataByStrippedNum = null;
   mapStatusEl.style.display = 'none';
-  if (allIncidents.length) renderOutput();
+  // v59.32: run the gate so fires in Removed Incidents merge back into the main
+  // display (reapplyMapGate's cleanup pass runs even when mapData is null).
+  if (allIncidents.length || removedIncidents.length) {
+    reapplyMapGate();
+    renderOutput();
+  }
 }
 
 // Check if a fire is a re-entry: in MAP but NOT in prev IMSR
@@ -859,12 +1000,13 @@ function isReentry(f) {
   if (!incNum) return false;
   // Normal returning fire — not a re-entry
   if (prevMatch(f)) return false;
-  if (!mapData.has(incNum)) return false;
+  // v59.24: suffix-tolerant lookup (209 raw inc num may lack Cognos suffix)
+  const entry = mapLookup(incNum, f.f1);
+  if (!entry) return false;
   // A fire whose MAP entry is dated TODAY was just written by today's script run.
   // That means it is genuinely new — not a fire that previously appeared in the
   // IMSR, dropped off, and is now returning. Only flag as re-entry when mapDate
   // is from a PREVIOUS date (fire was in MAP before today's run).
-  const entry = mapData.get(incNum);
   if (entry.mapDate) {
     const todayMidnight = new Date(); todayMidnight.setHours(0,0,0,0);
     const mapDay = new Date(entry.mapDate); mapDay.setHours(0,0,0,0);
@@ -878,7 +1020,8 @@ function getReentryInfo(f) {
   if (!mapData) return null;
   const incNum = (f.f2 || '').toUpperCase();
   if (!incNum) return null;
-  const entry = mapData.get(incNum);
+  // v59.24: suffix-tolerant lookup
+  const entry = mapLookup(incNum, f.f1);
   if (!entry) return null;
   const currentAcres = parseFloat(f.f7) || 0;
   const mapAcres = entry.size || 0;
@@ -1095,6 +1238,7 @@ function setStatus(msg, type='loading') {
 async function handleFiles(files) {
   if (!files.length) return;
   setStatus(`Processing ${files.length} PDF${files.length > 1 ? 's' : ''}...`);
+  const warnings = []; // v59.30: track per-file parse failures for inline UI reporting
 
   const INC_NUM_RE = /[A-Z]{2}-[A-Z0-9]+-\S+/;
 
@@ -1160,6 +1304,7 @@ async function handleFiles(files) {
 
     } catch(e) {
       console.warn('Failed to parse', file.name, e);
+      warnings.push(`${file.name}: ${e.message || 'PDF parse failed — fire data NOT loaded'}`);
     }
   }
 
@@ -1173,7 +1318,16 @@ async function handleFiles(files) {
   reapplyMapGate();
   updateFileList();
   renderOutput();
-  setStatus(`✓ ${allIncidents.length} incident${allIncidents.length !== 1 ? 's' : ''} loaded — sorted by threat → behavior → % contained`, 'ok');
+  // v59.30: show per-file parse failures alongside success count — fires from skipped PDFs are NOT in the output
+  const baseMsg = `✓ ${allIncidents.length} incident${allIncidents.length !== 1 ? 's' : ''} loaded — sorted by threat → behavior → % contained`;
+  if (warnings.length) {
+    const list = warnings.map(w => `&nbsp;&nbsp;• ${w.replace(/</g,'&lt;').replace(/>/g,'&gt;')}`).join('<br>');
+    statusEl.className = 'status ok';
+    statusEl.style.display = 'block';
+    statusEl.innerHTML = `${baseMsg}<br><span style="color:#c0392b;font-weight:600;">⚠ ${warnings.length} PDF${warnings.length!==1?'s':''} skipped — fires from these files are NOT in the output:</span><br>${list}`;
+  } else {
+    setStatus(baseMsg, 'ok');
+  }
 }
 
 function updateFileList() {
@@ -7178,18 +7332,81 @@ function qualifiesForIMSR(f) {
   return { qualifies: false, reason: `${acres.toLocaleString()} acres — ${first.label} requires ${first.threshold}+ acres` };
 }
 // Normalize incident name: ALL CAPS → title case. >2 words → title case each word
+// v59.26: Abbreviations that should stay UPPERCASE even when a name is all-caps
+// and gets title-cased. Without this, "SR 26" becomes "Sr 26", "SCR 540 1" becomes
+// "Scr 540 1", "N FORK" becomes "N Fork" (correct) but "CR 169" becomes "Cr 169".
+// Add new entries here as analyst corrections reveal them.
+const UPPERCASE_ABBREVS = new Set([
+  // Cardinal + intercardinal directions
+  'N','S','E','W','NE','NW','SE','SW','NNE','NNW','SSE','SSW',
+  // Road / route prefixes seen in fire names
+  'SR','CR','FR','FM','HWY','RR','US','SCR',
+  // Mile marker — "MM 75" should not become "Mm 75"
+  'MM',
+]);
+
 function normalizeName(name) {
   if (!name) return name;
   // Strip trailing "Fire" (case-insensitive)
   name = name.trim().replace(/\s+fire$/i, '').trim();
   // Strip apostrophes — straight, curly, and modifier variants
   name = name.replace(/[\u0027\u2018\u2019\u02BC]/g, '');
-  const isAllCaps = name === name.toUpperCase() && /[A-Z]{2,}/.test(name);
-  const words = name.trim().split(/\s+/);
-  if (isAllCaps || words.length > 2) {
-    return words.map(w => w.charAt(0).toUpperCase() + w.slice(1).toLowerCase()).join(' ');
+  // v59.25: Strip noise characters that sometimes land in 209 Box 1 fire names.
+  // Matches Script1's normalizeName: !@#$%^&*()+"?,/<>
+  // Underscores → space (Sunshine_Hollow → Sunshine Hollow).
+  name = name.replace(/_/g, ' ');
+  name = name.replace(/[!@#$%^&*()+"?,/<>]/g, '');
+  // Collapse any multi-whitespace runs from the above stripping
+  name = name.replace(/\s+/g, ' ').trim();
+  if (!name) return name;
+
+  // v59.26: single-pass word transform that respects the abbreviation whitelist
+  // and preserves digit-bearing tokens. Used by BOTH the title-case branch (for
+  // all-caps / 3+ word names) and the shorter-name branch (1-2 words, mixed case).
+  // v59.32: intercap preservation — words that came in MIXED case (both upper and
+  // lower letters present) keep the user's casing, so "McGarrh Mill Pond" stays
+  // "McGarrh Mill Pond" instead of flattening to "Mcgarrh Mill Pond" on the 3+ word
+  // branch. All-caps or all-lowercase input still title-cases normally (we can't
+  // detect intercap intent when no signal is given).
+  function transformTitle(w) {
+    if (!w) return '';
+    if (/\d/.test(w)) return w;                       // digit-bearing — preserve as-is (2X4, 2.0, 26)
+    if (UPPERCASE_ABBREVS.has(w.toUpperCase())) return w.toUpperCase(); // SR, CR, directions
+    if (/[A-Z]/.test(w) && /[a-z]/.test(w)) return w.charAt(0).toUpperCase() + w.slice(1); // mixed case → preserve
+    return w.charAt(0).toUpperCase() + w.slice(1).toLowerCase();
   }
-  return words.map(w => w.charAt(0).toUpperCase() + w.slice(1)).join(' ');
+  function transformPreserve(w) {
+    // Used when the name came in mixed-case — user's casing carries signal.
+    if (!w) return '';
+    if (/\d/.test(w)) return w;
+    if (UPPERCASE_ABBREVS.has(w.toUpperCase())) return w.toUpperCase();
+    return w.charAt(0).toUpperCase() + w.slice(1);
+  }
+
+  const isAllCaps = name === name.toUpperCase() && /[A-Z]{2,}/.test(name);
+  const words = name.split(/\s+/);
+  if (isAllCaps || words.length > 2) {
+    return words.map(transformTitle).join(' ');
+  }
+  return words.map(transformPreserve).join(' ');
+}
+
+// v59.26: Name similarity check — used to gate MAP-name override. When the parser
+// applies MAP Master's analyst-vetted name in place of the 209's raw name, we need
+// to make sure the two names refer to the "same" fire. If the analyst cleaned up
+// "BILLY BOBS SHED..." to "Billy Bobs Shed", similar → use MAP. If a fire got
+// genuinely renamed (2X4 → Encino 2), dissimilar → keep 209 name and flag rename.
+function namesAreSimilar(a, b) {
+  if (!a || !b) return false;
+  const na = String(a).toLowerCase().replace(/[^a-z0-9]/g, '');
+  const nb = String(b).toLowerCase().replace(/[^a-z0-9]/g, '');
+  if (!na || !nb) return false;
+  if (na === nb) return true;
+  // One contained in the other — analyst shortened or extended the name.
+  // Minimum length guard (>=4 chars) prevents spurious matches on tiny fragments.
+  if (na.length >= 4 && nb.includes(na)) return true;
+  if (nb.length >= 4 && na.includes(nb)) return true;
+  return false;
 }
 
 function spellMiles(str) {
@@ -7223,8 +7440,12 @@ function spellMiles(str) {
   str = str.replace(/STATE(\d+)/g, (_, i) => placeholders[+i]);
   // Mid-sentence number rule: spell out if < 10, numeral if >= 10
   // Also normalize mile/miles: singular if 1, plural otherwise, always lowercase
-  return str.replace(/\b(\d+)(\s*[Mm]iles?\b)/g, (match, num, suffix) => {
-    const n = parseInt(num);
+  // v59.32: accept decimal distances ("2.5 miles") and round UP to the next whole
+  // mile per Perry's direction. "2.5 miles" → "three miles", "3.0 miles" → "three miles",
+  // "10.1 miles" → "11 miles". Prior regex only matched integer digits, which produced
+  // broken output like "2.five miles" on decimal input.
+  return str.replace(/\b(\d+(?:\.\d+)?)(\s*[Mm]iles?\b)/g, (match, num, suffix) => {
+    const n = Math.ceil(parseFloat(num));
     const word = n === 1 ? ' mile' : ' miles';
     return (n < 10 ? spellNum(n) : String(n)) + word;
   });
@@ -7388,9 +7609,12 @@ function threatenedStatement(f) {
   const hasRes = f.resThreatened > 0;
   const hasStr = f.strThreatened > 0;
   const strLabel = (hasRes && hasStr) ? 'structures' : hasRes ? 'residences' : hasStr ? 'structures' : '';
-  const strCount = hasRes && hasStr
-    ? Math.max(f.resThreatened, f.strThreatened)
-    : hasRes ? f.resThreatened : f.strThreatened;
+  // v59.31: "Numerous" threshold applies to the COMBINED count of all structures
+  // physically threatened (residences + other structures), not per-column max.
+  // Per NARR-31: a fire with 60 homes + 60 commercial buildings threatens 120
+  // structures total → "Numerous". Prior logic used max(res, str) which missed
+  // this case. One-column fires are unaffected (sum == the non-zero column).
+  const strCount = (f.resThreatened || 0) + (f.strThreatened || 0);
   const numerous = strCount >= 100 ? 'Numerous ' : '';
 
   // ── Infrastructure part ───────────────────────────────────────────────
@@ -7428,11 +7652,24 @@ function normalizeLocation(str) {
     'AL','AK','AZ','AR','CA','CO','CT','DE','FL','GA','HI','ID','IL','IN','IA','KS',
     'KY','LA','ME','MD','MA','MI','MN','MS','MO','MT','NE','NV','NH','NJ','NM','NY',
     'NC','ND','OH','OK','OR','PA','RI','SC','SD','TN','TX','UT','VT','VA','WA','WV','WI','WY']);
-  return str.replace(/\b([A-Z][A-Z]+)\b/g, (word) => {
+  // Pass 1: All-caps word → Title Case (handles "LEOMINSTER" → "Leominster").
+  str = str.replace(/\b([A-Z][A-Z]+)\b/g, (word) => {
     if (keep.has(word)) return word;
-    // All-caps word that isn't a known abbreviation — title case it
     return word.charAt(0).toUpperCase() + word.slice(1).toLowerCase();
   });
+  // Pass 2: Lowercase city-name after "of " → Title Case (handles "leominster" → "Leominster").
+  // v59.23 fix: Box 25 is user-typed and analysts sometimes forget to capitalize.
+  // Matches the LOCATION portion: "of " + run of lowercase tokens ending at ", ST".
+  // Only triggers when the city starts with a lowercase letter — preserves intercaps
+  // (McDonald, DeLand) and apostrophe-casing (O'Fallon) because those won't match the anchor.
+  // Word-boundary capitalization handles hyphens (winston-salem → Winston-Salem),
+  // apostrophes (o'fallon → O'Fallon), periods (st. paul → St. Paul), and multi-word
+  // cities (las vegas → Las Vegas).
+  str = str.replace(
+    /\bof\s+([a-z][a-z'\-\.\s]*?)(?=,\s*[A-Z]{2}\b)/g,
+    (match, city) => 'of ' + city.replace(/\b[a-z]/g, ch => ch.toUpperCase())
+  );
+  return str;
 }
 
 function buildNarrativeLine(f) {
@@ -7579,6 +7816,8 @@ function buildTableRows(incidents) {
     if (prev && prev.pct >= 100 && is100(f)) classes.push('returning-100');
     // wasLastReport only applies to missed fires (no current 209); fires with 209s came back
     if (isReentry(f)) classes.push('reentry');
+    // v59.26: rename detection — MAP Master had a different name for this inc num
+    if (f._renamedFrom) classes.push('renamed');
     // STALE: new fire, 100%, old start date
     const isNewFire = !prev && !isReentry(f);
     if (isNewFire && is100(f) && f.f6) {
@@ -7707,6 +7946,30 @@ function buildNarrativeLines(incidents, cssClass='', dragKey='') {
     // 100% contained — blue highlight matching table rows
     const ctn100Class = is100(f) ? ' ctn100' : '';
 
+    // v59.26: rename detection — previous MAP name differs from 209 name
+    const renamedClass = f._renamedFrom ? ' renamed' : '';
+    const renameBadge = f._renamedFrom
+      ? `<span class="rename-badge" title="MAP Master recorded this incident as &quot;${f._renamedFrom.replace(/"/g,'&quot;')}&quot;. Today's 209 has a different name — likely renamed. Verify with Intel.">RENAMED · was ${f._renamedFrom.replace(/</g,'&lt;')}</span>`
+      : '';
+
+    // v59.27: No MAP MASTER match — fire was on prev IMSR and has a fresh 209 but MAP
+    // Master lookup either returned nothing or returned a stale REMOVED status. Surface
+    // the data issue so the analyst can fix MAP Master; do NOT exile the fire.
+    // Tooltip pattern: identify the problem, suggest a fix.
+    const noMapMatchBadge = (() => {
+      if (!f._noMapMatch) return '';
+      let problem;
+      if (f._staleRemovedStatus) {
+        problem = `MAP Master shows this fire as ${f._staleRemovedStatus}, but it is on yesterday's IMSR with a fresh 209 today — MAP data is stale.`;
+      } else {
+        problem = 'Unable to locate this fire on the IMSR MAP Master.';
+      }
+      const solution = 'Verify all fields are populated on the MAP Master row (especially Incident_Number), save, then drop the MAP Master file into the parser again.';
+      const tip = `${problem} ${solution}`.replace(/"/g,'&quot;');
+      const suffix = f._staleRemovedStatus ? ` · was ${f._staleRemovedStatus}` : '';
+      return `<span class="no-map-match-badge" title="${tip}">No MAP MASTER match${suffix}</span>`;
+    })();
+
     // Drag-and-drop (active + kick-off fires only, not managed)
     const isDraggable = dragKey && !managedByTeam;
     const dragAttrs = isDraggable
@@ -7724,7 +7987,9 @@ function buildNarrativeLines(incidents, cssClass='', dragKey='') {
     }
 
     const delBtn = `<button class="narr-del" title="Remove this fire" onclick="deleteSingleFire('${f.f2}','')">✕</button>`;
-    return `<div class="narr-line ${cssClass}${lastRptClass}${ret100}${discrepClass}${ctn100Class}${staleClass}${reentryClass}${managedClass}${reincludedClass}" data-inc="${f.f2}" data-pct="${f.f8a || 0}"${dragAttrs}>${gripHtml}${nameHtml}${lastRptBadge}${ret100Badge}${reentryBadge}${reincludedBadge}${discrepBadge}${staleBadge}${managedBadge}, ${managingOrg}${cimtLabel}.${alsoManaging}${reentryStmt} ${sentence}${precipFlag}${kickoffControls}${delBtn}</div>`;
+    // v59.27: no-map-match class marker (parallels renamed/reincluded pattern)
+    const noMapMatchClass = f._noMapMatch ? ' no-map-match' : '';
+    return `<div class="narr-line ${cssClass}${lastRptClass}${ret100}${discrepClass}${ctn100Class}${staleClass}${reentryClass}${managedClass}${reincludedClass}${renamedClass}${noMapMatchClass}" data-inc="${f.f2}" data-pct="${f.f8a || 0}"${dragAttrs}>${gripHtml}${nameHtml}${lastRptBadge}${ret100Badge}${reentryBadge}${reincludedBadge}${discrepBadge}${staleBadge}${managedBadge}${renameBadge}${noMapMatchBadge}, ${managingOrg}${cimtLabel}.${alsoManaging}${reentryStmt} ${sentence}${precipFlag}${kickoffControls}${delBtn}</div>`;
   }).join('<div class="narr-spacer"><br></div>');
 }
 
@@ -8019,12 +8284,30 @@ function renderOutput() {
   // Proceed if we have 209s OR a previous IMSR loaded (missed fires need to render)
   if (!allIncidents.length && !prevIMSR) return;
 
-  // Apply clean fire names: analyst edit > MAP (incident number) > prev IMSR (prevMatch) > raw 209
+  // Apply clean fire names: analyst edit > MAP (if similar) > prev IMSR (prevMatch) > raw 209
+  // v59.26: gated MAP override. Previously the override was unconditional, which
+  // silently swallowed the 2X4 → ENCINO 2 rename. Now we only apply MAP's name when
+  // it is similar to the 209's (analyst cleanup case). If names diverge substantially,
+  // treat as a rename — keep the 209 name, flag f._renamedFrom for a visible badge.
   allIncidents.forEach(f => {
     if (nameEdited.has(f.f2)) return; // analyst edited this session
+    delete f._renamedFrom;
     if (mapData) {
-      const mapEntry = mapData.get(f.f2);
-      if (mapEntry && mapEntry.name) { f.f1 = mapEntry.name.replace(/\s*[-–—?]\s*/g, ' ').replace(/\s{2,}/g, ' ').trim(); return; }
+      const raw209 = normalizeName(fv(f.f1 || ''));
+      const incNum = (f.f2 || '').toUpperCase();
+      const mapEntry = mapLookup(incNum, raw209);
+      if (mapEntry && mapEntry.name) {
+        const mapName = mapEntry.name.replace(/\s*[-–—?]\s*/g, ' ').replace(/\s{2,}/g, ' ').trim();
+        if (namesAreSimilar(mapName, raw209)) {
+          // Analyst-vetted name wins for similar names
+          f.f1 = mapName;
+          return;
+        }
+        // Dissimilar → rename. Keep 209 name, flag for analyst visibility.
+        f._renamedFrom = mapEntry.name;
+        console.warn(`RENAME DETECTED for ${f.f2}: "${mapEntry.name}" → "${raw209}"`);
+        // fall through to prev/raw handling
+      }
     }
     const prev = prevMatch(f);
     if (prev && prev.name) f.f1 = prev.name;
@@ -8707,7 +8990,7 @@ function copyAllNarr(btn) {
       const bEl = div.querySelector('b');
       const name = bEl ? bEl.textContent.trim() : '';
       const clone = div.cloneNode(true);
-      clone.querySelectorAll('button, .last-rpt-badge, .ret100-badge, .discrep-badge, .reentry-badge, .stale-badge, .miss-badge, .reincluded-badge').forEach(el => el.remove());
+      clone.querySelectorAll('button, .last-rpt-badge, .ret100-badge, .discrep-badge, .reentry-badge, .stale-badge, .miss-badge, .reincluded-badge, .rename-badge, .no-map-match-badge').forEach(el => el.remove());
       const fullText = clone.textContent.trim();
       const rest = name && fullText.startsWith(name) ? fullText.slice(name.length) : fullText;
       const plain  = name + rest;
@@ -8751,7 +9034,7 @@ function copyNarrFromBlock(btn) {
       const bEl = el.querySelector('b');
       const name = bEl ? bEl.textContent.trim() : '';
       const clone = el.cloneNode(true);
-      clone.querySelectorAll('button, .last-rpt-badge, .ret100-badge, .discrep-badge, .reentry-badge, .stale-badge, .miss-badge, .reincluded-badge').forEach(n => n.remove());
+      clone.querySelectorAll('button, .last-rpt-badge, .ret100-badge, .discrep-badge, .reentry-badge, .stale-badge, .miss-badge, .reincluded-badge, .rename-badge, .no-map-match-badge').forEach(n => n.remove());
       const fullText = clone.textContent.trim();
       const rest = name && fullText.startsWith(name) ? fullText.slice(name.length) : fullText;
       const plain  = name + rest;
@@ -9036,6 +9319,21 @@ function getMissCount(p) {
   return Math.min((p.missCount || 0) + 1, 6);
 }
 
+// Extract just the fuel sentence from a prev-IMSR narrative (FALLOFF-01 compliance).
+// parseIMSR's stripping removes "fire behavior" and everything after, so p.narrative
+// ends with the fuel sentence — typically "Location. Fuels." (or single-sentence variants).
+// We want only the Fuels portion.
+// Approach: split at sentence boundaries (period, space, uppercase letter) and return
+// the LAST non-empty part. Robust to "St. Paul" / "Mt. Baker" type location constructs
+// because fuels always come last in a stripped narrative.
+function extractFuelSentence(narr) {
+  if (!narr) return '';
+  const trimmed = narr.trim().replace(/\.+$/, '');
+  if (!trimmed) return '';
+  const parts = trimmed.split(/\.\s+(?=[A-Z])/);
+  return parts[parts.length - 1].trim();
+}
+
 // Build a miss badge HTML string for display in missed fire lines.
 // Does NOT copy to IMSR .docx — parser UI only.
 function missBadgeHtml(missCount) {
@@ -9063,16 +9361,18 @@ function buildMissedNarrLines(missed) {
     const delBtn = `<button class="narr-del" title="Remove this fire" onclick="deleteSingleFire('','${mKey}')">✕</button>`;
 
     // M3+: no narrative in IMSR output — table row only. Don't show prevNarr (may be stale/garbled).
-    // M1/M2: carry forward prevNarr + append appropriate fall-off suffix.
+    // M1/M2: carry forward the FUEL MODEL ONLY (FALLOFF-01) + append fall-off suffix.
+    // v59.29: prev narrative is now trimmed to just the fuel sentence — location and
+    // everything else is stripped per national policy and FALLOFF-01.
     let tail;
     if (missCount >= 3) {
       tail = '<em style="color:#999;font-style:italic;">No narrative — table row only.</em>';
     } else {
-      const prevNarr = (p.narrative || '').trim();
+      const fuelOnly = extractFuelSentence(p.narrative || '');
       const suffix = missCount >= 2
         ? 'No new information. Last narrative report unless new information is received.'
         : 'No new information.';
-      tail = prevNarr ? `${prevNarr}. ${suffix}` : suffix;
+      tail = fuelOnly ? `${fuelOnly}. ${suffix}` : suffix;
     }
 
     // No last-rpt class or badge for missed fires — fall-off fires stay grey.
@@ -9135,7 +9435,7 @@ function copyMissedNarr(btn) {
     const bEl = div.querySelector('b');
     const name = bEl ? bEl.textContent.trim() : '';
     const clone = div.cloneNode(true);
-    clone.querySelectorAll('button, .last-rpt-badge, .ret100-badge, .discrep-badge, .reentry-badge, .stale-badge, .miss-badge, .reincluded-badge').forEach(el => el.remove());
+    clone.querySelectorAll('button, .last-rpt-badge, .ret100-badge, .discrep-badge, .reentry-badge, .stale-badge, .miss-badge, .reincluded-badge, .rename-badge, .no-map-match-badge').forEach(el => el.remove());
     const fullText = clone.textContent.trim();
     const rest = name && fullText.startsWith(name) ? fullText.slice(name.length) : fullText;
     const plain  = name + rest;
@@ -9518,11 +9818,12 @@ function docxBuildMissedNarr(p) {
   const miss = getMissCount(p);
   // M3+: no narrative in IMSR — table row only (matches display behavior)
   if (miss >= 3) return '';
-  const prevNarr = (p.narrative || '').trim();
+  // v59.29: FALLOFF-01 — carry forward fuel sentence only, strip location/structures/etc.
+  const fuelOnly = extractFuelSentence(p.narrative || '');
   const suffix = miss >= 2
     ? 'No new information. Last narrative report unless new information is received.'
     : 'No new information.';
-  const tail = prevNarr ? `${prevNarr}. ${suffix}` : suffix;
+  const tail = fuelOnly ? `${fuelOnly}. ${suffix}` : suffix;
   const normalPart = `, ${org}. ${tail}`;
   return docxNarrPara(name, normalPart);
 }
@@ -9988,6 +10289,12 @@ async function generateIMSR() {
 
   try {
     console.log('generateIMSR: starting...');
+    // v59.33: accumulate silent-failure warnings during generation and surface
+    // them in the green download bar at the end. Same pattern as v59.30 for file
+    // load warnings. Silent failures here produce a docx that looks successful
+    // but has stale cells from the template — the analyst needs to know which
+    // sections weren't updated so they can double-check them.
+    const genWarnings = [];
 
     // 1. Unzip template
     const zip = await JSZip.loadAsync(templateDocxBytes);
@@ -10125,21 +10432,12 @@ async function generateIMSR() {
 
     console.log('generateIMSR: spliceStart:', spliceStart, 'spliceEnd:', spliceEnd);
     
-    // Validate splice boundaries
-    if (spliceStart >= 0) {
-      const atStart = docXml.substring(spliceStart, spliceStart + 10);
-      console.log('generateIMSR: at spliceStart:', atStart);
-      if (!atStart.startsWith('<w:p ')) {
-        console.error('generateIMSR: spliceStart not at <w:p boundary! Got:', atStart);
-      }
-    }
-    if (spliceEnd >= 0) {
-      const atEnd = docXml.substring(spliceEnd, spliceEnd + 10);
-      console.log('generateIMSR: at spliceEnd:', atEnd);
-      if (!atEnd.startsWith('<w:p ')) {
-        console.error('generateIMSR: spliceEnd not at <w:p boundary! Got:', atEnd);
-      }
-    }
+    // v59.33: Removed the "<w:p boundary" console.error checks that used to live here.
+    // They produced noise without guarding anything: the finder logic (pStart from
+    // lastIndexOf('<w:p ')) always lands boundaries at structurally-valid positions,
+    // and the "not at <w:p boundary" warning fired legitimately when the next element
+    // was a <w:tbl> or similar. The real abort gate (spliceStart<0 || spliceEnd<0) below
+    // covers the catastrophic-template case.
 
     if (spliceStart < 0 || spliceEnd < 0 || spliceEnd <= spliceStart) {
       alert('Could not find GACC section boundaries in the template .docx.\n\nMake sure you dropped a real IMSR .docx (not a blank document).');
@@ -10169,6 +10467,7 @@ async function generateIMSR() {
     
     // Find any day name in the first 5000 chars (header area)
     const headerArea = docXml.substring(0, 5000);
+    let dateUpdated = false;
     for (const day of days) {
       const dayIdx = headerArea.indexOf(day);
       if (dayIdx >= 0) {
@@ -10184,9 +10483,13 @@ async function generateIMSR() {
           const newPara = `<w:p>${pPr}<w:r><w:rPr><w:b/></w:rPr><w:t xml:space="preserve">${xmlEsc(dateStr)}</w:t></w:r><w:r><w:rPr><w:rFonts w:eastAsia="Arial" w:cs="Arial"/><w:b/></w:rPr><w:t>– 0730 MDT</w:t></w:r></w:p>`;
           docXml = docXml.substring(0, pStart) + newPara + docXml.substring(pEnd + 6);
           console.log('generateIMSR: date updated to:', dateStr.trim());
+          dateUpdated = true;
           break;
         }
       }
+    }
+    if (!dateUpdated) {
+      genWarnings.push('Report date header — no day name found in template; date not updated');
     }
 
     // 5c. Update National PL in header
@@ -10196,6 +10499,7 @@ async function generateIMSR() {
       const headerSearchArea = docXml.substring(0, 8000);
       const pRe = /<w:p[\s>][\s\S]*?<\/w:p>/g;
       let pm;
+      let plUpdated = false;
       while ((pm = pRe.exec(headerSearchArea)) !== null) {
         // Extract text from this paragraph
         const paraTexts = [];
@@ -10215,8 +10519,12 @@ async function generateIMSR() {
           const newPlPara = `<w:p>${plPPr}<w:r>${plRPr}<w:t xml:space="preserve">National Preparedness Level ${nationalPL}</w:t></w:r></w:p>`;
           docXml = docXml.substring(0, plPStart) + newPlPara + docXml.substring(plPEnd);
           console.log('generateIMSR: National PL updated to', nationalPL);
+          plUpdated = true;
           break;
         }
+      }
+      if (!plUpdated) {
+        genWarnings.push(`National PL ${nationalPL} — "Preparedness" paragraph not found in template header; PL not updated`);
       }
     }
 
@@ -10266,6 +10574,7 @@ async function generateIMSR() {
 
     // Find the National Fire Activity table (before Resource Summary)
     const natTbl = findDocxTable(docXml, 'Fire Activity and Teams Assigned');
+    if (!natTbl) genWarnings.push('National Fire Activity stats table not found in template — stats kept their template values');
     if (natTbl) {
       let natTblXml = docXml.substring(natTbl.start, natTbl.end);
       const natRowRe = /<w:tr\b[\s\S]*?<\/w:tr>/g;
@@ -10304,27 +10613,10 @@ async function generateIMSR() {
     }
 
     // 5d-ii. Update National Fire Activity section header (NAT-01)
-    // Daily = "National Fire Activity:" · Date-range = "National Fire Activity (Start – End):"
+    // v59.29: 365-day daily posting adopted 4/17/2026. Removed PL-based date-range
+    // logic (PL1 weekly, PL2 Monday Fri-Sun coverage). Single-day header always.
     {
-      const pl = parseInt(nationalPL) || 2;
-      const today = new Date();
-      const dow = today.getDay(); // 0=Sun, 1=Mon, ..., 5=Fri, 6=Sat
-      const fmtDate = d => d.toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' });
-      let natHeader = 'National Fire Activity:';
-      const needsRange = (pl <= 1) || (pl === 2 && dow === 1);
-      if (needsRange) {
-        let startDate, endDate;
-        if (pl <= 1) {
-          // PL1: Friday IMSR covers preceding Fri (7 days ago) through Thu (yesterday)
-          endDate = new Date(today); endDate.setDate(today.getDate() - 1);
-          startDate = new Date(endDate); startDate.setDate(endDate.getDate() - 6);
-        } else {
-          // PL2 Monday: covers Fri (3 days ago) through Sun (yesterday)
-          endDate = new Date(today); endDate.setDate(today.getDate() - 1);
-          startDate = new Date(today); startDate.setDate(today.getDate() - 3);
-        }
-        natHeader = `National Fire Activity (${fmtDate(startDate)} \u2013 ${fmtDate(endDate)}):`;
-      }
+      const natHeader = 'National Fire Activity:';
 
       // Find paragraph containing "National Fire" (skip table captions)
       const natHdrRe = /<w:p[\s>][\s\S]*?<\/w:p>/g;
@@ -10355,6 +10647,7 @@ async function generateIMSR() {
     // 5e. Extract yesterday's personnel from template Resource Summary, then fill with new data
     let prevPplByGacc = null;
     const resTbl = findDocxTable(docXml, 'Resource Summary');
+    if (!resTbl) genWarnings.push('Resource Summary table not found in template — section kept its template values');
     if (resTbl) {
       // Extract yesterday's Total Personnel per GACC from the template (= yesterday's IMSR)
       const GACC_RES_ORDER = ['AICC','NWCC','ONCC','OSCC','NRCC','GBCC','SWCC','RMCC','EACC','SACC'];
@@ -10405,6 +10698,7 @@ async function generateIMSR() {
     // The heading may be "Fires and Acres Yesterday" (daily) or "Fires and Acres from [dates]" (date range)
     let faYestTbl = findDocxTable(docXml, 'Fires and Acres Yesterday');
     if (!faYestTbl) faYestTbl = findDocxTable(docXml, 'Fires and Acres from');
+    if (!faYestTbl) genWarnings.push('Fires and Acres Yesterday table not found in template — section kept its template values');
     console.log('generateIMSR: F&A Yesterday table found:', !!faYestTbl, faYestTbl ? `at ${faYestTbl.start}-${faYestTbl.end}` : '');
     console.log('generateIMSR: autoSitData.faYesterday:', autoSitData ? !!autoSitData.faYesterday : 'no autoSitData');
     if (faYestTbl && autoSitData && autoSitData.faYesterday) {
@@ -10421,6 +10715,7 @@ async function generateIMSR() {
     let faYtdTbl = findDocxTable(docXml, 'Year-to-Date');
     if (!faYtdTbl) faYtdTbl = findDocxTable(docXml, 'Year to Date');
     if (!faYtdTbl) faYtdTbl = findDocxTable(docXml, 'Year-to');
+    if (!faYtdTbl) genWarnings.push('Fires and Acres Year-to-Date table not found in template — section kept its template values');
     console.log('generateIMSR: F&A YTD table found:', !!faYtdTbl, faYtdTbl ? `at ${faYtdTbl.start}-${faYtdTbl.end}` : '');
     if (faYtdTbl && autoSitData && autoSitData.faYTD) {
       const newTbl = fillFATableByArea(docXml.substring(faYtdTbl.start, faYtdTbl.end), autoSitData.faYTD);
@@ -10428,27 +10723,10 @@ async function generateIMSR() {
       console.log('generateIMSR: F&A YTD filled in-place');
     }
 
-    // 5h. Update F&A Yesterday heading to correct format for today's PL/day
+    // 5h. Update F&A Yesterday heading
+    // v59.29: 365-day daily posting — single-day heading always (no date-range variant)
     {
-      const pl = parseInt(nationalPL) || 2;
-      const today = new Date();
-      const dow = today.getDay();
-      const fmtDate = d => d.toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' });
-      const needsRange = (pl <= 1) || (pl === 2 && dow === 1);
-      let faHeading;
-      if (needsRange) {
-        let startDate, endDate;
-        if (pl <= 1) {
-          endDate = new Date(today); endDate.setDate(today.getDate() - 1);
-          startDate = new Date(endDate); startDate.setDate(endDate.getDate() - 6);
-        } else {
-          endDate = new Date(today); endDate.setDate(today.getDate() - 1);
-          startDate = new Date(today); startDate.setDate(today.getDate() - 3);
-        }
-        faHeading = `Fires and Acres from ${fmtDate(startDate)} \u2013 ${fmtDate(endDate)} (by Protection):`;
-      } else {
-        faHeading = 'Fires and Acres Yesterday (by Protection):';
-      }
+      const faHeading = 'Fires and Acres Yesterday (by Protection):';
 
       // Find the heading paragraph (contains "Fires and Acres" but NOT "Year")
       const faHdrRe = /<w:p[\s>][\s\S]*?<\/w:p>/g;
@@ -10520,10 +10798,17 @@ async function generateIMSR() {
     if (existing) existing.remove();
     const bar = document.createElement('div');
     bar.id = 'docx-download-bar';
-    bar.style.cssText = 'background:#1a6b1a;color:#fff;padding:14px 16px;border-radius:4px;margin-bottom:12px;display:flex;align-items:center;gap:12px;font-family:"IBM Plex Mono",monospace;font-size:13px;';
-    bar.innerHTML = `<span style="font-weight:600;">✓ IMSR generated (${(blob.size/1024).toFixed(0)} KB)</span><button onclick="saveIMSR()" style="color:#fff;background:#145214;padding:8px 20px;border-radius:3px;font-weight:600;border:1px solid #0f3f0f;cursor:pointer;font-family:inherit;font-size:14px;">⬇ Save ${fname}</button><button onclick="this.parentElement.remove()" style="margin-left:auto;background:none;border:none;color:#fff;cursor:pointer;font-size:16px;">✕</button>`;
+    // v59.33: flex-column layout so warnings can appear below the main row
+    bar.style.cssText = 'background:#1a6b1a;color:#fff;padding:14px 16px;border-radius:4px;margin-bottom:12px;display:flex;flex-direction:column;gap:10px;font-family:"IBM Plex Mono",monospace;font-size:13px;';
+    // Build warnings panel if any silent failures occurred during generation
+    const warningsHtml = genWarnings.length ? `
+      <div style="border-top:1px solid rgba(255,255,255,.25);padding-top:8px;font-size:12px;">
+        <div style="font-weight:600;color:#ffd6aa;margin-bottom:4px;">⚠ ${genWarnings.length} issue${genWarnings.length!==1?'s':''} during generation — double-check these sections in the saved docx:</div>
+        ${genWarnings.map(w => `<div style="margin-left:12px;color:#fce5b8;">• ${w.replace(/</g,'&lt;').replace(/>/g,'&gt;')}</div>`).join('')}
+      </div>` : '';
+    bar.innerHTML = `<div style="display:flex;align-items:center;gap:12px;"><span style="font-weight:600;">✓ IMSR generated (${(blob.size/1024).toFixed(0)} KB)</span><button onclick="saveIMSR()" style="color:#fff;background:#145214;padding:8px 20px;border-radius:3px;font-weight:600;border:1px solid #0f3f0f;cursor:pointer;font-family:inherit;font-size:14px;">⬇ Save ${fname}</button><button onclick="this.closest('#docx-download-bar').remove()" style="margin-left:auto;background:none;border:none;color:#fff;cursor:pointer;font-size:16px;">✕</button></div>${warningsHtml}`;
     outputEl.insertBefore(bar, outputEl.firstChild);
-    console.log('generateIMSR: ready, blob size:', blob.size);
+    console.log('generateIMSR: ready, blob size:', blob.size, genWarnings.length ? `(${genWarnings.length} warnings)` : '');
 
   } catch(e) {
     alert('IMSR generation failed: ' + e.message);
@@ -10550,7 +10835,9 @@ async function saveIMSR() {
       // Update the green bar to show confirmed save
       const bar = document.getElementById('docx-download-bar');
       if (bar) {
-        bar.style.background = '#145214';
+        // v59.33: reset to simple row layout for the saved state — the generation-
+        // warnings panel (if it was shown) is no longer relevant once the file lands.
+        bar.style.cssText = 'background:#145214;color:#fff;padding:14px 16px;border-radius:4px;margin-bottom:12px;display:flex;align-items:center;gap:12px;font-family:"IBM Plex Mono",monospace;font-size:13px;';
         bar.innerHTML = `<span style="font-weight:600;font-size:15px;">✓ Saved: ${handle.name}</span><span style="font-weight:normal;font-size:11px;opacity:.8;">Open in Word · Enable Editing if prompted (one-time per machine: File → Options → Trust Center → Trusted Locations)</span><button onclick="this.parentElement.remove()" style="margin-left:auto;background:none;border:none;color:#fff;cursor:pointer;font-size:16px;">✕</button>`;
       }
       return;
@@ -10595,9 +10882,15 @@ function clearAll() {
   autoSitData = null;
   mapData = null;
   mapDataByName = null;
+  mapDataByStrippedNum = null;
   mapStatusEl.style.display = 'none';
   nationalPL = '';
   gaccPLs = {};
+  // v59.32: state-reset completeness — these were silently carrying over after Clear All
+  prevIMSR = null;                                                  // clears prev IMSR match data
+  nameEdited.clear();                                               // clears "analyst renamed" flags
+  for (const k in manualOrder) delete manualOrder[k];               // clears per-GACC manual sort
+  imsrStatusEl.style.display = 'none';                              // hide prev IMSR status widget too
   const natSel = document.getElementById('pl-national');
   if (natSel) natSel.value = '';
   document.getElementById('pl-panel').style.display = 'none';
@@ -10639,6 +10932,9 @@ function reAddFire(incNum) {
   delete f._mapLastSize;
   delete f._mapLastPct;
   delete f._mapDate;
+  // v59.32: match the cleanup set in reapplyMapGate (v59.28) for symmetry
+  delete f._flagForReview;
+  delete f._flagReasons;
   allIncidents.push(f);
   renderOutput();
 }
@@ -10648,6 +10944,13 @@ function clearIMSR() {
   templateDocxBytes = null;
   nationalPL = '';
   gaccPLs = {};
+  // v59.32: reset team state so a fresh IMSR drop repopulates from the new narrative.
+  // Without this, _teamsAutoPopulated stays true and teamGroups keeps stale teams
+  // from the prior IMSR. Manual team edits made since the prior drop are lost — this
+  // is intentional: Clear IMSR is an explicit "start fresh" action.
+  teamGroups = [];
+  _teamsAutoPopulated = false;
+  teamEditMode.clear();
   const natSel = document.getElementById('pl-national');
   if (natSel) natSel.value = '';
   imsrStatusEl.style.display = 'none';
