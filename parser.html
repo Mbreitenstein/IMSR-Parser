@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>IMSR Prep Tool v59.33</title>
+<title>IMSR Prep Tool v59.34</title>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
@@ -361,7 +361,7 @@
 <body>
 
 <header>
-  <h1>IMSR PREP TOOL <span style="float:right;font-size:11px;font-weight:400;color:var(--muted);letter-spacing:.04em;">v59.33</span></h1>
+  <h1>IMSR PREP TOOL <span style="float:right;font-size:11px;font-weight:400;color:var(--muted);letter-spacing:.04em;">v59.34</span></h1>
   <p>Drop one or more 209 PDFs — sorted by % contained, ready to paste into Word</p>
 </header>
 
@@ -754,12 +754,22 @@ function reapplyMapGate() {
     // stale — the fire is obviously still active. Keep it in the main display and flag it;
     // do NOT run it through the re-inclusion gate (that's for fires returning from absence).
     if (prevOnImsr) {
-      f._noMapMatch = true;
-      f._noMapMatchReason = `MAP Master status is ${entry.status}, but fire is on yesterday's IMSR with a fresh 209`;
-      f._staleRemovedStatus = entry.status;
-      f._mapLastSize = entry.size;
-      f._mapLastPct  = entry.lastPct;
-      f._mapDate     = entry.mapDate;
+      // v59.34: MAP status N + fire at 100% today is the blueprint-correct "Natural close"
+      // terminal state (§3 MAP Master Blueprint — go button writes N when a fire was 100%
+      // contained on the prev IMSR). A 100% fire reappearing today with MAP=N is NOT stale
+      // data; it's the designed terminal state. The RETURNING 100% badge communicates the
+      // whole story — a "stale MAP" flag on top is a false alarm. KO and DR are different:
+      // those carry distinct "why was this removed" info that matters if the fire returns,
+      // so those still flag regardless of today's %.
+      const isNaturalCloseTerminal = (entry.status === 'N' && is100(f));
+      if (!isNaturalCloseTerminal) {
+        f._noMapMatch = true;
+        f._noMapMatchReason = `MAP Master status is ${entry.status}, but fire is on yesterday's IMSR with a fresh 209`;
+        f._staleRemovedStatus = entry.status;
+        f._mapLastSize = entry.size;
+        f._mapLastPct  = entry.lastPct;
+        f._mapDate     = entry.mapDate;
+      }
       kept.push(f);
       continue;
     }
@@ -7956,18 +7966,23 @@ function buildNarrativeLines(incidents, cssClass='', dragKey='') {
     // Master lookup either returned nothing or returned a stale REMOVED status. Surface
     // the data issue so the analyst can fix MAP Master; do NOT exile the fire.
     // Tooltip pattern: identify the problem, suggest a fix.
+    // v59.34: renamed labels. The prior "No MAP MASTER match" read as "fire isn't in
+    // MAP Master" even when the row clearly existed — the real signal is either
+    // "row missing" OR "status stale/unexpected". Separate labels for each case.
     const noMapMatchBadge = (() => {
       if (!f._noMapMatch) return '';
       let problem;
+      let label;
       if (f._staleRemovedStatus) {
         problem = `MAP Master shows this fire as ${f._staleRemovedStatus}, but it is on yesterday's IMSR with a fresh 209 today — MAP data is stale.`;
+        label = `MAP STATUS · was ${f._staleRemovedStatus}`;
       } else {
         problem = 'Unable to locate this fire on the IMSR MAP Master.';
+        label = 'MISSING MAP ROW';
       }
       const solution = 'Verify all fields are populated on the MAP Master row (especially Incident_Number), save, then drop the MAP Master file into the parser again.';
       const tip = `${problem} ${solution}`.replace(/"/g,'&quot;');
-      const suffix = f._staleRemovedStatus ? ` · was ${f._staleRemovedStatus}` : '';
-      return `<span class="no-map-match-badge" title="${tip}">No MAP MASTER match${suffix}</span>`;
+      return `<span class="no-map-match-badge" title="${tip}">${label}</span>`;
     })();
 
     // Drag-and-drop (active + kick-off fires only, not managed)
