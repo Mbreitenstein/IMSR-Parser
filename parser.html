@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>IMSR Prep Tool v59.37</title>
+<title>IMSR Prep Tool v59.38</title>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
@@ -361,7 +361,7 @@
 <body>
 
 <header>
-  <h1>IMSR PREP TOOL <span style="float:right;font-size:11px;font-weight:400;color:var(--muted);letter-spacing:.04em;">v59.37</span></h1>
+  <h1>IMSR PREP TOOL <span style="float:right;font-size:11px;font-weight:400;color:var(--muted);letter-spacing:.04em;">v59.38</span></h1>
   <p>Drop one or more 209 PDFs — sorted by % contained, ready to paste into Word</p>
 </header>
 
@@ -7348,7 +7348,12 @@ function normalizeName(name) {
   // v59.25: Strip noise characters that sometimes land in 209 Box 1 fire names.
   // Matches Script1's normalizeName: !@#$%^&*()+"?,/<>
   // Underscores → space (Sunshine_Hollow → Sunshine Hollow).
-  name = name.replace(/_/g, ' ');
+  // v59.38: hyphens also → space. Fire names in 209 Box 1 use hyphens as
+  // word connectors ("Conner-Nelson Rd", "HWY 351- DIXIE", "Pontotoc - Hwy 278 W",
+  // "STE - Alum"). IMSR convention is spaces, not hyphens, in displayed fire names.
+  // Converting to space (then collapsing multi-whitespace) handles both adjacent
+  // ("Conner-Nelson") and spaced ("Pontotoc - Hwy") patterns cleanly.
+  name = name.replace(/[_\-]/g, ' ');
   name = name.replace(/[!@#$%^&*()+"?,/<>]/g, '');
   // Collapse any multi-whitespace runs from the above stripping
   name = name.replace(/\s+/g, ' ').trim();
