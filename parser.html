@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>IMSR Prep Tool v59.38</title>
+<title>IMSR Prep Tool v59.41</title>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
@@ -361,7 +361,7 @@
 <body>
 
 <header>
-  <h1>IMSR PREP TOOL <span style="float:right;font-size:11px;font-weight:400;color:var(--muted);letter-spacing:.04em;">v59.38</span></h1>
+  <h1>IMSR PREP TOOL <span style="float:right;font-size:11px;font-weight:400;color:var(--muted);letter-spacing:.04em;">v59.41</span></h1>
   <p>Drop one or more 209 PDFs — sorted by % contained, ready to paste into Word</p>
 </header>
 
@@ -1342,11 +1342,13 @@ async function handleFiles(files) {
 
 function updateFileList() {
   // Row 1: 209-loaded fires
+  // v59.39: deletion keys on f.f2 (incident number) so duplicate-named 209s delete independently.
+  // Prior behavior used normKey(name, unit) — two 209s sharing name+unit (e.g. a duplicate
+  // Railroad Complex) collapsed to the same key, so X on one hid both.
   const tags209 = allIncidents.map(f => {
-    const key = normKey(f.f1, f.unit);
-    const isDel = deletedFires.has(key);
+    const isDel = f.f2 && deletedFires.has(f.f2);
     if (isDel) {
-      return `<span class="deleted" onclick="restoreFire('${key.replace(/'/g,"\\'")}')" title="Click to restore">${f.f1 || f._filename}</span>`;
+      return `<span class="deleted" onclick="restoreFire('${(f.f2||'').replace(/'/g,"\\'")}')" title="Click to restore">${f.f1 || f._filename}</span>`;
     }
     return `<span>${f.f1 || f._filename}</span>`;
   }).join('');
@@ -4724,7 +4726,7 @@ const UNIT_LOOKUP = {
   "MD-HTP": "Harriet Tubman Underground Railroad National Monument, NPS",
   "MD-IHNQ": "Naval Support Facility Indian Head, USN",
   "MD-MDFN": "Maryland Field Office, TNC",
-  "MD-MDS": "Maryland DNR Forest Service",
+  "MD-MDS": "Maryland DNR",
   "MD-MDYQ": "Fort Meade, DOW",
   "MD-MOP": "Monocacy National Battlefield, NPS",
   "MD-MTR": "Martin NWR, FWS",
@@ -8368,7 +8370,8 @@ function renderOutput() {
   const nonQualifying = [];
   allIncidents.forEach(f => {
     // Skip fires manually deleted by user
-    if (deletedFires.has(normKey(f.f1, f.unit))) return;
+    // v59.39: deletion keyed on f.f2 for per-row identity
+    if (f.f2 && deletedFires.has(f.f2)) return;
     const q = qualifiesForIMSR(f);
     f._qualifies = q.qualifies;
     f._qualifyReason = q.reason;
@@ -8406,10 +8409,17 @@ function renderOutput() {
   if (prevIMSR) {
     const matchedKeys = new Set(qualifying.concat(nonQualifying).map(f => normKey(f.f1, f.unit)));
     staleKeys.forEach(k => matchedKeys.delete(k)); // stale 209s fall through to missed path
+    // v59.39: deletedFires now keys on f.f2 (per-row). Build name-based projection so the
+    // prev-IMSR cross-check ("if analyst deleted the 209, don't resurrect it as a missed fire")
+    // still works against prev IMSR's normKey-based map.
+    const deletedNormKeys = new Set();
+    allIncidents.forEach(f => {
+      if (f.f2 && deletedFires.has(f.f2)) deletedNormKeys.add(normKey(f.f1, f.unit));
+    });
     for (const [key, p] of prevIMSR) {
       if (p.pct >= 100) continue;
       if (matchedKeys.has(key)) continue;
-      if (deletedFires.has(key)) continue;
+      if (deletedNormKeys.has(key)) continue;
       if (deletedPrevFires.has(key)) continue;
       // KO gate: fire said "Last report unless significant activity" on the prev IMSR
       // OR the MAP Master flagged it KOS (soft kick-off) — both mean the same thing.
@@ -8548,7 +8558,23 @@ function renderOutput() {
       ordered.push(...remaining); // new fires appended at end
       activeInc = ordered;
     }
-    manualOrder[gacc] = activeInc.map(f => f.f2);
+    // v59.41: preserve deleted-fire slots in manualOrder. Old code overwrote the order
+    // with only currently-visible fires every render — so X'ing a fire dropped it from
+    // the order, and restoring it caused it to land at the end as a "new fire." Now we
+    // walk existing manualOrder (keeping ALL previously-known f2s, including deleted),
+    // then append any genuinely-new fires from activeInc. Manual reorder via drag still
+    // mutates manualOrder in place (moveIncident / narrDrop), so that path is unaffected.
+    const preservedActive = [];
+    const seenActive = new Set();
+    if (manualOrder[gacc]) {
+      for (const f2 of manualOrder[gacc]) {
+        if (!seenActive.has(f2)) { preservedActive.push(f2); seenActive.add(f2); }
+      }
+    }
+    for (const f of activeInc) {
+      if (!seenActive.has(f.f2)) { preservedActive.push(f.f2); seenActive.add(f.f2); }
+    }
+    manualOrder[gacc] = preservedActive;
     const sortPanelInc = [...activeInc]; // pre-grouping snapshot for sort panel
 
     // Apply team grouping — managed fires stack under primary
@@ -8570,7 +8596,18 @@ function renderOutput() {
     } else {
       sortedLastRpt = [...lastRptInc];
     }
-    manualOrder[lrKey] = sortedLastRpt.map(f => f.f2);
+    // v59.41: preserve deleted-fire slots (matches active-path treatment above)
+    const preservedLr = [];
+    const seenLr = new Set();
+    if (manualOrder[lrKey]) {
+      for (const f2 of manualOrder[lrKey]) {
+        if (!seenLr.has(f2)) { preservedLr.push(f2); seenLr.add(f2); }
+      }
+    }
+    for (const f of sortedLastRpt) {
+      if (!seenLr.has(f.f2)) { preservedLr.push(f.f2); seenLr.add(f.f2); }
+    }
+    manualOrder[lrKey] = preservedLr;
 
     // Build team manager panel — shows when any CIMT/NIMO team exists in this GACC
     const gaccTeams = teamGroups.filter(g => {
@@ -8956,8 +8993,9 @@ function buildCopyLine(f) {
 
 function deleteSingleFire(incNum, missedKey) {
   if (incNum) {
-    const f = allIncidents.find(i => i.f2 === incNum);
-    if (f) deletedFires.add(normKey(f.f1, f.unit));
+    // v59.39: store the incident number directly so duplicate-named 209s
+    // (e.g. two Railroad Complex 209s with distinct inc nums) delete independently.
+    deletedFires.add(incNum);
   }
   if (missedKey) {
     // Missed fires (prev IMSR only, no 209) go into deletedPrevFires
@@ -8975,8 +9013,9 @@ function deleteSelected() {
 function deleteAllNQ() {
   allIncidents.forEach(f => {
     const q = qualifiesForIMSR(f);
-    if (!q.qualifies) {
-      deletedFires.add(normKey(f.f1, f.unit));
+    if (!q.qualifies && f.f2) {
+      // v59.39: per-row deletion keyed on incident number
+      deletedFires.add(f.f2);
     }
   });
   renderOutput();
@@ -9323,19 +9362,20 @@ function getMissCount(p) {
   return Math.min((p.missCount || 0) + 1, 6);
 }
 
-// Extract just the fuel sentence from a prev-IMSR narrative (FALLOFF-01 compliance).
-// parseIMSR's stripping removes "fire behavior" and everything after, so p.narrative
-// ends with the fuel sentence — typically "Location. Fuels." (or single-sentence variants).
-// We want only the Fuels portion.
-// Approach: split at sentence boundaries (period, space, uppercase letter) and return
-// the LAST non-empty part. Robust to "St. Paul" / "Mt. Baker" type location constructs
-// because fuels always come last in a stripped narrative.
-function extractFuelSentence(narr) {
+// Carry forward the stable portion of a prev-IMSR narrative for missed-fire display
+// (FALLOFF-01). Policy: strip what can change (behavior, threats, structures,
+// evacuations, closures) — carry what can't (location, fuels). parseIMSR already
+// strips "fire behavior" and everything after at lines 9514–9519, so p.narrative
+// arrives here as "Location. Fuels." in the common case.
+//
+// History: v59.26/27 used the full stripped narrative directly. v59.29 tightened
+// to fuel-only on a misread of the ICS-209 Business Rules doc ("fuel model only"),
+// which stripped location too. v59.40 restores the v59.26/27 behavior per corrected
+// policy: the "what changes gets stripped" principle keeps location because the fire
+// didn't move, even though the national-policy doc phrasing implies otherwise.
+function extractLocationAndFuel(narr) {
   if (!narr) return '';
-  const trimmed = narr.trim().replace(/\.+$/, '');
-  if (!trimmed) return '';
-  const parts = trimmed.split(/\.\s+(?=[A-Z])/);
-  return parts[parts.length - 1].trim();
+  return narr.trim().replace(/\.+$/, '');
 }
 
 // Build a miss badge HTML string for display in missed fire lines.
@@ -9365,18 +9405,18 @@ function buildMissedNarrLines(missed) {
     const delBtn = `<button class="narr-del" title="Remove this fire" onclick="deleteSingleFire('','${mKey}')">✕</button>`;
 
     // M3+: no narrative in IMSR output — table row only. Don't show prevNarr (may be stale/garbled).
-    // M1/M2: carry forward the FUEL MODEL ONLY (FALLOFF-01) + append fall-off suffix.
-    // v59.29: prev narrative is now trimmed to just the fuel sentence — location and
-    // everything else is stripped per national policy and FALLOFF-01.
+    // M1/M2: carry forward location + fuel (the stable portion) + append fall-off suffix.
+    // v59.40: reverted to v59.26/27 behavior — keep location, not just fuel. See
+    // extractLocationAndFuel header comment for rationale and history.
     let tail;
     if (missCount >= 3) {
       tail = '<em style="color:#999;font-style:italic;">No narrative — table row only.</em>';
     } else {
-      const fuelOnly = extractFuelSentence(p.narrative || '');
+      const locFuel = extractLocationAndFuel(p.narrative || '');
       const suffix = missCount >= 2
         ? 'No new information. Last narrative report unless new information is received.'
         : 'No new information.';
-      tail = fuelOnly ? `${fuelOnly}. ${suffix}` : suffix;
+      tail = locFuel ? `${locFuel}. ${suffix}` : suffix;
     }
 
     // No last-rpt class or badge for missed fires — fall-off fires stay grey.
@@ -9822,12 +9862,13 @@ function docxBuildMissedNarr(p) {
   const miss = getMissCount(p);
   // M3+: no narrative in IMSR — table row only (matches display behavior)
   if (miss >= 3) return '';
-  // v59.29: FALLOFF-01 — carry forward fuel sentence only, strip location/structures/etc.
-  const fuelOnly = extractFuelSentence(p.narrative || '');
+  // v59.40: FALLOFF-01 — carry forward location + fuel (stable portion), strip
+  // behavior/threats/structures/closures/etc. Reverted from v59.29 fuel-only.
+  const locFuel = extractLocationAndFuel(p.narrative || '');
   const suffix = miss >= 2
     ? 'No new information. Last narrative report unless new information is received.'
     : 'No new information.';
-  const tail = fuelOnly ? `${fuelOnly}. ${suffix}` : suffix;
+  const tail = locFuel ? `${locFuel}. ${suffix}` : suffix;
   const normalPart = `, ${org}. ${tail}`;
   return docxNarrPara(name, normalPart);
 }
@@ -10309,7 +10350,8 @@ async function generateIMSR() {
     const qualifying = [];
     const nonQualifying = [];
     allIncidents.forEach(f => {
-      if (deletedFires.has(normKey(f.f1, f.unit))) return;
+      // v59.39: per-row delete keyed on incident number
+      if (f.f2 && deletedFires.has(f.f2)) return;
       const q = qualifiesForIMSR(f);
       f._qualifies = q.qualifies;
       f._gacc = deriveGACC(f);
@@ -10334,10 +10376,16 @@ async function generateIMSR() {
     if (prevIMSR) {
       const matchedKeys = new Set(qualifying.concat(nonQualifying).map(f => normKey(f.f1, f.unit)));
       docxStaleKeys.forEach(k => matchedKeys.delete(k)); // stale 209s fall through
+      // v59.39: mirror display-path projection — deletedFires is keyed on f.f2,
+      // so build name-based set for the prev IMSR cross-check
+      const docxDeletedNormKeys = new Set();
+      allIncidents.forEach(f => {
+        if (f.f2 && deletedFires.has(f.f2)) docxDeletedNormKeys.add(normKey(f.f1, f.unit));
+      });
       for (const [key, p] of prevIMSR) {
         if (p.pct >= 100) continue;
         if (matchedKeys.has(key)) continue;
-        if (deletedFires.has(key)) continue;
+        if (docxDeletedNormKeys.has(key)) continue;
         if (deletedPrevFires.has(key)) continue;
         // KO gate (mirrors display path): wasLastReport OR MAP KOS + no 209 + below threshold → skip docx
         const _mapEKO = mapDataByName ? mapDataByName.get((p.name||'').toLowerCase().replace(/[^a-z0-9]/g,'')) : null;
