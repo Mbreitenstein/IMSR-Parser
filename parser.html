@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>IMSR Prep Tool v59.41</title>
+<title>IMSR Prep Tool v59.42</title>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
@@ -361,7 +361,7 @@
 <body>
 
 <header>
-  <h1>IMSR PREP TOOL <span style="float:right;font-size:11px;font-weight:400;color:var(--muted);letter-spacing:.04em;">v59.41</span></h1>
+  <h1>IMSR PREP TOOL <span style="float:right;font-size:11px;font-weight:400;color:var(--muted);letter-spacing:.04em;">v59.42</span></h1>
   <p>Drop one or more 209 PDFs — sorted by % contained, ready to paste into Word</p>
 </header>
 
@@ -425,7 +425,7 @@ const fileListEl = document.getElementById('file-list');
 
 // Store all parsed incidents
 let allIncidents = [];
-let removedIncidents = []; // Fires with MAP Status KO/KO!/DR/N that have a 209 but don't meet re-inclusion criteria
+let removedIncidents = []; // Fires with MAP Status KO/KO!/DR/N/KOS that have a 209 but don't meet re-inclusion criteria
 let readdedFires = new Set(); // Keys of fires re-added from Removed panel — prevents re-drop loop
 // Previous IMSR data for comparison: Map of normKey → {name, unit, acres, ppl, pct}
 let prevIMSR = null;
@@ -753,7 +753,14 @@ function reapplyMapGate() {
     // v59.27: if fire was on prev IMSR AND has a fresh 209 (it's here), the MAP status is
     // stale — the fire is obviously still active. Keep it in the main display and flag it;
     // do NOT run it through the re-inclusion gate (that's for fires returning from absence).
-    if (prevOnImsr) {
+    // v59.42: KOS is the exception. "Last report unless significant activity occurs" in
+    // yesterday's narrative explicitly anticipates the fire being in today's 209 bulk —
+    // prev-IMSR evidence is EXPECTED for KOS, not a sign of stale data. Route KOS through
+    // the re-inclusion gate so "significant activity" (the narrative's own criterion) decides
+    // whether to keep the fire. No significant activity → Removed Incidents (completes the
+    // kick-off). Significant activity (+1,000 ac / 250 ppl / CIMT-NIMO / structures / fatality)
+    // → back in rotation. Encino-2-class protection (KO!/KO/DR/N) preserved unchanged.
+    if (prevOnImsr && entry.status !== 'KOS') {
       // v59.34: MAP status N + fire at 100% today is the blueprint-correct "Natural close"
       // terminal state (§3 MAP Master Blueprint — go button writes N when a fire was 100%
       // contained on the prev IMSR). A 100% fire reappearing today with MAP=N is NOT stale
@@ -773,7 +780,8 @@ function reapplyMapGate() {
       kept.push(f);
       continue;
     }
-    // No prevMatch — fire is returning from absence. Run the re-inclusion gate (existing logic).
+    // No prevMatch (returning from absence) OR status === KOS (completing kick-off).
+    // Run the re-inclusion gate.
     const currentAcres   = parseInt((f.f7 || '').replace(/,/g,'')) || 0;
     const acresDelta     = currentAcres - (entry.size || 0);
     const currentStrc    = (f.resDestroyed || 0) + (f.strDestroyed || 0);
@@ -8849,13 +8857,13 @@ function renderOutput() {
     });
 
     const rowsHtml = sortedRemoved.map(f => {
-      const statusLabel = {'KO':'Kicked Off','KO!':'Kicked Off (no warning day)','DR':'Dropped (missed 209s)','N':'Natural (100% contained)'}[f._removedStatus] || f._removedStatus;
+      const statusLabel = {'KO':'Kicked Off','KO!':'Kicked Off (no warning day)','DR':'Dropped (missed 209s)','N':'Natural (100% contained)','KOS':'Kicked Off (no significant activity)'}[f._removedStatus] || f._removedStatus;
       const mapEntry = mapData ? mapData.get((f.f2||'').toUpperCase()) : null;
       const gacc     = (mapEntry || {}).gacc || '';
 
       // Removal date + days ago — verb matches removal path
       const mapDateObj = f._mapDate instanceof Date ? f._mapDate : null;
-      const removalVerb = {'KO':'Kicked Off','KO!':'Kicked Off','DR':'Fell Off','N':'Natural'}[f._removedStatus] || 'Removed';
+      const removalVerb = {'KO':'Kicked Off','KO!':'Kicked Off','DR':'Fell Off','N':'Natural','KOS':'Kicked Off'}[f._removedStatus] || 'Removed';
       let droppedStr = 'Previously removed';
       if (mapDateObj) {
         const daysAgo = Math.floor((Date.now() - mapDateObj) / 86400000);
