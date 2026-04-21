@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>IMSR Prep Tool v59.42</title>
+<title>IMSR Prep Tool v59.46</title>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
@@ -55,6 +55,13 @@
   /* v59.27: NO MAP MATCH — fire has prev IMSR + fresh 209 but MAP Master lookup failed or is stale.
      Same gold (#b8960a) as reentry-badge / .map-zone — signals a MAP-Master data issue without exiling the fire. */
   .no-map-match-badge { display: inline-block; font-size: 9px; font-weight: 700; color: #fff; background: #b8960a; padding: 1px 5px; border-radius: 3px; margin-left: 6px; vertical-align: middle; letter-spacing: 0.3px; cursor: help; -webkit-user-select: none; user-select: none; }
+  /* v59.43: MANUAL INCLUDE — analyst promoted a sub-threshold fire from the NQ pile because the
+     209 failed to scrub a CIMT assignment (free-text Box 5, "SA Blue Team" instead of "CIMT", etc.).
+     Purple family (#7c3aed) parallels .rename-badge. Badge carries an inline × to demote back to NQ.
+     Stripped from all three docx-export paths alongside the other internal-only badges. */
+  .manual-include-badge { display: inline-flex; align-items: center; gap: 4px; font-size: 9px; font-weight: 700; color: #fff; background: #7c3aed; padding: 1px 5px; border-radius: 3px; margin-left: 6px; vertical-align: middle; letter-spacing: 0.3px; cursor: help; -webkit-user-select: none; user-select: none; }
+  .manual-include-badge .mi-x { cursor: pointer; font-weight: 800; padding-left: 4px; border-left: 1px solid rgba(255,255,255,0.35); line-height: 1; }
+  .manual-include-badge .mi-x:hover { opacity: 0.75; }
   table.imsr tr.renamed td { background: #f4ecf7 !important; }
   table.imsr tr.renamed:nth-child(even) td { background: #ebdef0 !important; }
   .narr-line.renamed { border-left-color: #7d3c98; background: #f4ecf7; }
@@ -79,8 +86,6 @@
   table.imsr tr[data-missed-key] td { background: #e8e7e2 !important; }
   table.imsr tr[data-missed-key]:nth-child(even) td { background: #e2e1dc !important; }
   .unit-legend { font-family: Arial, sans-serif; font-size: 9pt; color: var(--text); padding: 6px 8px; background: #faf9f7; border: 1px solid var(--border); border-top: none; border-radius: 0 0 3px 3px; margin-bottom: 16px; line-height: 1.8; }
-  .unit-legend .legend-copy { float: right; font-family: 'IBM Plex Mono', monospace; font-size: 10px; font-weight: 600; background: var(--muted); color: #fff; border: none; padding: 3px 10px; border-radius: 2px; cursor: pointer; margin-top: -2px; }
-  .unit-legend .legend-copy:hover { opacity: .85; }
 
   .drop-zone button {
     background: var(--accent); color: #fff; border: none; padding: 8px 20px;
@@ -361,7 +366,7 @@
 <body>
 
 <header>
-  <h1>IMSR PREP TOOL <span style="float:right;font-size:11px;font-weight:400;color:var(--muted);letter-spacing:.04em;">v59.42</span></h1>
+  <h1>IMSR PREP TOOL <span style="float:right;font-size:11px;font-weight:400;color:var(--muted);letter-spacing:.04em;">v59.46</span></h1>
   <p>Drop one or more 209 PDFs — sorted by % contained, ready to paste into Word</p>
 </header>
 
@@ -758,14 +763,21 @@ function reapplyMapGate() {
     // prev-IMSR evidence is EXPECTED for KOS, not a sign of stale data. Route KOS through
     // the re-inclusion gate so "significant activity" (the narrative's own criterion) decides
     // whether to keep the fire. No significant activity → Removed Incidents (completes the
-    // kick-off). Significant activity (+1,000 ac / 250 ppl / CIMT-NIMO / structures / fatality)
-    // → back in rotation. Encino-2-class protection (KO!/KO/DR/N) preserved unchanged.
-    if (prevOnImsr && entry.status !== 'KOS') {
+    // kick-off).
+    // v59.45: KO is also an exception. Per the blueprint lifecycle (A → KOS → KO), a fire
+    // at MAP status KO had "Last report unless significant activity occurs" on its last
+    // IMSR day — the go-button then converted KOS → KO in place. Prev-IMSR evidence for KO
+    // is EXPECTED (it WAS on yesterday's IMSR with the kick-off phrase), not a sign of
+    // stale data. Route KO through the same re-inclusion gate as KOS.
+    // KO! stays stale-protected (Encino-2 class): KO! = silent kick-off (no KOS phrase in
+    // history), so prev-IMSR presence IS inconsistent with KO!'s terminal status.
+    const KICKOFF_COMPLETION = (entry.status === 'KOS' || entry.status === 'KO');
+    if (prevOnImsr && !KICKOFF_COMPLETION) {
       // v59.34: MAP status N + fire at 100% today is the blueprint-correct "Natural close"
       // terminal state (§3 MAP Master Blueprint — go button writes N when a fire was 100%
       // contained on the prev IMSR). A 100% fire reappearing today with MAP=N is NOT stale
       // data; it's the designed terminal state. The RETURNING 100% badge communicates the
-      // whole story — a "stale MAP" flag on top is a false alarm. KO and DR are different:
+      // whole story — a "stale MAP" flag on top is a false alarm. KO! and DR are different:
       // those carry distinct "why was this removed" info that matters if the fire returns,
       // so those still flag regardless of today's %.
       const isNaturalCloseTerminal = (entry.status === 'N' && is100(f));
@@ -780,7 +792,7 @@ function reapplyMapGate() {
       kept.push(f);
       continue;
     }
-    // No prevMatch (returning from absence) OR status === KOS (completing kick-off).
+    // No prevMatch (returning from absence) OR status === KOS/KO (completing kick-off).
     // Run the re-inclusion gate.
     const currentAcres   = parseInt((f.f7 || '').replace(/,/g,'')) || 0;
     const acresDelta     = currentAcres - (entry.size || 0);
@@ -7286,6 +7298,15 @@ function formatCost(raw) {
 // ── IMSR QUALIFICATION ────────────────────────────────────────────────────
 
 function qualifiesForIMSR(f) {
+  // v59.43: Manual include — analyst promoted a sub-threshold fire from the NQ pile via
+  // the "↑ Add to IMSR" button because the 209 failed to scrub a CIMT assignment
+  // (Box 5 is free-text so "SA Blue Team" slips past the CIMT pattern match). Bypass
+  // the acreage/fuel thresholds. Downstream pipeline (prevMatch, isReentry, asterisk,
+  // SEQ-11 sort, narrative construction) runs normally — re-entry fires still get the
+  // "Previously reported incident." statement via existing isReentry logic. Session-only
+  // flag; cleared by re-parse and survives reapplyMapGate re-evaluations by design.
+  if (f._manualInclude) return { qualifies: true, reason: 'Manually included by analyst (QUAL bypass)' };
+
   // IMT override — always qualifies
   if (f.hasIMT) return { qualifies: true, reason: 'Nationally recognized IMT assigned' };
 
@@ -7912,6 +7933,12 @@ function buildNarrativeLines(incidents, cssClass='', dragKey='') {
       reentryStmt = ' <span class="reentry-stmt">Previously reported incident.</span>';
     }
 
+    // v59.43: Manual include badge — analyst promoted this fire from NQ via "↑ Add to IMSR".
+    // Inline × demotes back to NQ. Badge is stripped from all three docx-export paths.
+    const manualBadge = f._manualInclude
+      ? `<span class="manual-include-badge" title="Manually included by analyst — QUAL threshold bypassed. Click × to demote back to Non-Qualifying.">Manual include<span class="mi-x" onclick="event.stopPropagation();removeManualInclude('${f.f2}')">×</span></span>`
+      : '';
+
     // Returning 100% fire — was in prev IMSR and still 100%
     const ret100 = (prev && prev.pct >= 100 && is100(f)) ? ' returning-100' : '';
     const ret100Badge = (prev && prev.pct >= 100 && is100(f)) ? '<span class="ret100-badge" title="Returning fire still at 100% contained — was 100% in previous IMSR">RETURNING 100% · NO CHANGE</span>' : '';
@@ -8003,7 +8030,7 @@ function buildNarrativeLines(incidents, cssClass='', dragKey='') {
     const delBtn = `<button class="narr-del" title="Remove this fire" onclick="deleteSingleFire('${f.f2}','')">✕</button>`;
     // v59.27: no-map-match class marker (parallels renamed/reincluded pattern)
     const noMapMatchClass = f._noMapMatch ? ' no-map-match' : '';
-    return `<div class="narr-line ${cssClass}${lastRptClass}${ret100}${discrepClass}${ctn100Class}${staleClass}${reentryClass}${managedClass}${reincludedClass}${renamedClass}${noMapMatchClass}" data-inc="${f.f2}" data-pct="${f.f8a || 0}"${dragAttrs}>${gripHtml}${nameHtml}${lastRptBadge}${ret100Badge}${reentryBadge}${reincludedBadge}${discrepBadge}${staleBadge}${managedBadge}${renameBadge}${noMapMatchBadge}, ${managingOrg}${cimtLabel}.${alsoManaging}${reentryStmt} ${sentence}${precipFlag}${kickoffControls}${delBtn}</div>`;
+    return `<div class="narr-line ${cssClass}${lastRptClass}${ret100}${discrepClass}${ctn100Class}${staleClass}${reentryClass}${managedClass}${reincludedClass}${renamedClass}${noMapMatchClass}" data-inc="${f.f2}" data-pct="${f.f8a || 0}"${dragAttrs}>${gripHtml}${nameHtml}${lastRptBadge}${ret100Badge}${reentryBadge}${reincludedBadge}${discrepBadge}${staleBadge}${managedBadge}${renameBadge}${noMapMatchBadge}${manualBadge}, ${managingOrg}${cimtLabel}.${alsoManaging}${reentryStmt} ${sentence}${precipFlag}${kickoffControls}${delBtn}</div>`;
   }).join('<div class="narr-spacer"><br></div>');
 }
 
@@ -8392,6 +8419,12 @@ function renderOutput() {
   // Bulk 209 PDFs include old submissions from previous reporting periods.
   // Remove stale 209s from qualifying so they fall through to the missed
   // fire path via prevIMSR matching — same treatment as "no 209 received."
+  // v59.44 note: Manual include does NOT bypass this filter. A stale 209
+  // means the underlying incident data (acres, %, PPL, behavior) hasn't
+  // been updated for the current reporting period — overriding the filter
+  // would put months-old numbers on today's IMSR. The NQ table disables
+  // its "↑ Add" button for stale fires so the analyst sees the issue up
+  // front rather than clicking into a silent no-op.
   const staleCutoff = getReportingWindowCutoff();
   const staleKeys = new Set();
   for (let i = qualifying.length - 1; i >= 0; i--) {
@@ -8695,7 +8728,6 @@ function renderOutput() {
         <div class="block">
           <div class="section-head">
             Narrative Lines — ${gacc}
-            <button class="copy-btn narr" onclick="copyNarrFromBlock(this)">Copy Narratives</button>
           </div>
           ${teamPanel}
           ${narrLines}
@@ -8703,7 +8735,6 @@ function renderOutput() {
         <div class="block">
           <div class="section-head">
             Table Rows — ${gacc}
-            <button class="copy-btn" onclick="copyRowsFromBlock(this)">Copy Rows</button>
           </div>
           <div class="tbl-outer">
             <table class="imsr">
@@ -8752,6 +8783,19 @@ function renderOutput() {
   }
 
   if (nonQualifying.length) {
+    // v59.43: Action column prepended to NQ table — "↑ Add" button per row promotes the fire
+    // to its GACC section via _manualInclude flag. Insurance path for 209s where CIMT is
+    // stated in free-text that the parser's CIMT scrub pattern doesn't catch.
+    // v59.44: Stale-aware button. If the fire's 209 was submitted before the reporting
+    // cutoff (FALLOFF-11), the Add button is disabled with an explanatory tooltip.
+    // Manual include does NOT override the stale filter — overriding would put months-old
+    // numbers on today's IMSR. Analyst needs to get the 209 updated upstream first.
+    const fmtSubmit = t => {
+      const s = String(t);
+      if (s.length < 12) return String(t);
+      return `${parseInt(s.slice(4,6))}/${parseInt(s.slice(6,8))}/${s.slice(0,4)} ${s.slice(8,10)}:${s.slice(10,12)}`;
+    };
+    const nqThCells = `<th class="nq-action-head" style="width:80px;"></th>${thCells}`;
     const nqTableRows = nonQualifying.map(f => {
       const cv = getColVals(f);
       const tds = COLS.map(c => {
@@ -8763,7 +8807,11 @@ function renderOutput() {
         }
         return `<td class="${(!v || v==='---') ? 'empty' : ''}">${v}</td>`;
       }).join('');
-      return `<tr style="opacity:.7;">${tds}</tr>`;
+      const isStale = f._submitTime && f._submitTime !== Infinity && f._submitTime < staleCutoff;
+      const addBtn = isStale
+        ? `<td style="padding:2px 6px;text-align:center;"><button class="readd-btn" disabled style="background:#8c8c8c;cursor:not-allowed;opacity:0.7;" title="209 submitted ${fmtSubmit(f._submitTime)} — before today's 0600 MDT reporting cutoff. Data (acres, %, PPL, behavior) is stale. The underlying 209 must be updated in SIT/209 before this fire can appear on today's IMSR.">⚠ Stale</button></td>`
+        : `<td style="padding:2px 6px;text-align:center;"><button class="readd-btn" onclick="addToIMSR('${f.f2}')" title="Promote to IMSR. QUAL bypass for CIMT-assigned fires the 209 didn't scrub. Fire flows through normal pipeline (prev-match, re-entry detection, asterisk, sort).">↑ Add</button></td>`;
+      return `<tr style="opacity:.7;">${addBtn}${tds}</tr>`;
     }).join('');
 
     nqHtml += `
@@ -8776,7 +8824,7 @@ function renderOutput() {
       <div class="block" style="border-color:#e8c070;">
         <div class="tbl-outer">
           <table class="imsr nq" style="opacity:.75;">
-            <thead><tr>${thCells}</tr></thead>
+            <thead><tr>${nqThCells}</tr></thead>
             <tbody>${nqTableRows}</tbody>
           </table>
         </div>
@@ -8794,8 +8842,6 @@ function renderOutput() {
       <strong>${qualifying.length}</strong> qualifying · <strong>${nonQualifying.length}</strong> non-qualifying across <strong>${gaccKeys.length}</strong> GACC${gaccKeys.length !== 1 ? 's' : ''}${reentryCount ? ` · <span style="color:#b8960a;font-weight:600;">${reentryCount} dropped</span>` : ''}${removedCount ? ` · <span style="color:#c0392b;font-weight:600;cursor:pointer;" onclick="document.getElementById('removed-panel').scrollIntoView({behavior:'smooth'})">${removedCount} removed${removedThresholdCount ? ` (${removedThresholdCount} flagged)` : ''}</span>` : ''}${deletedFires.size ? ` · <span style="color:#c0392b;font-weight:600;">${deletedFires.size} deleted</span>` : ''}
       <span style="float:right;">
         <button class="copy-btn" onclick="generateIMSR()" style="background:${templateDocxBytes ? '#1a6b1a' : '#888'};margin-right:6px;" title="${templateDocxBytes ? 'Generate complete IMSR .docx from template' : 'Drop a .docx (not PDF) in the previous IMSR zone first'}">⬇ Generate IMSR${templateDocxBytes ? '' : ' (need .docx)'}${autoSitData ? ' ✓' : ''}</button>
-        <button class="copy-btn narr" onclick="copyAllNarr(this)" style="margin-right:6px;">Copy All Narratives</button>
-        <button class="copy-btn" onclick="copyAllRows(this)" style="margin-right:6px;">Copy All Rows</button>
         <button class="copy-btn clear" onclick="clearAll()" style="margin-left:6px;">Clear All</button>
       </span>
     </div>
@@ -8948,57 +8994,6 @@ function renderOutput() {
   updateFileList();
 }
 
-function buildCopyLine(f) {
-  if (!f) return { html: '', plain: '' };
-  const { name, parts } = buildNarrativeLine(f);
-  const sentence = capitalizeSentences(parts.join('. ') + (parts.length ? '.' : ''));
-  const org = (lookupUnit(f.unit) || fv(f.unit) || '').replace(/\s*\([A-Z]{2}\)$/,'') || '[MANAGING ORG]';
-
-  // Team-aware CIMT/NIMO label for copy output
-  let cimtLabel = '';
-  let alsoManaging = '';
-  const managedByTeam = findTeamByMember(f.f2);
-  const isPrimaryTeam = findTeamByPrimary(f.f2);
-  // Drop CIMT/NIMO label for managed fires, 100% contained, or Final
-  if (managedByTeam || is100(f) || f.isFinal) {
-    cimtLabel = '';
-  } else if (f.hasCIMT || f.hasNIMO) {
-    const teamType = f.hasNIMO ? 'NIMO' : 'CIMT';
-    const teamName = isPrimaryTeam ? isPrimaryTeam.teamName : '___';
-    cimtLabel = `. ${teamType} (${teamName})`;
-    if (isPrimaryTeam && isPrimaryTeam.managedIncs.length) {
-      alsoManaging = buildAlsoManaging(f);
-    }
-  }
-
-  const precip = f._precipConfirmed ? ' Precipitation occurred over the fire area yesterday.' : '';
-  const prev = prevMatch(f);
-  const reentry = isReentry(f);
-  const isNew = !prev && !reentry;
-  const asterisk = isNew ? '* ' : '';
-  const reentryStmt = reentry ? ' Previously reported incident.' : '';
-  // NARR-46 statement order: ...ART. sage-grouse. reduction. precip. last report.
-  const LAST_RPT  = 'Last report unless significant activity occurs.';
-  const SAGE_GRSE = 'Sage-grouse habitat threatened.';
-  let body = sentence;
-
-  if (precip) {
-    // Insert precip before "Last report" (which is always last when present)
-    if (body.endsWith(LAST_RPT)) {
-      body = body.slice(0, -LAST_RPT.length).trimEnd() + ' ' + precip.trim() + ' ' + LAST_RPT;
-    } else {
-      // No last report — precip goes at the end
-      body = body.trimEnd().replace(/\.?$/, '') + '. ' + precip.trim();
-    }
-  }
-  const tail = `, ${org}${cimtLabel}.${alsoManaging}${reentryStmt} ${body}`;
-  const plain = `${asterisk}${name}${tail}`;
-  // Bold only the asterisk+name; rest is normal weight
-  const boldPart = asterisk ? `<b>* ${name}</b>` : `<b>${name}</b>`;
-  const html = `<span style="font-family:Arial,sans-serif;font-size:11pt;">${boldPart}<span style="font-weight:normal;">${tail.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;')}</span></span>`;
-  return { html, plain };
-}
-
 function deleteSingleFire(incNum, missedKey) {
   if (incNum) {
     // v59.39: store the incident number directly so duplicate-named 209s
@@ -9029,114 +9024,11 @@ function deleteAllNQ() {
   renderOutput();
 }
 
-function copyAllNarr(btn) {
-  // Collect all visible narrative lines
-  const targets = Array.from(document.querySelectorAll('.gacc-section .narr-line:not(.hidden-100)'));
-  const lines = [];
-  targets.forEach(div => {
-    if (div.dataset.inc) {
-      const f = allIncidents.find(i => i.f2 === div.dataset.inc);
-      if (f) lines.push(buildCopyLine(f));
-    } else if (div.dataset.missed) {
-      const bEl = div.querySelector('b');
-      const name = bEl ? bEl.textContent.trim() : '';
-      const clone = div.cloneNode(true);
-      clone.querySelectorAll('button, .last-rpt-badge, .ret100-badge, .discrep-badge, .reentry-badge, .stale-badge, .miss-badge, .reincluded-badge, .rename-badge, .no-map-match-badge').forEach(el => el.remove());
-      const fullText = clone.textContent.trim();
-      const rest = name && fullText.startsWith(name) ? fullText.slice(name.length) : fullText;
-      const plain  = name + rest;
-      const boldPart = name ? `<b>${name}</b>` : '';
-      const html = `<span style="font-family:Arial,sans-serif;font-size:11pt;">${boldPart}${rest.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;')}</span>`;
-      lines.push({ html, plain });
-    }
-  });
-  copyNarrLines(lines, btn, 'Copy All Narratives');
-}
-
-function copyAllRows(btn) {
-  const lines = [];
-  document.querySelectorAll('.gacc-section tbody tr').forEach(row => {
-    const cols = Array.from(row.querySelectorAll('td')).map(td => {
-      const inp = td.querySelector('input');
-      if ('copyval' in td.dataset) {
-        const stored = td.dataset.copyval;
-        const typed  = inp ? inp.value.trim() : '';
-        // Empty stored = user-editable cell: prefer what they typed, else '---'
-        if (stored === '') return typed || '---';
-        // Non-empty stored = pre-filled or calculated: use stored value
-        return stored;
-      }
-      return (inp ? (inp.value || '---') : td.textContent).trim().replace(/\s+/g, ' ');
-    });
-    lines.push(cols.join('\t'));
-  });
-  copyPlainText(lines.join('\n'), btn, 'Copy All Rows');
-}
-
-function copyNarrFromBlock(btn) {
-  const block = btn.closest('.block');
-  const targets = Array.from(block.querySelectorAll('.narr-line:not(.hidden-100)'));
-  const lines = [];
-  targets.forEach(el => {
-    if (el.dataset.inc) {
-      const f = allIncidents.find(i => i.f2 === el.dataset.inc);
-      if (f) lines.push(buildCopyLine(f));
-    } else if (el.dataset.missed) {
-      const bEl = el.querySelector('b');
-      const name = bEl ? bEl.textContent.trim() : '';
-      const clone = el.cloneNode(true);
-      clone.querySelectorAll('button, .last-rpt-badge, .ret100-badge, .discrep-badge, .reentry-badge, .stale-badge, .miss-badge, .reincluded-badge, .rename-badge, .no-map-match-badge').forEach(n => n.remove());
-      const fullText = clone.textContent.trim();
-      const rest = name && fullText.startsWith(name) ? fullText.slice(name.length) : fullText;
-      const plain  = name + rest;
-      const boldPart = name ? `<b>${name}</b>` : '';
-      const html = `<span style="font-family:Arial,sans-serif;font-size:11pt;">${boldPart}${rest.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;')}</span>`;
-      lines.push({ html, plain });
-    }
-  });
-  copyNarrLines(lines, btn, 'Copy Narratives');
-}
-
-function copyRowsFromBlock(btn) {
-  const block = btn.closest('.block');
-  const rows = Array.from(block.querySelectorAll('tbody tr'));
-  const lines = rows.map(row =>
-    Array.from(row.querySelectorAll('td')).map(td => {
-      const inp = td.querySelector('input');
-      if ('copyval' in td.dataset) {
-        const stored = td.dataset.copyval;
-        const typed  = inp ? inp.value.trim() : '';
-        // Empty stored = user-editable cell: prefer what they typed, else '---'
-        if (stored === '') return typed || '---';
-        // Non-empty stored = pre-filled or calculated: use stored value
-        return stored;
-      }
-      return (inp ? (inp.value || '---') : td.textContent).trim().replace(/\s+/g, ' ');
-    }).join('\t')
-  );
-  copyPlainText(lines.join('\n'), btn, 'Copy Rows');
-}
-
-function copyPlainText(text, btn, resetLabel) {
-  // Write only text/plain to clipboard — prevents Word from picking up
-  // the HTML flavor and applying bold/formatting from the source DOM.
-  _btnCopy = true;
-  const done = (ok) => {
-    _btnCopy = false;
-    btn.textContent = ok ? '✓ Copied!' : '✗ Copy failed';
-    setTimeout(() => btn.textContent = resetLabel, 2000);
-  };
-  try {
-    const item = new ClipboardItem({
-      'text/plain': new Blob([text], { type: 'text/plain' })
-    });
-    navigator.clipboard.write([item]).then(() => done(true)).catch(() => {
-      navigator.clipboard.writeText(text).then(() => done(true)).catch(() => done(false));
-    });
-  } catch(e) {
-    navigator.clipboard.writeText(text).then(() => done(true)).catch(() => done(false));
-  }
-}
+// v59.45/v59.46: All copy-to-clipboard functionality removed. Parser generates the
+// complete IMSR .docx via generateIMSR(), so the paste-into-Word workflow is obsolete.
+// Removed in v59.45: copyAllNarr, copyAllRows, copyNarrFromBlock, copyRowsFromBlock,
+// copyNarrLines, copyMissedNarr, buildCopyLine, buildNarrHtml + their UI buttons.
+// Removed in v59.46: legend Copy button, copyLegend, copyPlainText.
 
 function toggleLastRptLabel(incNum) {
   if (lastRptLabelOff.has(incNum)) lastRptLabelOff.delete(incNum);
@@ -9208,49 +9100,6 @@ function togglePrecip(pill, incNum) {
   line.innerHTML = `<b>${asterisk}${name}</b>, ${managingOrg}${cimtLabel}.${alsoManaging}${reentryStmt} ${sentence}${pillHtml}${delBtn}`;
 }
 
-// Copy narrative lines with mixed bold formatting for Word
-// Uses contenteditable + execCommand — synchronous, no clipboard-write permission needed,
-// works reliably on repeated clicks even after tabbing away to Word.
-function buildNarrHtml(lines) {
-  // Use real empty <p> spacers between narratives — Word ignores CSS margin-bottom on paste,
-  // but cannot collapse an actual empty paragraph node.
-  const NARR  = `font-family:Arial,sans-serif;font-size:11pt;line-height:1.15;margin:0;padding:0;`;
-  const SPACE = `font-family:Arial,sans-serif;font-size:11pt;line-height:1.0;margin:0;padding:0;`;
-  return lines.map((l, i) => {
-    const p = `<p style="${NARR}">${l.html}</p>`;
-    const spacer = i < lines.length - 1 ? `<p style="${SPACE}"><span style="font-size:11pt;">&nbsp;</span></p>` : '';
-    return p + spacer;
-  }).join('');
-}
-
-function copyNarrLines(lines, btn, resetLabel) {
-  const htmlContent = buildNarrHtml(lines);
-
-  // Create off-screen contenteditable, select it, execCommand copy
-  const el = document.createElement('div');
-  el.setAttribute('contenteditable', 'true');
-  el.style.cssText = 'position:fixed;top:-9999px;left:-9999px;opacity:0;pointer-events:none;white-space:normal;';
-  el.innerHTML = htmlContent;
-  document.body.appendChild(el);
-
-  const range = document.createRange();
-  range.selectNodeContents(el);
-  const sel = window.getSelection();
-  sel.removeAllRanges();
-  sel.addRange(range);
-
-  let ok = false;
-  _btnCopy = true;
-  try { ok = document.execCommand('copy'); } catch(e) {}
-  _btnCopy = false;
-
-  sel.removeAllRanges();
-  document.body.removeChild(el);
-
-  btn.textContent = ok ? '✓ Copied!' : '✗ Copy failed — use Ctrl+C';
-  setTimeout(() => { btn.textContent = resetLabel; }, 2000);
-}
-
 function applyNarrFilter(val) {
   narrFilterState = val;
   document.querySelectorAll('.narr-line[data-pct]').forEach(el => {
@@ -9304,22 +9153,10 @@ function buildUnitLegend(incidents, missed) {
 
 function renderUnitLegend(entries) {
   if (!entries.length) return '';
-  const uid   = 'leg_' + Math.random().toString(36).slice(2);
-  const plain = entries.map(e => e.shortCode + ' – ' + e.fullName).join('     ');
-  const html  = entries.map(e =>
+  const html = entries.map(e =>
     `<span style="font-weight:normal;">${e.shortCode} – ${e.fullName}</span>`
   ).join('<span style="white-space:pre;">     </span>');
-  return `<div class="unit-legend" id="${uid}" data-plain="${plain.replace(/"/g, '&quot;')}">
-    <button class="legend-copy" onclick="copyLegend('${uid}')">Copy</button>
-    ${html}
-  </div>`;
-}
-
-function copyLegend(uid) {
-  const el   = document.getElementById(uid);
-  const btn  = el.querySelector('.legend-copy');
-  const plain = el.dataset.plain;
-  copyPlainText(plain, btn, 'Copy');
+  return `<div class="unit-legend">${html}</div>`;
 }
 
 // ── NIFC AUTO-FETCH ──────────────────────────────────────────────────────
@@ -9479,23 +9316,6 @@ function buildMissedTableRows(missed) {
     }).join('');
     return `<tr data-missed-key="${mKey}">${tds}</tr>`;
   }).join('');
-}
-
-function copyMissedNarr(btn) {
-  const block = btn.closest('.block');
-  const lines = Array.from(block.querySelectorAll('.narr-line[data-missed]')).map(div => {
-    const bEl = div.querySelector('b');
-    const name = bEl ? bEl.textContent.trim() : '';
-    const clone = div.cloneNode(true);
-    clone.querySelectorAll('button, .last-rpt-badge, .ret100-badge, .discrep-badge, .reentry-badge, .stale-badge, .miss-badge, .reincluded-badge, .rename-badge, .no-map-match-badge').forEach(el => el.remove());
-    const fullText = clone.textContent.trim();
-    const rest = name && fullText.startsWith(name) ? fullText.slice(name.length) : fullText;
-    const plain  = name + rest;
-    const boldPart = name ? `<b>${name}</b>` : '';
-    const html = `<span style="font-family:Arial,sans-serif;font-size:11pt;">${boldPart}${rest.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;')}</span>`;
-    return { html, plain };
-  });
-  copyNarrLines(lines, btn, 'Copy Narratives');
 }
 
 // ── IMSR COMPARISON ─────────────────────────────────────────────────────
@@ -11020,6 +10840,26 @@ function clearAll() {
 
 // Re-add a fire from the Removed Incidents panel back into the main display.
 // Analyst confirms the decision. Fire gets "Previously reported incident." treatment.
+// v59.43: Manual-include functions — parallel the reAddFire pattern for the NQ pile.
+// addToIMSR: promote a sub-threshold fire from NQ to qualifying via _manualInclude flag.
+// removeManualInclude: demote back to NQ (triggered by × on the Manual include badge).
+// Session-only state; cleared on re-parse alongside the other underscore flags in
+// reapplyMapGate's cleanup loop — except _manualInclude is intentionally preserved so
+// re-evaluations (e.g. MAP re-drop) don't silently demote fires the analyst already promoted.
+function addToIMSR(incNum) {
+  const f = allIncidents.find(x => x.f2 === incNum);
+  if (!f) return;
+  f._manualInclude = true;
+  renderOutput();
+}
+
+function removeManualInclude(incNum) {
+  const f = allIncidents.find(x => x.f2 === incNum);
+  if (!f) return;
+  delete f._manualInclude;
+  renderOutput();
+}
+
 function reAddFire(incNum) {
   const idx = removedIncidents.findIndex(f => f.f2 === incNum || f.f1 === incNum);
   if (idx < 0) return;
