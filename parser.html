@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>IMSR Prep Tool v59.47</title>
+<title>IMSR Prep Tool v59.48</title>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
@@ -366,7 +366,7 @@
 <body>
 
 <header>
-  <h1>IMSR PREP TOOL <span style="float:right;font-size:11px;font-weight:400;color:var(--muted);letter-spacing:.04em;">v59.47</span></h1>
+  <h1>IMSR PREP TOOL <span style="float:right;font-size:11px;font-weight:400;color:var(--muted);letter-spacing:.04em;">v59.48</span></h1>
   <p>Drop one or more 209 PDFs — sorted by % contained, ready to paste into Word</p>
 </header>
 
@@ -1588,17 +1588,37 @@ function parseFields(text) {
   if (!f29raw.trim()) { const m = text.match(/29\.[\s\S]{0,800}?(?=30\.|31\.)/i); if (m) f29raw = m[0]; }
   f.f29 = f29raw;
 
-  // Rows E+F = residences (single + multiple), Rows G+H+I = other structures
-  const resRowE = text.match(/E\.\s*Single Residences\s+(\d+)\s+\d+\s+(\d+)/i);
-  const resRowF = text.match(/F\.\s*Multiple Residences\s+(\d+)\s+\d+\s+(\d+)/i);
-  f.resThreatened = (resRowE ? parseInt(resRowE[1]) : 0) + (resRowF ? parseInt(resRowF[1]) : 0);
-  f.resDestroyed  = (resRowE ? parseInt(resRowE[2]) : 0) + (resRowF ? parseInt(resRowF[2]) : 0);
+  // Rows E+F = residences (single + multiple), Rows G+H+I = other structures.
+  // v59.48: Two bugs fixed here.
+  //   (1) \d+ doesn't match numbers with commas ("1,000"): \d+ greedy-matches "1",
+  //       then the next \s+ fails against the "," — whole row regex returns null.
+  //       Silent data loss for any row with a count >= 1,000. HWY 82 on 4/22 had
+  //       1,000 threatened / 46 destroyed single residences that were dropped.
+  //   (2) PDF.js (and pdftotext) renders G and H labels split across lines, with
+  //       the numbers inline with the FIRST label fragment:
+  //           G. Mixed Commercial /    0   0   0
+  //           Residential
+  //           H. Nonresidential       10   0   0
+  //           Commercial Property
+  //       The prior regex required the full phrase ("Mixed Commercial / Residential",
+  //       "Nonresidential Commercial Property") before the numbers, so G and H
+  //       returned null on every fire. Invisible in practice because G/H are almost
+  //       always zero, but it meant those rows never contributed to threatened/
+  //       destroyed sums.
+  // Fix: allow commas inside captures ([\d,]+ + strip on parse) and, for G and H,
+  // anchor on the first distinctive label word and use non-greedy [\s\S]*? to skip
+  // past any label fragments or line breaks before the three numeric columns.
+  const stripCommas = s => parseInt(String(s).replace(/,/g, '')) || 0;
+  const resRowE = text.match(/E\.\s*Single Residences\s+([\d,]+)\s+[\d,]+\s+([\d,]+)/i);
+  const resRowF = text.match(/F\.\s*Multiple Residences\s+([\d,]+)\s+[\d,]+\s+([\d,]+)/i);
+  f.resThreatened = (resRowE ? stripCommas(resRowE[1]) : 0) + (resRowF ? stripCommas(resRowF[1]) : 0);
+  f.resDestroyed  = (resRowE ? stripCommas(resRowE[2]) : 0) + (resRowF ? stripCommas(resRowF[2]) : 0);
 
-  const strRowG = text.match(/G\.\s*(?:Mixed Use|Mixed Commercial\s*\/?\s*Residential)\s+(\d+)\s+\d+\s+(\d+)/i);
-  const strRowH = text.match(/H\.\s*(?:Commercial and Industrial|Nonresidential\s+Commercial\s+Property)\s+(\d+)\s+\d+\s+(\d+)/i);
-  const strRowI = text.match(/I\.\s*Other Minor Structures\s+(\d+)\s+\d+\s+(\d+)/i);
-  f.strThreatened = (strRowG ? parseInt(strRowG[1]) : 0) + (strRowH ? parseInt(strRowH[1]) : 0) + (strRowI ? parseInt(strRowI[1]) : 0);
-  f.strDestroyed  = (strRowG ? parseInt(strRowG[2]) : 0) + (strRowH ? parseInt(strRowH[2]) : 0) + (strRowI ? parseInt(strRowI[2]) : 0);
+  const strRowG = text.match(/G\.\s*Mixed\s+(?:Use|Commercial)[\s\S]*?([\d,]+)\s+([\d,]+)\s+([\d,]+)/i);
+  const strRowH = text.match(/H\.\s*(?:Commercial and Industrial|Nonresidential)[\s\S]*?([\d,]+)\s+([\d,]+)\s+([\d,]+)/i);
+  const strRowI = text.match(/I\.\s*Other Minor Structures\s+([\d,]+)\s+[\d,]+\s+([\d,]+)/i);
+  f.strThreatened = (strRowG ? stripCommas(strRowG[1]) : 0) + (strRowH ? stripCommas(strRowH[1]) : 0) + (strRowI ? stripCommas(strRowI[1]) : 0);
+  f.strDestroyed  = (strRowG ? stripCommas(strRowG[3]) : 0) + (strRowH ? stripCommas(strRowH[3]) : 0) + (strRowI ? stripCommas(strRowI[2]) : 0);
 
   f.f34 = parseLifeSafety(text);
 
@@ -7667,7 +7687,12 @@ function threatenedStatement(f) {
 
   // ── Combine ───────────────────────────────────────────────────────────
   if (strLabel && infraLabel) {
-    // e.g. "Numerous structures and energy infrastructure threatened"
+    // NARR-31: residences/structures first, infrastructure second — in all
+    // combined forms. Applies whether strLabel is "residences", "structures",
+    // or the mixed case, and whether the "Numerous" prefix is present.
+    // Examples:
+    //   "Numerous structures and railroad infrastructure threatened"
+    //   "Residences and energy infrastructure threatened"
     return numerous + strLabel + ' and ' + infraLabel + ' threatened';
   } else if (strLabel) {
     return numerous + strLabel + ' threatened';
