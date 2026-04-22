@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>IMSR Prep Tool v59.46</title>
+<title>IMSR Prep Tool v59.47</title>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
@@ -366,7 +366,7 @@
 <body>
 
 <header>
-  <h1>IMSR PREP TOOL <span style="float:right;font-size:11px;font-weight:400;color:var(--muted);letter-spacing:.04em;">v59.46</span></h1>
+  <h1>IMSR PREP TOOL <span style="float:right;font-size:11px;font-weight:400;color:var(--muted);letter-spacing:.04em;">v59.47</span></h1>
   <p>Drop one or more 209 PDFs — sorted by % contained, ready to paste into Word</p>
 </header>
 
@@ -7307,8 +7307,17 @@ function qualifiesForIMSR(f) {
   // flag; cleared by re-parse and survives reapplyMapGate re-evaluations by design.
   if (f._manualInclude) return { qualifies: true, reason: 'Manually included by analyst (QUAL bypass)' };
 
-  // IMT override — always qualifies
-  if (f.hasIMT) return { qualifies: true, reason: 'Nationally recognized IMT assigned' };
+  // IMT override — always qualifies (QUAL-01).
+  // v59.47: Switched from f.hasIMT (narrow Box 4→6 region, 400 chars) to
+  // f.hasCIMT || f.hasNIMO (first 2000 chars). The narrow regex misses CIMT
+  // when PDF.js extracts Box 4/5 labels before their values — e.g. Gun Range
+  // (FL-FNF-001208, 4/22) had "Jon Wallace CIMT" in Box 4 but the imtText
+  // window only captured labels, so hasIMT=false even though hasCIMT=true.
+  // Every other consumer in this file (SEQ bucket, GACC sort, CIMT label
+  // rendering, National summary) already uses hasCIMT || hasNIMO; this aligns
+  // the qualification gate with the rest of the codebase. f.hasIMT retained
+  // as dead code for now — safe to remove in a future cleanup pass.
+  if (f.hasCIMT || f.hasNIMO) return { qualifies: true, reason: 'CIMT/NIMO team assigned' };
 
   const acres = parseInt((f.f7 || '').replace(/,/g, '')) || 0;
   if (acres < 100) return { qualifies: false, reason: `${acres.toLocaleString()} acres — below 100-acre minimum` };
