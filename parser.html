@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>IMSR Prep Tool v59.48</title>
+<title>IMSR Prep Tool v59.49</title>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
@@ -366,7 +366,7 @@
 <body>
 
 <header>
-  <h1>IMSR PREP TOOL <span style="float:right;font-size:11px;font-weight:400;color:var(--muted);letter-spacing:.04em;">v59.48</span></h1>
+  <h1>IMSR PREP TOOL <span style="float:right;font-size:11px;font-weight:400;color:var(--muted);letter-spacing:.04em;">v59.49</span></h1>
   <p>Drop one or more 209 PDFs — sorted by % contained, ready to paste into Word</p>
 </header>
 
@@ -771,29 +771,35 @@ function reapplyMapGate() {
     // stale data. Route KO through the same re-inclusion gate as KOS.
     // KO! stays stale-protected (Encino-2 class): KO! = silent kick-off (no KOS phrase in
     // history), so prev-IMSR presence IS inconsistent with KO!'s terminal status.
+    // v59.49 (4/23/2026) — NATURAL_CLOSE added to the terminal-signal family. Per FALLOFF-16,
+    // yesterday's IMSR terminal signals (KOS phrase, M6 status, 100% contained) all route to
+    // Removed Incidents today subject to the re-inclusion gate. Prior behavior kept N+is100
+    // fires in the main display with a red RETURNING 100% · NO CHANGE badge — but the badge
+    // was a kick-out signal painted on a fire that wasn't kicked out. Walker Ceek (WY-COX,
+    // 4/22/2026) was the trigger: 100% on 4/22 IMSR, MAP Master status N, still showing in
+    // main narrative pane on 4/23 despite having had its last day. The gate itself rarely
+    // fires for 100%-was-100% (no +1,000 ac growth, no 250-ppl bump, no new CIMT in the
+    // usual case) — so almost all N+is100 fires will route cleanly to Removed. An escape
+    // (fire re-ignites after prior 100%) would trigger auto re-include via +1,000 ac.
     const KICKOFF_COMPLETION = (entry.status === 'KOS' || entry.status === 'KO');
-    if (prevOnImsr && !KICKOFF_COMPLETION) {
-      // v59.34: MAP status N + fire at 100% today is the blueprint-correct "Natural close"
-      // terminal state (§3 MAP Master Blueprint — go button writes N when a fire was 100%
-      // contained on the prev IMSR). A 100% fire reappearing today with MAP=N is NOT stale
-      // data; it's the designed terminal state. The RETURNING 100% badge communicates the
-      // whole story — a "stale MAP" flag on top is a false alarm. KO! and DR are different:
-      // those carry distinct "why was this removed" info that matters if the fire returns,
-      // so those still flag regardless of today's %.
-      const isNaturalCloseTerminal = (entry.status === 'N' && is100(f));
-      if (!isNaturalCloseTerminal) {
-        f._noMapMatch = true;
-        f._noMapMatchReason = `MAP Master status is ${entry.status}, but fire is on yesterday's IMSR with a fresh 209`;
-        f._staleRemovedStatus = entry.status;
-        f._mapLastSize = entry.size;
-        f._mapLastPct  = entry.lastPct;
-        f._mapDate     = entry.mapDate;
-      }
+    const NATURAL_CLOSE = (entry.status === 'N' && is100(f));
+    const TERMINAL_SIGNAL = KICKOFF_COMPLETION || NATURAL_CLOSE;
+    if (prevOnImsr && !TERMINAL_SIGNAL) {
+      // Prev-IMSR + fresh 209 + non-terminal-signal MAP status (KO!, DR, or non-100% N) is
+      // inconsistent — the MAP data is stale. Keep in main display with a gold NO MAP MATCH
+      // badge (Encino-2 class) so the analyst can fix MAP Master upstream. Do NOT run
+      // through the re-inclusion gate (that's for fires returning from absence).
+      f._noMapMatch = true;
+      f._noMapMatchReason = `MAP Master status is ${entry.status}, but fire is on yesterday's IMSR with a fresh 209`;
+      f._staleRemovedStatus = entry.status;
+      f._mapLastSize = entry.size;
+      f._mapLastPct  = entry.lastPct;
+      f._mapDate     = entry.mapDate;
       kept.push(f);
       continue;
     }
-    // No prevMatch (returning from absence) OR status === KOS/KO (completing kick-off).
-    // Run the re-inclusion gate.
+    // No prevMatch (returning from absence) OR TERMINAL_SIGNAL (KOS/KO completing kick-off,
+    // or N+is100 completing natural close). Run the re-inclusion gate.
     const currentAcres   = parseInt((f.f7 || '').replace(/,/g,'')) || 0;
     const acresDelta     = currentAcres - (entry.size || 0);
     const currentStrc    = (f.resDestroyed || 0) + (f.strDestroyed || 0);
