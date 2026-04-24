@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>IMSR Prep Tool v59.49</title>
+<title>IMSR Prep Tool v59.50</title>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
@@ -366,7 +366,7 @@
 <body>
 
 <header>
-  <h1>IMSR PREP TOOL <span style="float:right;font-size:11px;font-weight:400;color:var(--muted);letter-spacing:.04em;">v59.49</span></h1>
+  <h1>IMSR PREP TOOL <span style="float:right;font-size:11px;font-weight:400;color:var(--muted);letter-spacing:.04em;">v59.50</span></h1>
   <p>Drop one or more 209 PDFs — sorted by % contained, ready to paste into Word</p>
 </header>
 
@@ -7648,6 +7648,12 @@ function cleanBehavior(raw) {
 
   // Torching severity: if multiple torching types accepted, keep only most severe
   // group torching > isolated torching > single tree torching > torching (generic)
+  // v59.50 (4/23/2026): preserve Box 28 position. Prior filter+push moved keepTorch
+  // to the tail of the descriptor list, inverting order for fires like Murphy whose
+  // Box 28 read "Group Torching / Single Tree Torching / Running" — output came out
+  // "running and group torching" instead of the expected "group torching and running".
+  // Fix: replace the FIRST torching match in place with keepTorch, drop subsequent
+  // torching matches. All non-torching terms keep their original positions.
   const torchingTerms = accepted.filter(t => /torching/i.test(t));
   let filteredAccepted = accepted;
   if (torchingTerms.length > 1) {
@@ -7655,8 +7661,15 @@ function cleanBehavior(raw) {
     if (torchingTerms.some(t => t === 'group torching'))       keepTorch = 'group torching';
     else if (torchingTerms.some(t => t === 'isolated torching')) keepTorch = 'isolated torching';
     else if (torchingTerms.some(t => t === 'single tree torching')) keepTorch = 'single tree torching';
-    filteredAccepted = accepted.filter(t => !/torching/i.test(t));
-    filteredAccepted.push(keepTorch);
+    let torchReplaced = false;
+    filteredAccepted = accepted
+      .filter(t => {
+        if (!/torching/i.test(t)) return true;
+        if (torchReplaced) return false;
+        torchReplaced = true;
+        return true;
+      })
+      .map(t => (/torching/i.test(t) ? keepTorch : t));
   }
   const descriptors = filteredAccepted.slice(0, 3);
 
