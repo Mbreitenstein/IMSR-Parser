@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>IMSR Prep Tool v59.50</title>
+<title>IMSR Prep Tool v59.52</title>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
@@ -253,9 +253,9 @@
   .narr-line.nq { border-left-color: #c8a060; }
   .precip-flag {
     display: inline-block;
-    margin-left: 10px; background: #fffbea; border: 1px solid #e8c840;
+    margin-left: 10px; background: #dcedf5; border: 1px solid #5a9ec8;
     border-radius: 3px; padding: 1px 8px; font-family: 'IBM Plex Mono', monospace;
-    font-size: 10px; color: #7a6000; cursor: pointer; vertical-align: middle;
+    font-size: 10px; color: #1e4e78; cursor: pointer; vertical-align: middle;
     user-select: none;
   }
   .precip-flag.confirmed { background: #e8f5e8; border-color: #4a9a4a; color: #1a5c1a; }
@@ -347,6 +347,19 @@
     margin-left: 2px; user-select: none;
   }
   .team-edit-btn:hover { color: #8b1a1a; }
+  /* v59.52: CIMT/NIMO status qualifier pill (mobilizing, en route, transfer of command, etc.)
+     Reserved amber/gold palette — this is the "CIMT color" for qualifier-class statements.
+     Click the pill to remove the qualifier; the team assignment itself stays intact. */
+  .team-suffix-flag {
+    display: inline-block;
+    margin-left: 6px; background: #fffbea; border: 1px solid #e8c840;
+    border-radius: 3px; padding: 1px 8px; font-family: 'IBM Plex Mono', monospace;
+    font-size: 10px; color: #7a6000; cursor: pointer; vertical-align: middle;
+    user-select: none;
+  }
+  .team-suffix-flag:hover { background: #fff5d0; border-color: #c8a820; }
+  .team-suffix-flag .team-suffix-x { margin-left: 4px; opacity: 0.6; font-weight: 600; }
+  .team-suffix-flag:hover .team-suffix-x { opacity: 1; color: #8b1a1a; }
   .drop-zone.autosit-zone { border-color: #2a7d2a; }
   .drop-zone.autosit-zone:hover, .drop-zone.autosit-zone.drag-over { border-color: #2a7d2a; background: #f0faf0; }
   .drop-zone.autosit-zone button { background: #2a7d2a; }
@@ -366,7 +379,7 @@
 <body>
 
 <header>
-  <h1>IMSR PREP TOOL <span style="float:right;font-size:11px;font-weight:400;color:var(--muted);letter-spacing:.04em;">v59.50</span></h1>
+  <h1>IMSR PREP TOOL <span style="float:right;font-size:11px;font-weight:400;color:var(--muted);letter-spacing:.04em;">v59.52</span></h1>
   <p>Drop one or more 209 PDFs — sorted by % contained, ready to paste into Word</p>
 </header>
 
@@ -6058,6 +6071,7 @@ const UNIT_LOOKUP = {
   "SD-BDP": "Badlands National Park, NPS",
   "SD-BDX": "Beadle County",
   "SD-BFX": "Buffalo County",
+  "SD-BHX": "Bon Homme County",
   "SD-BKF": "Black Hills National Forest, USFS",
   "SD-BKX": "Brookings County",
   "SD-BNX": "Bennett County",
@@ -7931,8 +7945,14 @@ function buildNarrativeLines(incidents, cssClass='', dragKey='') {
     if (managedByTeam || is100(f) || f.isFinal) {
       // Managed fire or 100%/final — strip CIMT label entirely
       cimtLabel = '';
-    } else if (f.hasCIMT || f.hasNIMO) {
-      const teamType = f.hasNIMO ? 'NIMO' : 'CIMT';
+    } else if (f.hasCIMT || f.hasNIMO || isPrimaryTeam) {
+      // v59.51: allow isPrimaryTeam (team carry-forward from prev IMSR or manual assignment)
+      // to trigger the CIMT label even when today's 209 doesn't yet declare CIMT — this is
+      // the "team mobilizing" case where the analyst manually added the CIMT note before the
+      // 209 catches up. Once the 209 confirms on-scene (hasCIMT=true), the optional "mobilizing"
+      // suffix drops automatically.
+      const onScene = f.hasCIMT || f.hasNIMO;
+      const teamType = f.hasNIMO ? 'NIMO' : (isPrimaryTeam ? isPrimaryTeam.teamType : 'CIMT');
       const teamName = isPrimaryTeam ? isPrimaryTeam.teamName : '';
       let teamHtml;
       if (teamName && !teamEditMode.has(f.f2)) {
@@ -7942,7 +7962,10 @@ function buildNarrativeLines(incidents, cssClass='', dragKey='') {
         // Show input — empty or editing
         teamHtml = `<input class="team-input" type="text" value="${teamName.replace(/"/g,'&quot;')}" placeholder="___" data-inc="${f.f2}" data-type="${teamType}" onchange="handleTeamInput(this)" onblur="teamEditMode.delete('${f.f2}')" onclick="event.stopPropagation()">`;
       }
-      cimtLabel = `. ${teamType} (${teamHtml})`;
+      const suffixHtml = (!onScene && isPrimaryTeam && isPrimaryTeam.teamSuffix)
+        ? ` <span class="team-suffix-flag" onclick="event.stopPropagation();removeTeamSuffix('${f.f2}');" title="Remove status qualifier (click when team arrives on scene or after 2 IMSR cycles)">${isPrimaryTeam.teamSuffix}<span class="team-suffix-x">×</span></span>`
+        : '';
+      cimtLabel = `. ${teamType} (${teamHtml})${suffixHtml}`;
       if (isPrimaryTeam && isPrimaryTeam.managedIncs.length) {
         alsoManaging = buildAlsoManaging(f);
       }
@@ -8295,7 +8318,7 @@ function handleTeamInput(el) {
   let group = findTeamByPrimary(incNum);
   if (name) {
     if (!group) {
-      group = { teamName: name, teamType, primaryInc: incNum, managedIncs: [] };
+      group = { teamName: name, teamType, teamSuffix: '', primaryInc: incNum, managedIncs: [] };
       teamGroups.push(group);
     } else {
       group.teamName = name;
@@ -8306,6 +8329,20 @@ function handleTeamInput(el) {
   }
   teamEditMode.delete(incNum); // exit edit mode — show as selectable text
   renderOutput();
+}
+
+// v59.51: clear the optional team suffix (e.g., "mobilizing", "en route") on an existing
+// team group. Called from the inline ✕ button next to the suffix. Keeps the team assignment
+// intact — only removes the pre-arrival qualifier, typically when the team arrives on scene
+// before the 209 header catches up, or when the analyst chooses to drop the mobilizing label
+// after 2 IMSR cycles. Designed to generalize to other trailing statuses (transfer of command,
+// etc.) once we have test cases.
+function removeTeamSuffix(incNum) {
+  const group = findTeamByPrimary(incNum);
+  if (group && group.teamSuffix) {
+    group.teamSuffix = '';
+    renderOutput();
+  }
 }
 
 function assignToTeam(incNum, primaryInc) {
@@ -8442,6 +8479,7 @@ function renderOutput() {
         teamGroups.push({
           teamType: prev.prevTeamType,
           teamName: prev.prevTeamName,
+          teamSuffix: prev.prevTeamSuffix || '',
           primaryInc: primaryFire.f2,
           managedIncs
         });
@@ -9129,8 +9167,10 @@ function togglePrecip(pill, incNum) {
   const isPrimaryTeam = findTeamByPrimary(f.f2);
   if (managedByTeam) {
     cimtLabel = '';
-  } else if (f.hasCIMT || f.hasNIMO) {
-    const teamType = f.hasNIMO ? 'NIMO' : 'CIMT';
+  } else if (f.hasCIMT || f.hasNIMO || isPrimaryTeam) {
+    // v59.51: see path 1 comment — isPrimaryTeam triggers label when team mobilizing
+    const onScene = f.hasCIMT || f.hasNIMO;
+    const teamType = f.hasNIMO ? 'NIMO' : (isPrimaryTeam ? isPrimaryTeam.teamType : 'CIMT');
     const teamName = isPrimaryTeam ? isPrimaryTeam.teamName : '';
     let teamHtml;
     if (teamName && !teamEditMode.has(f.f2)) {
@@ -9138,7 +9178,10 @@ function togglePrecip(pill, incNum) {
     } else {
       teamHtml = `<input class="team-input" type="text" value="${teamName.replace(/"/g,'&quot;')}" placeholder="___" data-inc="${f.f2}" data-type="${teamType}" onchange="handleTeamInput(this)" onblur="teamEditMode.delete('${f.f2}')" onclick="event.stopPropagation()">`;
     }
-    cimtLabel = `. ${teamType} (${teamHtml})`;
+    const suffixHtml = (!onScene && isPrimaryTeam && isPrimaryTeam.teamSuffix)
+      ? ` <span class="team-suffix-flag" onclick="event.stopPropagation();removeTeamSuffix('${f.f2}');" title="Remove status qualifier (click when team arrives on scene or after 2 IMSR cycles)">${isPrimaryTeam.teamSuffix}<span class="team-suffix-x">×</span></span>`
+      : '';
+    cimtLabel = `. ${teamType} (${teamHtml})${suffixHtml}`;
     if (isPrimaryTeam && isPrimaryTeam.managedIncs.length) {
       alsoManaging = buildAlsoManaging(f);
     }
@@ -9532,12 +9575,17 @@ function parseIMSR(text) {
     if (!narrEntry) narrEntry = { narrative: '', fullNarr: '', missCount: 2 };
 
     // Extract CIMT/NIMO team info from narrative
-    let prevTeamType = '', prevTeamName = '', prevManagedNames = [];
+    let prevTeamType = '', prevTeamName = '', prevManagedNames = [], prevTeamSuffix = '';
     if (narrEntry.fullNarr) {
-      const teamM = narrEntry.fullNarr.match(/(CIMT|NIMO)\s*\(([^)]+)\)/);
+      // v59.51: Capture trailing pre-arrival qualifier (e.g., "mobilizing", "en route")
+      // between `)` and the next `.`. Analyst writes this by hand when a team is assigned
+      // but not yet reflected on the 209. Carries forward until today's 209 reports CIMT
+      // (team on scene), at which point the renderer drops the suffix automatically.
+      const teamM = narrEntry.fullNarr.match(/(CIMT|NIMO)\s*\(([^)]+)\)([^.]*)/i);
       if (teamM) {
-        prevTeamType = teamM[1];
+        prevTeamType = teamM[1].toUpperCase();
         prevTeamName = teamM[2].trim();
+        prevTeamSuffix = teamM[3].trim();
       }
       const mgrM = narrEntry.fullNarr.match(/also managing the (.+?) incidents?/i);
       if (mgrM) {
@@ -9555,7 +9603,7 @@ function parseIMSR(text) {
         fullNarr:   narrEntry.fullNarr,
         missCount:  narrEntry.missCount,
         wasLastReport: false,
-        prevTeamType, prevTeamName, prevManagedNames });
+        prevTeamType, prevTeamName, prevManagedNames, prevTeamSuffix });
     }
   }
 
@@ -9704,10 +9752,13 @@ function docxBuildNarr(f) {
   // Drop CIMT/NIMO label for managed fires, 100% contained, or Final
   if (managedByTeam || is100(f) || f.isFinal) {
     cimtLabel = '';
-  } else if (f.hasCIMT || f.hasNIMO) {
-    const teamType = f.hasNIMO ? 'NIMO' : 'CIMT';
+  } else if (f.hasCIMT || f.hasNIMO || isPrimaryTeam) {
+    // v59.51: see path 1 comment — isPrimaryTeam triggers label when team mobilizing
+    const onScene = f.hasCIMT || f.hasNIMO;
+    const teamType = f.hasNIMO ? 'NIMO' : (isPrimaryTeam ? isPrimaryTeam.teamType : 'CIMT');
     const teamName = isPrimaryTeam ? isPrimaryTeam.teamName : '___';
-    cimtLabel = `. ${teamType} (${teamName})`;
+    const suffix = (!onScene && isPrimaryTeam && isPrimaryTeam.teamSuffix) ? ' ' + isPrimaryTeam.teamSuffix : '';
+    cimtLabel = `. ${teamType} (${teamName})${suffix}`;
     if (isPrimaryTeam && isPrimaryTeam.managedIncs.length) {
       alsoManaging = buildAlsoManaging(f);
     }
