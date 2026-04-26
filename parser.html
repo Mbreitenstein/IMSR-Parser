@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>IMSR Prep Tool v59.52</title>
+<title>IMSR Prep Tool v59.54</title>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
@@ -379,7 +379,7 @@
 <body>
 
 <header>
-  <h1>IMSR PREP TOOL <span style="float:right;font-size:11px;font-weight:400;color:var(--muted);letter-spacing:.04em;">v59.52</span></h1>
+  <h1>IMSR PREP TOOL <span style="float:right;font-size:11px;font-weight:400;color:var(--muted);letter-spacing:.04em;">v59.54</span></h1>
   <p>Drop one or more 209 PDFs — sorted by % contained, ready to paste into Word</p>
 </header>
 
@@ -1481,6 +1481,13 @@ function detectInfrastructure(text) {
     'solar farm', 'solar panel', 'solar array', 'wind turbine', 'wind farm',
     'electric substation', 'electrical substation', 'electric transmission line',
     'high-tension line', 'high tension line', 'high voltage line',
+    // Transmission compounds — added v59.54 (4/25/2026). Pineland Rd 209 Box 30
+    // had "Critical infrastructure including transportation corridors, utilities
+    // transmission, and railroad lines is currently threatened." — railroad fired,
+    // energy didn't. "transmission" alone is too common (data transmission, etc.)
+    // but compound forms are safe. "transmission line"/"transmission lines" also
+    // collapses the pre-existing "electric transmission line" entry.
+    'transmission line', 'transmission lines', 'utilities transmission',
     'hydroelectric', 'hydro-electric', 'kilowatt', 'megawatt',
     // Water utility — specific compound phrases only
     'community water system', 'municipal water', 'water treatment plant',
@@ -7475,16 +7482,48 @@ function normalizeName(name) {
 // to make sure the two names refer to the "same" fire. If the analyst cleaned up
 // "BILLY BOBS SHED..." to "Billy Bobs Shed", similar → use MAP. If a fire got
 // genuinely renamed (2X4 → Encino 2), dissimilar → keep 209 name and flag rename.
+//
+// v59.54 (4/25/2026): abbreviation fold. 209 Box 1 and IMSR/MAP Master use road-name
+// abbreviations interchangeably ("Pineland Road" in 209 vs "Pineland Rd" in MAP).
+// These are the same fire and should match. Without the fold, "pinelandrd" is not
+// contiguously present in "pinelandroad" so the substring check fails and the rename
+// badge fires as a false positive. List is intentionally conservative — only suffix
+// abbreviations that are unambiguous in fire-name context. Word boundaries (\b)
+// ensure "rd" inside other words ("redrock", "Frankrd Lake") does not expand.
+const FIRE_NAME_ABBREVS = [
+  ['rd',   'road'],
+  ['hwy',  'highway'],
+  ['mtn',  'mountain'],
+  ['ck',   'creek'],
+  ['ave',  'avenue'],
+  ['blvd', 'boulevard'],
+  ['pkwy', 'parkway'],
+];
+function expandFireNameAbbrevs(s) {
+  let out = String(s || '').toLowerCase();
+  for (const [abbr, full] of FIRE_NAME_ABBREVS) {
+    out = out.replace(new RegExp(`\\b${abbr}\\b`, 'g'), full);
+  }
+  return out.replace(/[^a-z0-9]/g, '');
+}
+
 function namesAreSimilar(a, b) {
   if (!a || !b) return false;
   const na = String(a).toLowerCase().replace(/[^a-z0-9]/g, '');
   const nb = String(b).toLowerCase().replace(/[^a-z0-9]/g, '');
   if (!na || !nb) return false;
   if (na === nb) return true;
+  // v59.54: abbreviation fold — Pineland Rd ↔ Pineland Road, Hwy 82 ↔ Highway 82
+  const naF = expandFireNameAbbrevs(a);
+  const nbF = expandFireNameAbbrevs(b);
+  if (naF && nbF && naF === nbF) return true;
   // One contained in the other — analyst shortened or extended the name.
   // Minimum length guard (>=4 chars) prevents spurious matches on tiny fragments.
   if (na.length >= 4 && nb.includes(na)) return true;
   if (nb.length >= 4 && na.includes(nb)) return true;
+  // Same containment check after fold (catches "Pineland Rd Fire" vs "Pineland Road")
+  if (naF.length >= 4 && nbF.includes(naF)) return true;
+  if (nbF.length >= 4 && naF.includes(nbF)) return true;
   return false;
 }
 
