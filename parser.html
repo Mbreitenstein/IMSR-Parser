@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>IMSR Prep Tool v59.54</title>
+<title>IMSR Prep Tool v59.55</title>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
@@ -379,7 +379,7 @@
 <body>
 
 <header>
-  <h1>IMSR PREP TOOL <span style="float:right;font-size:11px;font-weight:400;color:var(--muted);letter-spacing:.04em;">v59.54</span></h1>
+  <h1>IMSR PREP TOOL <span style="float:right;font-size:11px;font-weight:400;color:var(--muted);letter-spacing:.04em;">v59.55</span></h1>
   <p>Drop one or more 209 PDFs — sorted by % contained, ready to paste into Word</p>
 </header>
 
@@ -1742,7 +1742,15 @@ function parseFields(text) {
 
   // Total personnel — Layout A: "52. Total Pers v1 v2 ... TOTAL"
   //                  Layout B: "52. Total v1 v2 ... TOTAL Pers"
-  const persMA = text.match(/52\.\s*Total\s+Pers\s+([\d\s]+?)(?=\s*53\.|\s*52\.|$)/i);
+  // v59.55: lookahead also terminates at any letter ([A-Za-z]). When Box 49 grand
+  // total is the last data on a PDF page, the page footer ("Apr 27, 2026 158
+  // 6:13:09 AM") and recurring page header ("Incident Status Summary (ICS-209)
+  // Incident: <name>") render between the values and "53. Additional...". The
+  // [\d\s]+? class can't traverse those letters, and the prior lookahead
+  // (53.|52.|$) was unreachable, so f.totalPers fell through to '0'. HWY 82
+  // 4/27/2026 surfaced this — 410 personnel parsed as 0. Letter alternative
+  // catches the "A" in "Apr" or "I" in "Incident" cleanly.
+  const persMA = text.match(/52\.\s*Total\s+Pers\s+([\d\s]+?)(?=\s*53\.|\s*52\.|\s*[A-Za-z]|$)/i);
   const persMB = text.match(/52\.\s*Total\s+([\d\s]+?)\s+Pers/i);
   const persM  = persMA || persMB;
   if (persM) {
@@ -7261,7 +7269,10 @@ function parseResources(text) {
     vals = rsrcM[1].trim().split(/\s+/).filter(s => /^\d+$/.test(s)).map(Number);
 
     // Get 52. Total Pers row for crew minimum enforcement
-    const persRowMA = text.match(/(?:52|57)\.\s*Total\s+Pers\s+([\d\s]+?)(?=\s*53\.|\s*52\.|$)/i);
+    // v59.55: same page-break tolerance as the parseFields regex above —
+    // letter alternative in lookahead so "Apr" / "Incident" page-boundary
+    // text doesn't trap the lazy capture.
+    const persRowMA = text.match(/(?:52|57)\.\s*Total\s+Pers\s+([\d\s]+?)(?=\s*53\.|\s*52\.|\s*[A-Za-z]|$)/i);
     const persRowMB = text.match(/(?:52|57)\.\s*Total\s+([\d\s]+?)\s+Pers/i);
     const persRowM  = persRowMA || persRowMB;
     persVals = persRowM ? persRowM[1].trim().split(/\s+/).filter(s => /^\d+$/.test(s)).map(Number) : [];
