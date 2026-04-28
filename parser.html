@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>IMSR Prep Tool v59.56</title>
+<title>IMSR Prep Tool v59.57</title>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
@@ -379,7 +379,7 @@
 <body>
 
 <header>
-  <h1>IMSR PREP TOOL <span style="float:right;font-size:11px;font-weight:400;color:var(--muted);letter-spacing:.04em;">v59.56</span></h1>
+  <h1>IMSR PREP TOOL <span style="float:right;font-size:11px;font-weight:400;color:var(--muted);letter-spacing:.04em;">v59.57</span></h1>
   <p>Drop one or more 209 PDFs — sorted by % contained, ready to paste into Word</p>
 </header>
 
@@ -1728,9 +1728,17 @@ function parseFields(text) {
       const dm = formatted.match(/^(\d{1,2})\/(\d{1,2})$/);
       if (dm) {
         const now = new Date();
+        // v59.57: compare both at midnight of their respective days. Prior code used
+        // `now` directly (carries time-of-day), so when today's date matched the 209's
+        // est-cont date, `candidate < now` was always true after midnight → UNK fired
+        // for today's date. Pressey 4/28 case: 209 Box 43 = 04/28/2026, dropped 4/28 →
+        // was incorrectly UNK, should display 4/28. Strict less-than means today's
+        // date now keeps the date; only strictly-past days route to UNK.
+        const todayMidnight = new Date(now.getFullYear(), now.getMonth(), now.getDate());
         const candidate = new Date(now.getFullYear(), parseInt(dm[1]) - 1, parseInt(dm[2]));
-        // If candidate already passed (and isn't implausibly far in the past = wrong year parse)
-        f.f43 = (candidate < now && (now - candidate) < 180 * 86400000) ? 'UNK' : formatted;
+        // 180-day guard preserved: implausibly-far-past = wrong-year parse from
+        // year-rollover (e.g., a Dec date late in following year)
+        f.f43 = (candidate < todayMidnight && (todayMidnight - candidate) < 180 * 86400000) ? 'UNK' : formatted;
       } else {
         f.f43 = formatted;
       }
@@ -9472,8 +9480,10 @@ function buildMissedTableRows(missed) {
       const dm = (estVal || '').match(/^(\d{1,2})\/(\d{1,2})$/);
       if (dm) {
         const now = new Date();
+        // v59.57: midnight-vs-midnight comparison so today's date keeps (see f43 parser comment).
+        const todayMidnight = new Date(now.getFullYear(), now.getMonth(), now.getDate());
         const candidate = new Date(now.getFullYear(), parseInt(dm[1]) - 1, parseInt(dm[2]));
-        if (candidate < now && (now - candidate) < 180 * 86400000) {
+        if (candidate < todayMidnight && (todayMidnight - candidate) < 180 * 86400000) {
           estVal = 'UNK';
         }
       }
@@ -9930,8 +9940,10 @@ function docxMissedTblRow(p) {
     const dm = (estVal || '').match(/^(\d{1,2})\/(\d{1,2})$/);
     if (dm) {
       const now = new Date();
+      // v59.57: midnight-vs-midnight comparison so today's date keeps (see f43 parser comment).
+      const todayMidnight = new Date(now.getFullYear(), now.getMonth(), now.getDate());
       const candidate = new Date(now.getFullYear(), parseInt(dm[1]) - 1, parseInt(dm[2]));
-      if (candidate < now && (now - candidate) < 180 * 86400000) estVal = 'UNK';
+      if (candidate < todayMidnight && (todayMidnight - candidate) < 180 * 86400000) estVal = 'UNK';
     }
   }
   const vals = [
