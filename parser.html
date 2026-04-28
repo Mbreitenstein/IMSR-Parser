@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>IMSR Prep Tool v59.55</title>
+<title>IMSR Prep Tool v59.56</title>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
@@ -379,7 +379,7 @@
 <body>
 
 <header>
-  <h1>IMSR PREP TOOL <span style="float:right;font-size:11px;font-weight:400;color:var(--muted);letter-spacing:.04em;">v59.55</span></h1>
+  <h1>IMSR PREP TOOL <span style="float:right;font-size:11px;font-weight:400;color:var(--muted);letter-spacing:.04em;">v59.56</span></h1>
   <p>Drop one or more 209 PDFs — sorted by % contained, ready to paste into Word</p>
 </header>
 
@@ -388,6 +388,7 @@
     <div class="drop-label" style="color:var(--accent);">209s</div>
     <p>Drop 209 PDFs here (one or many) or click to select</p>
     <button onclick="document.getElementById('file-input').click()">Select PDFs</button>
+    <button onclick="clear209s()" style="margin-left:8px;background:var(--muted);color:#fff;border:none;padding:8px 14px;border-radius:3px;font-family:'IBM Plex Mono',monospace;font-size:11px;font-weight:600;cursor:pointer;">Clear 209s</button>
     <input type="file" id="file-input" accept=".pdf" multiple>
   </div>
   <div class="drop-zone imsr-zone" id="imsr-drop-zone">
@@ -455,6 +456,14 @@ let lastRptLabelOff = new Set();   // fires with kick-off label suppressed
 let lastRptForceActive = new Set(); // fires forced back to active sort
 let narrFilterState = 'all'; // persists across re-renders: 'all' or 'hide100'
 const nameEdited = new Set();   // fires manually renamed by analyst this session
+// v59.56: counter of in-flight 209 PDF batches. Incremented at start of handleFiles,
+// decremented in its finally. Other file handlers (IMSR/MAP/AutoSIT) and their clear
+// functions check `pdfsInFlight === 0` before calling renderOutput — prevents the
+// "all fires greyed out" race where IMSR/MAP/AutoSIT finish while 209s are still
+// parsing. When 209s eventually finish, their own end-of-handler render picks up
+// whatever side state was loaded concurrently. Counter (not bool) so a second
+// 209 batch dropped during the first doesn't prematurely re-enable rendering.
+let pdfsInFlight = 0;
 
 // ── AutoSIT / F&A Report Data ───────────────────────────────────────
 let autoSitData = null; // { resSummary: {AICC:{inc,acres,crews,eng,heli,ppl},...}, faYesterday: [{area,fires:[],acres:[]},...], faYTD: [...], iaTotal: N }
@@ -564,7 +573,13 @@ async function handleIMSRFile(file) {
       } else {
         setIMSRStatus(`✓ ${prevIMSR.size} incidents loaded from previous IMSR · .docx template stored (${file.name})`, 'ok');
       }
-      renderOutput();
+      // v59.56: defer render if 209s are still parsing — handleFiles' end-of-loop
+      // render will pick up the prevIMSR data we just set. Without this gate, dropping
+      // an IMSR while 209s are loading paints all fires as "missed/grey" (the prev
+      // IMSR fires render with allIncidents=[]) and the analyst sees a broken-looking
+      // UI until the 209s finish. Reported 4/28 — analyst dropped multiple files
+      // without waiting for 209s to finish loading.
+      if (pdfsInFlight === 0) renderOutput();
 
     } else {
       // ── PDF path (original) ──
@@ -587,7 +602,8 @@ async function handleIMSRFile(file) {
       } else {
         setIMSRStatus(`✓ ${prevIMSR.size} incidents loaded from previous IMSR`, 'ok');
       }
-      renderOutput();
+      // v59.56: defer render if 209s are still parsing (see docx-path comment above)
+      if (pdfsInFlight === 0) renderOutput();
     }
   } catch(e) {
     setIMSRStatus('Failed to read IMSR — ' + e.message, 'err');
@@ -1022,7 +1038,11 @@ async function handleMapFiles(files) {
   } else {
     setMapStatus(baseMsg, 'ok');
   }
-  if (allIncidents.length) {
+  if (pdfsInFlight === 0 && allIncidents.length) {
+    // v59.56: pdfsInFlight gate added — without it, MAP finishing during a 209
+    // batch could paint a partially-loaded UI (allIncidents fills incrementally
+    // inside handleFiles' for-loop). Existing allIncidents.length gate retained
+    // for the "drop MAP first, no 209s yet" case.
     reapplyMapGate();
     updateFileList();
     renderOutput();
@@ -1036,7 +1056,9 @@ function clearMap() {
   mapStatusEl.style.display = 'none';
   // v59.32: run the gate so fires in Removed Incidents merge back into the main
   // display (reapplyMapGate's cleanup pass runs even when mapData is null).
-  if (allIncidents.length || removedIncidents.length) {
+  // v59.56: also gate on pdfsInFlight — if 209s are loading, their end-of-handler
+  // render will pick up the cleared mapData state.
+  if (pdfsInFlight === 0 && (allIncidents.length || removedIncidents.length)) {
     reapplyMapGate();
     renderOutput();
   }
@@ -1247,7 +1269,8 @@ async function handleAutoSitFile(file) {
 
     autoSitData = data;
     setAutoSitStatus(`✓ ${parts.join(' · ')} loaded from ${file.name}`, 'ok');
-    if (allIncidents.length) renderOutput();
+    // v59.56: defer render if 209s still parsing — handleFiles end will pick up autoSitData
+    if (pdfsInFlight === 0 && allIncidents.length) renderOutput();
   } catch(e) {
     setAutoSitStatus('Failed to read file — ' + e.message, 'err');
     console.error('AutoSIT parse error:', e);
@@ -1257,7 +1280,8 @@ async function handleAutoSitFile(file) {
 function clearAutoSit() {
   autoSitData = null;
   autoSitStatusEl.style.display = 'none';
-  if (allIncidents.length) renderOutput();
+  // v59.56: same pdfsInFlight gate as the load handler
+  if (pdfsInFlight === 0 && allIncidents.length) renderOutput();
 }
 
 // GACC reorder
@@ -1286,6 +1310,11 @@ function setStatus(msg, type='loading') {
 
 async function handleFiles(files) {
   if (!files.length) return;
+  // v59.56: counter wrapper — see global declaration. The finally at the bottom
+  // of this function decrements. Counter ensures concurrent IMSR/MAP/AutoSIT
+  // drops don't paint a half-loaded UI while these PDFs are still being parsed.
+  pdfsInFlight++;
+  try {
   setStatus(`Processing ${files.length} PDF${files.length > 1 ? 's' : ''}...`);
   const warnings = []; // v59.30: track per-file parse failures for inline UI reporting
 
@@ -1376,6 +1405,11 @@ async function handleFiles(files) {
     statusEl.innerHTML = `${baseMsg}<br><span style="color:#c0392b;font-weight:600;">⚠ ${warnings.length} PDF${warnings.length!==1?'s':''} skipped — fires from these files are NOT in the output:</span><br>${list}`;
   } else {
     setStatus(baseMsg, 'ok');
+  }
+  } finally {
+    // v59.56: always decrement, even on early return / exception inside the loop.
+    // After this drops to zero, future MAP/IMSR/AutoSIT renders are unblocked.
+    pdfsInFlight--;
   }
 }
 
@@ -9325,7 +9359,9 @@ async function fetchFromNIFC() {
     }
     prevIMSR = parseIMSR(pages.join('\n'));
     setIMSRStatus(`✓ ${prevIMSR.size} incidents loaded from nifc.gov`, 'ok');
-    if (allIncidents.length) renderOutput();
+    // v59.56: same pdfsInFlight gate as handleIMSRFile — fetchFromNIFC sets prevIMSR
+    // identically, so the same race window applies if 209s are loading concurrently.
+    if (pdfsInFlight === 0 && allIncidents.length) renderOutput();
   } catch(e) {
     setIMSRStatus('CORS blocked — drop the IMSR PDF instead (nifc.gov does not allow direct fetch from local files)', 'err');
   } finally {
@@ -11049,6 +11085,47 @@ function reAddFire(incNum) {
   renderOutput();
 }
 
+// v59.56: Clear 209s — analyst escape hatch matching Clear MAP / Clear IMSR / Clear AutoSIT.
+// Clears 209-derived state (the loaded fires, Removed panel, team groups built from
+// Box 5, session-only fire flags) but PRESERVES prev IMSR, MAP, AutoSIT, and PL state.
+// After this runs, a fresh 209 batch drop repopulates everything cleanly.
+//
+// Why teams clear: teamGroups are auto-populated from 209 Box 5 CIMT/NIMO + the prev
+// IMSR carry-forward path. Both inputs disappear semantically when 209s clear, so
+// matching clearIMSR's "explicit start fresh" semantics is the right call.
+//
+// Skipped: deletedPrevFires (belongs to prev IMSR), mapData (belongs to MAP),
+// autoSitData (belongs to AutoSIT), prevIMSR (belongs to IMSR), nationalPL/gaccPLs
+// (extracted from IMSR), templateDocxBytes (IMSR template).
+function clear209s() {
+  allIncidents = [];
+  removedIncidents = [];
+  readdedFires.clear();
+  deletedFires.clear();
+  lastRptLabelOff.clear();
+  lastRptForceActive.clear();
+  teamGroups = [];
+  _teamsAutoPopulated = false;
+  teamEditMode.clear();
+  nameEditMode.clear(); // v59.56: same reason as teamEditMode — incNum keys would dangle after clear
+  narrFilterState = 'all';
+  manualGaccOrder = null;
+  for (const k in manualOrder) delete manualOrder[k]; // clears per-GACC narrative reorder
+  nameEdited.clear();
+
+  // UI cleanup
+  fileListEl.innerHTML = '';
+  statusEl.style.display = 'none';
+  outputEl.style.display = 'none';
+  outputEl.innerHTML = '';
+  const removedPanelEl = document.getElementById('removed-panel');
+  if (removedPanelEl) { removedPanelEl.style.display = 'none'; removedPanelEl.innerHTML = ''; }
+
+  // If prev IMSR is still loaded, paint the prev-IMSR-only fire tags so the
+  // analyst can confirm IMSR context survived the clear.
+  if (prevIMSR && prevIMSR.size > 0) updateFileList();
+}
+
 function clearIMSR() {
   prevIMSR = null;
   templateDocxBytes = null;
@@ -11064,7 +11141,8 @@ function clearIMSR() {
   const natSel = document.getElementById('pl-national');
   if (natSel) natSel.value = '';
   imsrStatusEl.style.display = 'none';
-  if (allIncidents.length) renderOutput();
+  // v59.56: defer render if 209s still parsing
+  if (pdfsInFlight === 0 && allIncidents.length) renderOutput();
 }
 </script>
 </body>
