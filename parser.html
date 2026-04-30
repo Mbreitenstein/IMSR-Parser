@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>IMSR Prep Tool v59.57</title>
+<title>IMSR Prep Tool v59.58</title>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
@@ -379,7 +379,7 @@
 <body>
 
 <header>
-  <h1>IMSR PREP TOOL <span style="float:right;font-size:11px;font-weight:400;color:var(--muted);letter-spacing:.04em;">v59.57</span></h1>
+  <h1>IMSR PREP TOOL <span style="float:right;font-size:11px;font-weight:400;color:var(--muted);letter-spacing:.04em;">v59.58</span></h1>
   <p>Drop one or more 209 PDFs — sorted by % contained, ready to paste into Word</p>
 </header>
 
@@ -1718,7 +1718,23 @@ function parseFields(text) {
   if (f.isFinal || parseInt(f.f8a) >= 100) {
     f.f43 = '---';
   } else {
-    const rawDate = grab(text, /43\.\s*Anticipated Incident Containment[^:]*Date:\s*([^\n]+?)(?=\s*44\.|$)/i);
+    // v59.58: capture char class is [\s\S]+? (newline-tolerant) instead of [^\n]+?.
+    // Reason: when the 209 PDF page breaks fall between "43. ...Date: VALUE" and
+    // "44. ..." (Sand Drain 4/30 case — Box 43 at end of page 106, Box 44 at top
+    // of page 107), the prior regex couldn't cross the \n separator pdf.js inserts
+    // between pages. Whole match failed → grab returned '' → fell through to UNK
+    // even though Box 43 had a valid date. With [\s\S]+?, the match crosses page
+    // breaks. Captured raw text may contain page footer + header garbage (e.g.
+    // "05/05/2026 Apr 30, 2026 106 6:10:05 AM\nIncident Status Summary..."), but
+    // formatDate's first regex is anchored at start (^\d{1,2}\/\d{1,2}) and picks
+    // up the date cleanly, ignoring the trailing garbage. Verified against the
+    // 4/30 bulk: 58/58 Box 43 occurrences captured (was 57/58); Pressey 4/28 case
+    // still produces '04/28/2026' identically.
+    //
+    // Parallel-pattern vulnerability: line 1628 Box 25 regex has the same
+    // [^\n]+? construct. Box 25 is on page 1 of every 209 so this hasn't
+    // manifested in production, but the same fix template applies if it does.
+    const rawDate = grab(text, /43\.\s*Anticipated Incident Containment[^:]*Date:\s*([\s\S]+?)(?=\s*44\.|$)/i);
     const looksLikeLabel = rawDate && /^\d{2}\./.test(rawDate.trim());
     if (!rawDate || looksLikeLabel) {
       f.f43 = 'UNK';
